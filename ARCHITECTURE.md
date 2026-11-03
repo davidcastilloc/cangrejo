@@ -1,6 +1,6 @@
 # 🦀 CANGREJO — Engineering Architecture Specification
 
-This document details the internal systems architecture of **CANGREJO** across its 7 workspace packages (`@cangrejo/*`).
+This document details the internal systems architecture of **CANGREJO** across its **9 polyglot moonrepo projects** (`7` `@cangrejo/*` TypeScript packages, `1` native Rust `cdylib` crate `cangrejo-layout-rs`, and `1` web workstation & Hono/Bun server `@cangrejo/web`).
 
 ---
 
@@ -79,9 +79,18 @@ flowchart LR
 
 ---
 
-## 4. *Bóveda Cero* Zero-Knowledge Encryption (`@cangrejo/transforms`)
+## 4. *Bóveda Cero* Zero-Knowledge Encryption, STIX 2.1 & Forensic Dossier (`@cangrejo/transforms`)
 
 When exporting a classified `.cgrj` investigation via **Bóveda Cero**:
 1. A random 16-byte salt derives independent `256-bit` encryption ($K_{\text{enc}}$) and authentication ($K_{\text{mac}}$) keys via `PBKDF2-HMAC-SHA256` (`600,000` iterations).
 2. Sensitive entity/link attributes are padded to **256-byte blocks (`PKCS#7`)** and encrypted with `AES-256-GCM`.
-3. The entire graph topology (`sorted entity GUIDs + directed link triples`) is signed using `AES-GMAC`, ensuring that any server-side node injection, edge deletion, or ID swap is immediately detected and rejected upon decryption.
+3. The entire graph topology (`sorted entity GUIDs + directed link triples`) is signed using `AES-GMAC`, ensuring that any server-side node injection, edge deletion, or ID swap is immediately detected and rejected upon decryption (`POST /api/import/mtgj-decrypted`).
+4. **OASIS STIX 2.1 & Printable HTML5 Forensic Dossier**: `Stix21Exporter` maps Cangrejo entities/links to standard STIX 2.1 SDOs/SROs (`domain-name`, `ipv4-addr`, `threat-actor`, `relationship`, etc.) with an embedded FIPS 180-4 SHA-256 Chain-of-Custody manifest (`x_cangrejo_custody`), while `ForensicDossierGenerator` produces a self-contained WCAG AAA print-ready HTML5/PDF judicial report.
+
+---
+
+## 5. Native Rust `bun:ffi` Barnes-Hut Quadtree (`cangrejo-layout-rs`) & Hono + `bun:sqlite` API (`@cangrejo/web`)
+
+- **Contiguous-Arena Barnes-Hut Quadtree ($O(V \log V)$, $\theta = 0.8$)**: `packages/layout-rs` compiles to a native shared library (`cangrejo_layout_rs.dll` / `.so` / `.dylib`) exposing `cangrejo_barnes_hut_stride6_step`. `NativeRayonBridge` passes the raw pointer (`ptr(Float32Array)`) across `bun:ffi` with zero serialization overhead.
+- **Forensic Graph Analytics (`ForensicGraphAnalytics`)**: Implements bidirectional BFS shortest path (`findShortestForensicPath`), damped power-iteration centrality (`computeForensicPageRank`), and elementary cycle detection (`detectDirectedCycles`).
+- **Singleflight & SQLite WAL Cache (`BunSqliteVault`)**: Concurrent identical OSINT *Pesquisas* coalesce into a single upstream promise (`inFlightPesquisas`) backed by a persistent TTL table (`cangrejo_pesquisa_cache`) in `bun:sqlite` WAL mode.

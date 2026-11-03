@@ -51,51 +51,57 @@ To honor investigators who untangle the most enigmatic, seemingly impossible cas
 
 ## 🏗️ System Architecture & Monorepo Packages
 
-Cangrejo enforces a strict inward-flowing clean architecture across **7 modular workspace packages**:
+Cangrejo enforces a strict inward-flowing clean architecture across **9 polyglot moonrepo projects** (`7` `@cangrejo/*` TypeScript packages, `1` native Rust `cdylib` crate `cangrejo-layout-rs`, and `1` web workstation & Hono/Bun server `@cangrejo/web`):
 
 ```mermaid
 flowchart TD
-  subgraph UI["Web Workstation & CLI/Desktop Adapters (apps/web)"]
-    Ribbon["52px Investigator Command Ribbon"]
-    CanvasUI["Interactive 60 FPS Scenegraph Canvas + Radar Minimap"]
-    Inspector["Dynamic Ontology Inspector & Pesquisa Telemetry Console"]
+  subgraph UI["Web Workstation & Hono/Bun Server (apps/web)"]
+    Ribbon["52px Investigator Command Ribbon + Collab Presence"]
+    CanvasUI["Interactive 60 FPS Scenegraph Canvas + Frustum Culling + Radar Minimap"]
+    Inspector["Dynamic Ontology Inspector, Forensic Analytics & Pesquisa Telemetry"]
+    HonoAPI["Hono Web-Standard API + Standalone Bun.serve Production Host"]
   end
 
-  subgraph Packages["@cangrejo/* Monorepo Packages"]
+  subgraph Packages["@cangrejo/* Polyglot Monorepo (TypeScript + Rust)"]
     Tokens["@cangrejo/design-tokens\nOKLCH Tokens • ThemeBridge • WCAG AAA"]
-    Renderer["@cangrejo/renderer\n64B Node / 48B Edge Instanced Buffers • WGSL Shaders • 3-Tier Layout"]
-    Transforms["@cangrejo/transforms\nLive DNS/CT/RDAP/BGP • .cgrx Archive • Bóveda Cero AES-256-GCM"]
-    Core["@cangrejo/core\nTripartite GraphStore • 107 Entities • 17 IOC Regex Converters • StrategicGraphMerger"]
-    Schemas["@cangrejo/schemas\nJSON Schema 2020-12 Validator"]
+    Renderer["@cangrejo/renderer\n64B Node / 48B Edge Instanced Buffers • WGSL Shaders • Frustum Culling"]
+    LayoutRS["cangrejo-layout-rs (Rust cdylib)\nO(V log V) Barnes-Hut Quadtree • Rayon SIMD • Zero-Copy bun:ffi"]
+    Transforms["@cangrejo/transforms\nLive DNS/CT/RDAP/BGP • STIX 2.1 • HTML5 Dossier • Bóveda Cero AES-256-GCM"]
+    Core["@cangrejo/core\nTripartite GraphStore • 107 Entities • ForensicGraphAnalytics • CollaborationRoomHub"]
+    Schemas["@cangrejo/schemas\nJSON Schema 2020-12 + Zod (.passthrough) Contracts"]
     Bridge["@cangrejo/platform-bridge\nWeb PWA • Tauri Desktop • VS Code Host Abstraction"]
-    D1["@cangrejo/database-d1\nCloudflare D1 Edge SQL Persistence"]
+    D1["@cangrejo/database-d1\nBunSqliteVault (WAL + Singleflight TTL Cache) & Cloudflare D1"]
   end
 
   UI --> Tokens
   UI --> Renderer
   UI --> Transforms
+  UI --> HonoAPI
   Renderer --> Core
+  Renderer --> LayoutRS
   Transforms --> Core
   Transforms --> Schemas
   Renderer --> Bridge
-  Transforms --> D1
+  HonoAPI --> D1
 ```
 
-| Package | Responsibility & Key Engineering Highlights |
+| Project | Responsibility & Key Engineering Highlights |
 | :--- | :--- |
-| [`@cangrejo/core`](./packages/core) | **Expediente Tripartite Graph Engine**: Strictly separated `GraphStructureStore` (CSR adjacency), `GraphDataStore` (typed property bags), and `GraphLayoutStore` (`Float32Array` coordinates + pin locks). Includes **107 standard OSINT entities**, **17 IOC Regex auto-detection converters**, `StrategicGraphMerger` (`STRICT`/`LOOSE` rules, 10k merge in `< 120ms`), `CollectionNodeView` topological clustering, and atomic `UndoRedoCommandManager`. |
-| [`@cangrejo/renderer`](./packages/renderer) | **Catatumbo WebGPU Renderer & 3-Tier Layout Engine**: `4096×4096` `IconAtlasManager`, 4 custom `WGSL` shaders (`node_instanced.wgsl`, `edge_instanced.wgsl`, `msdf_text.frag.wgsl`, `layout_nbody.compute.wgsl`), `64-byte` node & `48-byte` edge GPU buffers, spatial hash grid `SelectionOverlay` (marquee + polygon lasso), and 3-tier layout routing (`Organic ForceAtlas2 Barnes-Hut`, `Hierarchical Sugiyama DAG`, `Circular`, `Block`). |
-| [`@cangrejo/transforms`](./packages/transforms) | **Pesquisa Transform & Bóveda Cero Engine**: Live OSINT execution (`DNS A/AAAA/MX/NS`, `CT SAN Logs`, `BGP/ASN`, `RDAP/WHOIS`, `Threat Intel CVE/SHA-256`, `UTXO Crypto Trace`), PKZIP `.cgrx` archive codec, and **Bóveda Cero** Zero-Knowledge Selective Encryption (`PBKDF2-HMAC-SHA256` 600k iterations + `AES-256-GCM` with 256B `PKCS#7` padding + `AES-GMAC` topology signature). |
+| [`@cangrejo/core`](./packages/core) | **Expediente Tripartite Graph Engine & Forensic Analytics**: Strictly separated `GraphStructureStore` (CSR adjacency), `GraphDataStore` (typed property bags), and `GraphLayoutStore` (`Float32Array` coordinates + pin locks). Includes **107 standard OSINT entities**, **17 IOC Regex auto-detection converters**, `StrategicGraphMerger` (`STRICT`/`LOOSE` rules, 10k merge in `< 120ms`), `ForensicGraphAnalytics` (Shortest Path BFS, PageRank centrality, Directed Cycle detection), `CollaborationRoomHub`, `CollectionNodeView` clustering, and atomic `UndoRedoCommandManager`. |
+| [`@cangrejo/renderer`](./packages/renderer) | **Catatumbo WebGPU Renderer, Frustum Culling & 3-Tier Layout Engine**: `4096×4096` `IconAtlasManager`, 4 custom `WGSL` shaders, `64-byte` node & `48-byte` edge GPU buffers, 60 FPS viewport `queryVisibleFrustum` culling, Golden Path (`#F59E0B`) overlay, spatial hash grid `SelectionOverlay` (marquee + polygon lasso), and `NativeRayonBridge` zero-copy `bun:ffi` integration. |
+| [`cangrejo-layout-rs`](./packages/layout-rs) | **Native Rust Barnes-Hut Quadtree & Rayon Engine (`cdylib`)**: Contiguous-arena `BarnesHutQuadtree` ($\theta = 0.8$, $O(V \log V)$) + Rayon multi-core force-directed layout (`cangrejo_barnes_hut_stride6_step` C-ABI) invoked directly via `bun:ffi` `ptr(Float32Array)`. |
+| [`@cangrejo/transforms`](./packages/transforms) | **Pesquisa Transform, STIX 2.1, Forensic Dossier & Bóveda Cero Engine**: Live OSINT execution (`DNS A/AAAA/MX/NS/TXT`, live `crt.sh` Certificate Transparency, live `rdap.org` RFC 9083 WHOIS, `BGP/ASN`, `Threat Intel CVE/SHA-256`, `UTXO Crypto Trace`), OASIS **STIX 2.1 Bundle Exporter (`Stix21Exporter`)**, **Printable HTML5/PDF Forensic Dossier (`ForensicDossierGenerator`)**, PKZIP `.cgrx` archive codec, and **Bóveda Cero** Zero-Knowledge Selective Encryption (`PBKDF2-HMAC-SHA256` 600k iterations + `AES-256-GCM` + `AES-GMAC` topology signature). |
 | [`@cangrejo/design-tokens`](./packages/design-tokens) | **OKLCH Design System & `ThemeBridge`**: Dual-theme tokens (`Obsidian Studio` dark & `Daylight Forensic Report` light) with verified **WCAG 2.1 AAA** contrast ($\ge 7:1$) and single-frame DOM + Canvas synchronization. |
-| [`@cangrejo/schemas`](./packages/schemas) | **JSON Schema Draft 2020-12 Validator**: Strict structural validation for `.cgrj` graph documents and encrypted envelopes. |
+| [`@cangrejo/schemas`](./packages/schemas) | **JSON Schema Draft 2020-12 & CSP-Safe `Zod` Contracts**: Strict structural validation for `.cgrj` graph documents, encrypted envelopes, and HTTP boundaries with mandatory `.passthrough()` zero-pruning invariants. |
 | [`@cangrejo/platform-bridge`](./packages/platform-bridge) | **Multi-Host Runtime Bridge**: Unified interface (`IPlatformBridge`) for Web PWA, Tauri Native Desktop (Rayon multi-core offload), and VS Code Webview extensions. |
-| [`@cangrejo/database-d1`](./packages/database-d1) | **Edge SQL Persistence**: Idempotent schema runner and prepared-statement bindings for Cloudflare D1 / SQLite workspaces. |
+| [`@cangrejo/database-d1`](./packages/database-d1) | **`BunSqliteVault` (`bun:sqlite` WAL) & Cloudflare D1 Persistence**: Native SQLite WAL storage for Expedientes, audit trail, and persistent Pesquisa TTL cache (`cangrejo_pesquisa_cache`). |
+| [`@cangrejo/web`](./apps/web) | **Interactive OSINT Workstation & Standalone `Bun.serve` Host**: Vite frontend workstation + Hono Web-Standard API (`apps/web/honoApp.ts`) + standalone single-command production server (`apps/web/bunServer.ts`). |
 
 ---
 
-## ⚡ Verified Performance & Security Gates
+## ⚡ Verified Performance & Security Gates (Gates 0–6)
 
-Every pull request is verified against **36 deterministic automated tests across 4 architectural gates**:
+Every change is verified against **53 deterministic automated tests (`50` TypeScript tests + `3` Rust `cargo test` tests) across 7 architectural gates**:
 
 | Gate Suite | Benchmark / Invariant | Verified Result |
 | :--- | :--- | :--- |
@@ -103,30 +109,35 @@ Every pull request is verified against **36 deterministic automated tests across
 | **Gate 1: Graph Engine** (`tests/gate1-graph-engine.test.ts`) | `10,000`-entity `StrategicGraphMerger` (`5,000` updates + `5,000` inserts) + single-step atomic Undo + `CollectionNodeView` clustering | **13/13 PASS** (`< 120 ms`) |
 | **Gate 2: Renderer & Layout** (`tests/gate2-renderer-layout.test.ts`) | Scale S4 benchmark: `100,000` nodes & `100,000` edges @ 60 FPS (`<= 4` GPU draw calls, `< 16.66 ms/frame`, `< 180 MB` VRAM) | **6/6 PASS** |
 | **Gate 3: Transforms & Vault** (`tests/gate3-transforms-formats.test.ts`) | Zero-Knowledge `AES-256-GCM` + `AES-GMAC` tamper detection, `.cgrx` PKZIP round-trip, and `OAuth 2.0 PKCE` (RFC 7636) | **6/6 PASS** |
+| **Gate 4: Stack Enhancements** (`tests/gate4-stack-enhancements.test.ts`) | Hono Web-Standard API, `BunSqliteVault` WAL persistence, CSP-safe `Zod` `.passthrough()` contracts, and `CollaborationRoomHub` | **5/5 PASS** |
+| **Gate 5: Forensic Optimizations** (`tests/gate5-forensic-optimizations.test.ts`) | Native Rust `bun:ffi` Barnes-Hut Quadtree ($O(V \log V)$, `< 15 ms`), `ForensicGraphAnalytics`, Frustum Culling, Singleflight TTL cache & OASIS STIX 2.1 export | **5/5 PASS** (+ **3/3 Rust**) |
+| **Gate 6: Production Completeness** (`tests/gate6-production-completeness.test.ts`) | Symmetric `.cgrj` Bóveda Cero decryption (`AES-GMAC`), live DNS TXT (`SPF`/`DMARC`), live collaboration deltas, HTML5 Dossier & standalone `Bun.serve` | **4/4 PASS** |
 
 ---
 
-## 🚀 Quick Start (Powered by **Bun** & **moonrepo**)
+## 🚀 Quick Start (Powered by **Bun**, **Rust** & **moonrepo**)
 
-Cangrejo uses **[Bun (`v1.4.3+`)](https://bun.sh)** as its primary high-speed JavaScript/TypeScript runtime and **[moon (`v2.6.5+`)](https://moonrepo.dev)** (Rust-based polyglot monorepo orchestrator) for content-addressable DAG caching across all 7 `@cangrejo/*` packages (with full Node.js `>= 22` compatibility).
+Cangrejo uses **[Bun (`v1.4.3+`)](https://bun.sh)** as its primary high-speed JavaScript/TypeScript runtime, **Rust (`cargo`)** for native SIMD layout acceleration, and **[moon (`v2.6.5+`)](https://moonrepo.dev)** for content-addressable DAG caching across all **9 polyglot projects**:
 
 ```bash
 # 1. Install workspace dependencies in milliseconds via Bun
 bun install
 
-# 2. Inspect the 7-package moon dependency graph
+# 2. Inspect the 9-project polyglot moon dependency graph
 bun run moon:projects
 
-# 3. Execute all 13 DAG tasks (typecheck + Gate 0-3 tests) via moon + Bun
-#    • Cold run: ~639 ms (202,278 expect() assertions across 36 tests)
-#    • Warm cached run: ~160 ms ("❯❯❯❯ to the moon")
+# 3. Execute all 19 DAG tasks (typecheck + Rust build + Vite build + Gates 0-6) via moon
+#    • Warm cached run: ~248 ms ("❯❯❯❯ to the moon")
 bun run moon:check
 
-# 4. Run native Bun test runner directly (< 640 ms)
+# 4. Run native Bun test runner directly (50 TS tests across Gates 0-6)
 bun test
 
 # 5. Launch the interactive Cangrejo OSINT Workstation on http://127.0.0.1:5173
 bun run dev
+
+# 6. Or build & run the standalone single-command Bun production server on http://127.0.0.1:3000
+bun run build && bun run start
 ```
 
 Open **`http://127.0.0.1:5173/`** in your browser to explore:
