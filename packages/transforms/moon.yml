@@ -32,10 +32,12 @@ tasks:
       - "/tsconfig.json"
 
   test:
-    command: "bun test ../../tests/gate3-transforms-formats.test.ts"
+    command: "bun test ../../tests/gate3-transforms-formats.test.ts ../../tests/gate5-forensic-optimizations.test.ts"
     deps:
       - "core:test"
       - "schemas:test"
+      - "layout-rs:build"
     inputs:
       - "src/**/*"
       - "/tests/gate3-transforms-formats.test.ts"
+      - "/tests/gate5-forensic-optimizations.test.ts"

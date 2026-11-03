@@ -26,4 +26,6 @@ export * from './merger/PartMergeStrategy.js';
 export * from './merger/StrategicGraphMerger.js';
 
 export * from './collaboration/CollaborationRoomHub.js';
+export * from './analytics/ForensicGraphAnalytics.js';
+
 

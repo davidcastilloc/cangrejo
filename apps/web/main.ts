@@ -6,6 +6,7 @@ import {
   Guid,
   STANDARD_ENTITIES_CATALOG,
   StrategicGraphMerger,
+  analyzeExpedienteForensics,
   convertTextToEntity,
   createPropertyBag,
   getPartPrimaryValue,
@@ -14,6 +15,7 @@ import {
   type MaltegoLinkData,
   type Point2D,
 } from '@cangrejo/core';
+import { Stix21Exporter } from '@cangrejo/transforms';
 import {
   BOOKMARK_PALETTE_RGBA,
   GraphCanvas,
@@ -1312,6 +1314,73 @@ document.getElementById('btn-encrypt-mtgj')!.addEventListener('click', async () 
   );
 });
 
+const goldenPathEntityIds = new Set<string>();
+const goldenPathLinkIds = new Set<string>();
+
+document.getElementById('btn-forensic-analytics')?.addEventListener('click', () => {
+  goldenPathEntityIds.clear();
+  goldenPathLinkIds.clear();
+
+  const allEntityIds = Array.from(store.structureStore.entities.keys());
+  const selectedIds = Array.from(selection.getModelSelectedEntities());
+  const sourceId = selectedIds[0] ?? allEntityIds[0];
+  const targetId =
+    selectedIds[1] ??
+    (allEntityIds.length > 1 ? allEntityIds[allEntityIds.length - 1] : allEntityIds[0]);
+
+  const report = analyzeExpedienteForensics(store, { sourceId, targetId });
+  for (const topHub of report.pageRank.rankings.slice(0, 2)) {
+    goldenPathEntityIds.add(topHub.entityId.toString());
+  }
+  if (report.shortestPath?.found) {
+    for (const eid of report.shortestPath.entityPath) {
+      goldenPathEntityIds.add(eid.toString());
+    }
+    for (const lid of report.shortestPath.linkPath) {
+      goldenPathLinkIds.add(lid.toString());
+    }
+  }
+
+  consoleBuffers.json = JSON.stringify(report, null, 2);
+  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+  document.querySelector('.tab-btn[data-tab="json"]')?.classList.add('active');
+  activeConsoleTab = 'json';
+  renderConsole();
+
+  const topNode = report.pageRank.rankings[0];
+  const topLabel = topNode && store.dataStore.hasEntity(topNode.entityId)
+    ? getPartPrimaryValue(store.dataStore.getEntity(topNode.entityId))
+    : 'N/A';
+  appendLog(
+    `Analítica Forense: Hub Principal "${topLabel}" (${topNode?.suggestedTier ?? 'ORO'}, PageRank=${topNode?.score ?? 0}) • Camino Más Corto=${report.shortestPath?.hopCount ?? 0} saltos • Anillos Cíclicos=${report.cycles.length}.`
+  );
+});
+
+document.getElementById('btn-export-stix21')?.addEventListener('click', () => {
+  const bundle = Stix21Exporter.exportFromStore(store, {
+    expedienteTitle: 'Expediente Forense CANGREJO',
+    caseTier: 'ORO',
+  });
+  const jsonStr = JSON.stringify(bundle, null, 2);
+  consoleBuffers.json = jsonStr;
+  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+  document.querySelector('.tab-btn[data-tab="json"]')?.classList.add('active');
+  activeConsoleTab = 'json';
+  renderConsole();
+
+  const blob = new Blob([jsonStr], { type: 'application/stix+json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cangrejo_bundle_${Date.now()}.stix21.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  appendLog(
+    `Exportado Bundle OASIS STIX 2.1 (${bundle.objects.length} objetos) • Cadena de Custodia SHA-256: ${bundle.x_cangrejo_custody.canonicalDigestHex.slice(0, 16)}…`
+  );
+});
+
 // =============================================================================
 // 9. 60 FPS Impeccable Style Scenegraph Renderer (Micro-Badges + Backed Edge Pills + Radar Minimap)
 // =============================================================================
@@ -1334,6 +1403,7 @@ function renderFrame(): void {
   const cam = graphCanvas.getCameraState();
   const worldCenter = graphCanvas.screenToWorld(width * 0.5, height * 0.5);
   const isLight = activeTokens.mode === 'light';
+  const frustum = graphCanvas.queryVisibleFrustum(140);
 
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = activeTokens.surfaceCanvas;
@@ -1360,21 +1430,31 @@ function renderFrame(): void {
     }
   }
 
-  // 2. Draw Directed Edges & Pill-Shielded Edge Annotations (Zero Occlusion)
+  // 2. Draw Directed Edges & Pill-Shielded Edge Annotations (Zero Occlusion + Frustum Culling)
   const viewEntitiesMap = collectionView.getViewEntities();
   for (const vl of collectionView.getViewLinks().values()) {
     const srcVe = viewEntitiesMap.get(vl.sourceViewEntityId);
     const dstVe = viewEntitiesMap.get(vl.targetViewEntityId);
     if (!srcVe || !dstVe) continue;
+    if (
+      !frustum.visibleIdSet.has(srcVe.id.toString()) &&
+      !frustum.visibleIdSet.has(dstVe.id.toString())
+    ) {
+      continue;
+    }
 
     const firstUnderlying = vl.underlyingLinks.values().next().value;
+    const isGoldenEdge =
+      firstUnderlying !== undefined && goldenPathLinkIds.has(firstUnderlying.toString());
     const physLink = firstUnderlying ? store.dataStore.tryGetLink(firstUnderlying) : undefined;
     const colorVal = physLink?.properties.values.get('maltego.link.color');
-    const edgeColor = vl.isProxy
-      ? activeTokens.edgeProxy
-      : typeof colorVal === 'string'
-        ? colorVal
-        : activeTokens.edgeDefault;
+    const edgeColor = isGoldenEdge
+      ? '#F59E0B'
+      : vl.isProxy
+        ? activeTokens.edgeProxy
+        : typeof colorVal === 'string'
+          ? colorVal
+          : activeTokens.edgeDefault;
     const edgeLabel = vl.isProxy
       ? `${vl.underlyingLinks.size} links`
       : physLink
@@ -1390,7 +1470,7 @@ function renderFrame(): void {
 
     ctx.save();
     ctx.strokeStyle = edgeColor;
-    ctx.lineWidth = vl.isProxy ? 2.0 : 1.5;
+    ctx.lineWidth = isGoldenEdge ? 2.8 : vl.isProxy ? 2.0 : 1.5;
     if (vl.isProxy) {
       ctx.setLineDash([6, 4]);
     }
@@ -1462,13 +1542,17 @@ function renderFrame(): void {
     }
   }
 
-  // 3. Draw Structured Micro-Badge Capsule Nodes & Stacked Collection Plinths
+  // 3. Draw Structured Micro-Badge Capsule Nodes & Stacked Collection Plinths (Frustum Culled)
   for (const ve of viewEntitiesMap.values()) {
+    if (!frustum.visibleIdSet.has(ve.id.toString())) {
+      continue;
+    }
     const phys = store.dataStore.tryGetEntity(ve.id);
     const spec = registry.get(ve.typeName);
     const vis = resolveCategoryVisual(spec?.category ?? 'infrastructure');
     const catColor = isLight ? vis.colorLight : vis.colorDark;
     const isSelected = selection.isViewEntitySelected(ve.id);
+    const isGoldenNode = goldenPathEntityIds.has(ve.id.toString());
 
     const cardW = 168;
     const cardH = 42;
@@ -1514,12 +1598,14 @@ function renderFrame(): void {
     ctx.fillStyle = isSelected ? activeTokens.nodeCardBgSelected : activeTokens.nodeCardBg;
     ctx.fill();
 
-    ctx.lineWidth = isSelected ? 2 : 1.2;
+    ctx.lineWidth = isSelected || isGoldenNode ? 2.2 : 1.2;
     ctx.strokeStyle = isSelected
       ? activeTokens.borderFocus
-      : ve.isCollectionNode
-        ? activeTokens.nodeCollectionPlinthBorder
-        : activeTokens.nodeCardBorder;
+      : isGoldenNode
+        ? '#F59E0B'
+        : ve.isCollectionNode
+          ? activeTokens.nodeCollectionPlinthBorder
+          : activeTokens.nodeCardBorder;
     ctx.stroke();
 
     // Left 30x30 Category Icon Tile

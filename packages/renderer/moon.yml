@@ -12,6 +12,7 @@ dependsOn:
   - "core"
   - "platform-bridge"
   - "design-tokens"
+  - "layout-rs"
 
 tags:
   - "webgpu"
@@ -35,6 +36,7 @@ tasks:
     command: "bun test ../../tests/gate2-renderer-layout.test.ts"
     deps:
       - "core:test"
+      - "layout-rs:build"
     inputs:
       - "src/**/*"
       - "/tests/gate2-renderer-layout.test.ts"

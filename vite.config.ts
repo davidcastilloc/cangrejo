@@ -45,10 +45,14 @@ export default defineConfig({
       '@cangrejo/schemas': resolve(__dirname, 'packages/schemas/src/index.ts'),
       '@cangrejo/transforms': resolve(__dirname, 'packages/transforms/src/index.ts'),
       '@cangrejo/design-tokens': resolve(__dirname, 'packages/design-tokens/src/index.ts'),
+      '@cangrejo/database-d1': resolve(__dirname, 'packages/database-d1/src/index.ts'),
     },
   },
   server: {
     port: 5173,
     host: '127.0.0.1',
+    watch: {
+      ignored: ['**/target/**', '**/.moon/**', '**/.specify/**', '**/specs/**'],
+    },
   },
 });

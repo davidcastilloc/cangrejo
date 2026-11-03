@@ -5,6 +5,7 @@ import {
   EntityRegistry,
   GraphStore,
   Guid,
+  analyzeExpedienteForensics,
   createPropertyBag,
   getPartPrimaryValue,
   type MaltegoLinkData,
@@ -17,12 +18,14 @@ import {
 import {
   MtgjJsonHandler,
   MtgxArchiveHandler,
+  Stix21Exporter,
   buildTransformV2RequestXml,
   parseTransformV2ResponseXml,
 } from '../../packages/transforms/src/index.js';
 
 export const sqliteVault = new BunSqliteVault(':memory:');
 export const collabHub = new CollaborationRoomHub();
+export const inFlightPesquisas = new Map<string, Promise<Record<string, unknown>>>();
 
 // Seed default collaborative room with lead forensic analysts
 collabHub.joinRoom('expediente-apt29', {
@@ -177,6 +180,18 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
       '/api/export/mtgj-encrypted': {
         post: { summary: 'Bóveda Cero Zero-Knowledge AES-256-GCM + AES-GMAC encryption' },
       },
+      '/api/analytics/forensic': {
+        post: {
+          summary:
+            'Forensic Graph Analytics (Shortest Forensic Path, PageRank Centrality & Directed Cycle Rings)',
+        },
+      },
+      '/api/export/stix21': {
+        post: {
+          summary:
+            'Export OASIS STIX 2.1 Cyber Threat Intelligence Bundle with SHA-256 Chain-of-Custody Manifest',
+        },
+      },
     },
   });
 });
@@ -233,9 +248,41 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     const value = normalizeEntityValue(rawBody.entityValue);
     const normalizedFields = normalizeEntityFields(rawBody.entityFields);
     const sliderLimit = typeof rawBody.sliderLimit === 'number' ? rawBody.sliderLimit : 12;
+    const bypassCache = rawBody.bypassCache === true;
+    const cacheKey = BunSqliteVault.buildPesquisaCacheKey(transformId, value);
 
-    const entities: OutgoingTransformEntity[] = [];
-    const messages: Array<{ type: 'Inform' | 'Debug' | 'PartialError'; text: string }> = [];
+    if (!bypassCache) {
+      const cached = sqliteVault.getCachedPesquisa(transformId, value);
+      if (cached) {
+        c.header('X-Cangrejo-Cache', 'HIT');
+        const mergedCached = {
+          ...cached,
+          cacheStatus: 'HIT',
+          ...(typeof rawBody.customContext === 'object' && rawBody.customContext !== null
+            ? { customContext: rawBody.customContext }
+            : {}),
+        };
+        return c.json(PesquisaRunResponseSchema.parse(mergedCached), 200);
+      }
+
+      const existingInFlight = inFlightPesquisas.get(cacheKey);
+      if (existingInFlight) {
+        const sharedPayload = await existingInFlight;
+        c.header('X-Cangrejo-Cache', 'HIT');
+        const mergedInFlight = {
+          ...sharedPayload,
+          cacheStatus: 'HIT',
+          ...(typeof rawBody.customContext === 'object' && rawBody.customContext !== null
+            ? { customContext: rawBody.customContext }
+            : {}),
+        };
+        return c.json(PesquisaRunResponseSchema.parse(mergedInFlight), 200);
+      }
+    }
+
+    const executePesquisaPromise = (async (): Promise<Record<string, unknown>> => {
+      const entities: OutgoingTransformEntity[] = [];
+      const messages: Array<{ type: 'Inform' | 'Debug' | 'PartialError'; text: string }> = [];
 
     // 1. Live DNS A/AAAA Resolution
     if (transformId === 'dns-to-ip' || transformId === 'all') {
@@ -629,31 +676,48 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       },
     };
 
-    const elapsedMs = performance.now() - t0;
+      const elapsedMs = performance.now() - t0;
 
-    // Secondary enrichment: record audit log into SQLite with graceful degradation
-    sqliteVault.recordPesquisaAuditSafe({
-      id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      transformId,
-      targetValue: value,
-      discoveredCount: entities.length,
-      elapsedMs,
-    });
+      // Secondary enrichment: record audit log into SQLite with graceful degradation
+      sqliteVault.recordPesquisaAuditSafe({
+        id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        transformId,
+        targetValue: value,
+        discoveredCount: entities.length,
+        elapsedMs,
+      });
 
-    const responsePayload = {
-      ok: true,
-      xmlRequest,
-      xmlResponse,
-      entities,
-      messages,
-      v3Delta,
-      ...(typeof rawBody.customContext === 'object' && rawBody.customContext !== null
-        ? { customContext: rawBody.customContext }
-        : {}),
-    };
+      const responsePayload: Record<string, unknown> = {
+        ok: true,
+        xmlRequest,
+        xmlResponse,
+        entities,
+        messages,
+        v3Delta,
+        cacheStatus: 'MISS',
+        ...(typeof rawBody.customContext === 'object' && rawBody.customContext !== null
+          ? { customContext: rawBody.customContext }
+          : {}),
+      };
 
+      sqliteVault.setCachedPesquisaSafe(transformId, value, responsePayload);
+      return responsePayload;
+    })();
+
+    if (!bypassCache) {
+      inFlightPesquisas.set(cacheKey, executePesquisaPromise);
+    }
+
+    let finalPayload: Record<string, unknown>;
+    try {
+      finalPayload = await executePesquisaPromise;
+    } finally {
+      inFlightPesquisas.delete(cacheKey);
+    }
+
+    c.header('X-Cangrejo-Cache', 'MISS');
     // Validate with .passthrough() Zod schema so zero fields are pruned
-    const validated = PesquisaRunResponseSchema.parse(responsePayload);
+    const validated = PesquisaRunResponseSchema.parse(finalPayload);
     return c.json(validated, 200);
   } catch (err) {
     console.error('[Hono /api/transforms/run] Transform execution failed:', err);
@@ -839,3 +903,165 @@ cangrejoHonoApp.post('/api/export/mtgj-encrypted', async (c) => {
     );
   }
 });
+
+function buildStoreFromGraphPayload(rawPayload: Record<string, unknown>): GraphStore {
+  const store = new GraphStore(Guid.generate());
+  const rawEntities = Array.isArray(rawPayload.entities)
+    ? rawPayload.entities
+    : Array.isArray(rawPayload.nodes)
+      ? rawPayload.nodes
+      : [];
+  const rawLinks = Array.isArray(rawPayload.links)
+    ? rawPayload.links
+    : Array.isArray(rawPayload.edges)
+      ? rawPayload.edges
+      : [];
+
+  for (const rawEnt of rawEntities) {
+    if (typeof rawEnt !== 'object' || rawEnt === null) continue;
+    const ent = rawEnt as Record<string, unknown>;
+    const rawId = typeof ent.id === 'string' && ent.id.trim() ? ent.id.trim() : Guid.generate().toString();
+    const typeName =
+      typeof ent.typeName === 'string'
+        ? ent.typeName
+        : typeof ent.type === 'string'
+          ? ent.type
+          : 'maltego.Domain';
+    const value = normalizeEntityValue(ent.value ?? ent.label ?? rawId);
+    const weight = typeof ent.weight === 'number' ? ent.weight : 100;
+    const bookmark = typeof ent.bookmark === 'number' ? ent.bookmark : -1;
+    const extraProperties = normalizeEntityFields(ent.properties ?? ent.fields);
+    const created = registry.createEntity(typeName, value, {
+      id: Guid.parse(rawId),
+      weight,
+      bookmark,
+      extraProperties,
+    });
+    const pos =
+      typeof ent.position === 'object' && ent.position !== null
+        ? (ent.position as { x?: number; y?: number; z?: number })
+        : {};
+    store.addEntity(
+      created,
+      {
+        x: typeof pos.x === 'number' ? pos.x : typeof ent.x === 'number' ? ent.x : 0,
+        y: typeof pos.y === 'number' ? pos.y : typeof ent.y === 'number' ? ent.y : 0,
+        z: typeof pos.z === 'number' ? pos.z : 0,
+      },
+      ent.pinned === true
+    );
+  }
+
+  for (const rawLnk of rawLinks) {
+    if (typeof rawLnk !== 'object' || rawLnk === null) continue;
+    const lnk = rawLnk as Record<string, unknown>;
+    const rawId = typeof lnk.id === 'string' && lnk.id.trim() ? lnk.id.trim() : Guid.generate().toString();
+    const srcRaw =
+      typeof lnk.sourceId === 'string'
+        ? lnk.sourceId
+        : typeof lnk.source === 'string'
+          ? lnk.source
+          : '';
+    const dstRaw =
+      typeof lnk.targetId === 'string'
+        ? lnk.targetId
+        : typeof lnk.target === 'string'
+          ? lnk.target
+          : '';
+    if (!srcRaw || !dstRaw) continue;
+    const srcGuid = Guid.parse(srcRaw);
+    const dstGuid = Guid.parse(dstRaw);
+    if (!store.structureStore.hasEntity(srcGuid) || !store.structureStore.hasEntity(dstGuid)) {
+      continue;
+    }
+    const label = typeof lnk.label === 'string' ? lnk.label : 'related-to';
+    const color = typeof lnk.color === 'string' ? lnk.color : '#38bdf8';
+    const weight = typeof lnk.weight === 'number' ? lnk.weight : 1;
+    store.addLink(
+      makeSimpleLink(Guid.parse(rawId), label, color, weight),
+      srcGuid,
+      dstGuid,
+      lnk.isReversed === true
+    );
+  }
+
+  return store;
+}
+
+cangrejoHonoApp.post('/api/analytics/forensic', async (c) => {
+  try {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    let targetPayload = body;
+    if (typeof body.expedienteId === 'string' && body.expedienteId.trim()) {
+      const saved = sqliteVault.getExpediente(body.expedienteId.trim());
+      if (saved) {
+        try {
+          targetPayload = JSON.parse(saved.cgrjPayload) as Record<string, unknown>;
+        } catch {
+          targetPayload = body;
+        }
+      }
+    }
+
+    const store = buildStoreFromGraphPayload(targetPayload);
+    const sourceId =
+      typeof body.sourceId === 'string' && body.sourceId.trim()
+        ? Guid.parse(body.sourceId.trim())
+        : undefined;
+    const targetId =
+      typeof body.targetId === 'string' && body.targetId.trim()
+        ? Guid.parse(body.targetId.trim())
+        : undefined;
+
+    const report = analyzeExpedienteForensics(store, {
+      sourceId,
+      targetId,
+      directedOnly: body.directedOnly === true,
+    });
+
+    return c.json({
+      ok: true,
+      report,
+    });
+  } catch (err) {
+    console.error('[Hono /api/analytics/forensic] Analytics computation failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      500
+    );
+  }
+});
+
+cangrejoHonoApp.post('/api/export/stix21', async (c) => {
+  try {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const store = buildStoreFromGraphPayload(body);
+    const rawTier = typeof body.caseTier === 'string' ? body.caseTier.toUpperCase() : 'ORO';
+    const caseTier =
+      rawTier === 'PLATINO' || rawTier === 'ORO' || rawTier === 'PLATA' || rawTier === 'BRONCE'
+        ? rawTier
+        : 'ORO';
+    const expedienteTitle =
+      typeof body.title === 'string' && body.title.trim()
+        ? body.title.trim()
+        : 'Expediente Forense CANGREJO';
+
+    const bundle = Stix21Exporter.exportFromStore(store, {
+      expedienteTitle,
+      caseTier,
+      timestampIso: typeof body.timestampIso === 'string' ? body.timestampIso : undefined,
+    });
+
+    return c.json({
+      ok: true,
+      bundle,
+    });
+  } catch (err) {
+    console.error('[Hono /api/export/stix21] STIX 2.1 export failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      500
+    );
+  }
+});
+

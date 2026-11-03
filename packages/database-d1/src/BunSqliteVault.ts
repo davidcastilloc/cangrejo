@@ -132,6 +132,15 @@ export class BunSqliteVault {
         elapsed_ms REAL NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS cangrejo_pesquisa_cache (
+        cache_key TEXT PRIMARY KEY,
+        transform_id TEXT NOT NULL,
+        target_value TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
     `);
   }
 
@@ -284,6 +293,75 @@ export class BunSqliteVault {
       elapsedMs: r.elapsed_ms,
       createdAt: r.created_at,
     }));
+  }
+
+  public static buildPesquisaCacheKey(transformId: string, targetValue: string): string {
+    return `${transformId.trim().toLowerCase()}::${targetValue.trim().toLowerCase()}`;
+  }
+
+  /**
+   * Retrieves a non-expired OSINT Pesquisa response from the local SQLite TTL cache.
+   * Degrades gracefully to `null` if the table is unavailable or JSON parsing fails.
+   */
+  public getCachedPesquisa(
+    transformId: string,
+    targetValue: string
+  ): Record<string, unknown> | null {
+    try {
+      const cacheKey = BunSqliteVault.buildPesquisaCacheKey(transformId, targetValue);
+      const stmt = this.db.prepare(`
+        SELECT response_json
+        FROM cangrejo_pesquisa_cache
+        WHERE cache_key = ? AND expires_at > ?
+      `);
+      const row = stmt.get(cacheKey, Date.now()) as { response_json: string } | undefined;
+      if (!row || typeof row.response_json !== 'string') {
+        return null;
+      }
+      const parsed = JSON.parse(row.response_json) as unknown;
+      return typeof parsed === 'object' && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Stores an OSINT Pesquisa response in the local SQLite TTL cache (default TTL: 5 minutes).
+   * Never throws if SQLite is read-only or busy.
+   */
+  public setCachedPesquisaSafe(
+    transformId: string,
+    targetValue: string,
+    responsePayload: Record<string, unknown>,
+    ttlMs = 300_000
+  ): boolean {
+    try {
+      const cacheKey = BunSqliteVault.buildPesquisaCacheKey(transformId, targetValue);
+      const now = Date.now();
+      const expiresAt = now + Math.max(1_000, ttlMs);
+      const stmt = this.db.prepare(`
+        INSERT INTO cangrejo_pesquisa_cache (cache_key, transform_id, target_value, response_json, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          response_json = excluded.response_json,
+          expires_at = excluded.expires_at,
+          created_at = excluded.created_at
+      `);
+      stmt.run(
+        cacheKey,
+        transformId.trim(),
+        targetValue.trim(),
+        JSON.stringify(responsePayload),
+        expiresAt,
+        now
+      );
+      return true;
+    } catch (err) {
+      console.error('[BunSqliteVault] Secondary cache persistence failed gracefully:', err);
+      return false;
+    }
   }
 
   public close(): void {

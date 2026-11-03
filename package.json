@@ -18,8 +18,10 @@
     "test:gate1": "bun test tests/gate1-graph-engine.test.ts",
     "test:gate2": "bun test tests/gate2-renderer-layout.test.ts",
     "test:gate3": "bun test tests/gate3-transforms-formats.test.ts",
+    "test:gate4": "bun test tests/gate4-modern-stack.test.ts",
+    "test:gate5": "bun test tests/gate5-forensic-optimizations.test.ts",
     "moon:projects": "moon projects",
-    "moon:check": "moon run :typecheck :test",
+    "moon:check": "moon run :typecheck :build :test",
     "moon:ci": "moon ci"
   },
   "packageManager": "bun@1.4.3",

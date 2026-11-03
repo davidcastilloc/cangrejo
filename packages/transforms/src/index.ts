@@ -10,6 +10,8 @@ export * from './formats/ZipContainerCodec.js';
 export * from './formats/MtgxArchiveHandler.js';
 export * from './formats/MtgjJsonHandler.js';
 export * from './formats/MtglLegacyMigrator.js';
+export * from './formats/Stix21Exporter.js';
+
 
 export * from './hub/HubClient.js';
 export * from './hub/OAuthPkceManager.js';
