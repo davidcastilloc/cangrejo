@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cangrejo-osint-workstation",
+  "main": "apps/web/cloudflareWorker.ts",
+  "compatibility_date": "2026-11-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cangrejo-vault-d1",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "packages/database-d1/migrations"
+    }
+  ],
+  "vectorize": [
+    {
+      "binding": "VECTORIZE_INDEX",
+      "index_name": "cangrejo-forensic-bge-1024"
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  }
+}

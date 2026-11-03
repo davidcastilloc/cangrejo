@@ -5,6 +5,7 @@ import {
   type ForensicAnalyticsReport,
   type GraphStore,
 } from '@cangrejo/core';
+import { CloudflareWorkersAiEngine } from '../ai/CloudflareWorkersAiEngine.js';
 import { Stix21Exporter, type Stix21Bundle } from './Stix21Exporter.js';
 
 export interface ForensicDossierOptions {
@@ -32,6 +33,18 @@ export interface GeneratedForensicDossier {
   stixBundleId: string;
   generatedAt: string;
   analytics: ForensicAnalyticsReport;
+  daubertSynthesis: {
+    standard: 'DAUBERT_FRE_702_VERIFIED';
+    executiveNarrative: string;
+    citedEntityIds: string[];
+    attestation: {
+      algorithm: 'Ed25519';
+      canonicalSha256Hex: string;
+      signatureHex: string;
+      publicKeyPem: string;
+      signedAtIso: string;
+    };
+  };
   html: string;
 }
 
@@ -124,6 +137,17 @@ export class ForensicDossierGenerator {
             })
             .join('\n')
         : '<li><em>Cero anillos cíclicos detectados en la topología actual.</em></li>';
+
+    const daubertResult = CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrativeSync(store, {
+      expedienteId,
+      expedienteTitle: title,
+      leadAnalyst,
+    });
+
+    const daubertNarrativeHtml = daubertResult.executiveNarrative
+      .split('\n\n')
+      .map((para) => `<p>${escapeHtml(para)}</p>`)
+      .join('\n');
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -336,6 +360,17 @@ export class ForensicDossierGenerator {
       </ul>
     </section>
 
+    <section>
+      <h2>4. Dictamen Pericial Automatizado (Estándar Daubert / FRE 702) &amp; Firma Ed25519</h2>
+      ${daubertNarrativeHtml}
+      <div class="custody-box" style="margin-top: 12px; border-left-color: var(--gold)">
+        <strong>Atestación Criptográfica Judicial (${escapeHtml(daubertResult.standard)})</strong><br />
+        <span>Algoritmo de Firma Asimétrica: <code class="mono">${escapeHtml(daubertResult.attestation.algorithm)}</code></span><br />
+        <span>Digest Narrativo SHA-256: <code class="mono">${escapeHtml(daubertResult.attestation.canonicalSha256Hex)}</code></span><br />
+        <span>Firma Digital Ed25519: <code class="mono" style="word-break: break-all">${escapeHtml(daubertResult.attestation.signatureHex)}</code></span>
+      </div>
+    </section>
+
     <section class="custody-box">
       <strong>Certificado de Cadena de Custodia Criptográfica (OASIS STIX 2.1 + FIPS 180-4 SHA-256)</strong><br />
       <span>Organización Emisora: <strong>${escapeHtml(organizationName)}</strong></span><br />
@@ -359,6 +394,12 @@ export class ForensicDossierGenerator {
       stixBundleId: stixBundle.id,
       generatedAt,
       analytics,
+      daubertSynthesis: {
+        standard: daubertResult.standard,
+        executiveNarrative: daubertResult.executiveNarrative,
+        citedEntityIds: daubertResult.citedEntityIds,
+        attestation: daubertResult.attestation,
+      },
       html,
     };
   }

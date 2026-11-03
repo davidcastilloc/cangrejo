@@ -2238,6 +2238,22 @@ aiModalBackdrop?.addEventListener('click', (e) => {
   }
 });
 
+let lastAiUnpackedItems: Array<{
+  rawFragment: string;
+  canonicalValue: string;
+  typeName: string;
+  startByteOffset: number;
+  endByteOffset: number;
+}> = [];
+let lastAiLatentSuggestions: Array<{
+  sourceEntityId: string;
+  targetEntityId: string;
+  sourceValue: string;
+  targetValue: string;
+  rrfScore: number;
+  evidenceExplanation: string;
+}> = [];
+
 document.getElementById('btn-ai-f1-unpack')?.addEventListener('click', async () => {
   const sample =
     'Reporte CTI: Conexión detectada hacia hxxps[:]//c2-Command[.]apt29-mirror[.]org/gate y correo ops[@]shadow-apt[.]ru desde 185[.]220[.]101[.]42 explotando CVE-2024-3400.';
@@ -2250,10 +2266,17 @@ document.getElementById('btn-ai-f1-unpack')?.addEventListener('click', async () 
     const data = (await res.json()) as {
       ok: boolean;
       unpackedCount: number;
-      items: Array<{ rawFragment: string; canonicalValue: string; startByteOffset: number; endByteOffset: number }>;
+      items: Array<{
+        rawFragment: string;
+        canonicalValue: string;
+        typeName: string;
+        startByteOffset: number;
+        endByteOffset: number;
+      }>;
       aiMeta: { modelId: string; estimatedNeurons: number };
     };
     if (data.ok) {
+      lastAiUnpackedItems = data.items;
       await syncEditionBadge();
       const lines = data.items.map(
         (i) => `• ${i.rawFragment} -> ${i.canonicalValue} [bytes ${i.startByteOffset}..${i.endByteOffset}]`
@@ -2282,6 +2305,8 @@ document.getElementById('btn-ai-f2-latent')?.addEventListener('click', async () 
       ok: boolean;
       vectorizeNamespace: string;
       suggestions: Array<{
+        sourceEntityId: string;
+        targetEntityId: string;
         sourceValue: string;
         targetValue: string;
         rrfScore: number;
@@ -2289,6 +2314,7 @@ document.getElementById('btn-ai-f2-latent')?.addEventListener('click', async () 
       }>;
     };
     if (data.ok) {
+      lastAiLatentSuggestions = data.suggestions;
       await syncEditionBadge();
       const lines = data.suggestions.map(
         (s) => `• ${s.sourceValue} <-> ${s.targetValue} (RRF=${s.rrfScore}): ${s.evidenceExplanation}`
@@ -2299,6 +2325,48 @@ document.getElementById('btn-ai-f2-latent')?.addEventListener('click', async () 
     }
   } catch (err) {
     setAiOutput(`Error en F2 Vínculos Latentes: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-ai-materialize')?.addEventListener('click', async () => {
+  try {
+    let addedNodes = 0;
+    let addedLinks = 0;
+
+    store.runInBatch(() => {
+      for (let idx = 0; idx < lastAiUnpackedItems.length; idx++) {
+        const item = lastAiUnpackedItems[idx]!;
+        const id = Guid.generate();
+        const ent = registry.createEntityInstance(item.typeName, item.canonicalValue, {
+          id,
+          weight: 92,
+          bookmark: 4,
+        });
+        const angle = (idx / Math.max(1, lastAiUnpackedItems.length)) * Math.PI * 2;
+        store.addEntity(ent, { x: Math.cos(angle) * 280, y: Math.sin(angle) * 280 }, false);
+        addedNodes++;
+      }
+
+      for (const sug of lastAiLatentSuggestions) {
+        const srcId = Guid.parse(sug.sourceEntityId);
+        const dstId = Guid.parse(sug.targetEntityId);
+        if (store.dataStore.containsEntity(srcId) && store.dataStore.containsEntity(dstId)) {
+          store.addLink(
+            makeSimpleLink(Guid.generate(), `AI RRF (${sug.rrfScore})`, '#A855F7'),
+            srcId,
+            dstId
+          );
+          addedLinks++;
+        }
+      }
+    });
+
+    syncSceneAndUi(false);
+    setAiOutput(
+      `[Materialización IA Completada]: +${addedNodes} entidades IOC desofuscadas y +${addedLinks} enlaces latentes Vectorize RRF (#A855F7) añadidos al grafo.`
+    );
+  } catch (err) {
+    setAiOutput(`Error al materializar hallazgos IA: ${String(err)}`);
   }
 });
 

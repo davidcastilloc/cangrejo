@@ -40,6 +40,8 @@ import {
   Stix21Exporter,
   buildTransformV2RequestXml,
   parseTransformV2ResponseXml,
+  type CloudflareAiBindingLike,
+  type CloudflareWorkersAiRuntimeConfig,
 } from '../../packages/transforms/src/index.js';
 
 export const sqliteVault = new BunSqliteVault(':memory:');
@@ -1972,17 +1974,44 @@ cangrejoHonoApp.post('/api/ingest/raw-text', async (c) => {
 });
 
 /**
- * Gate 9: Cloudflare Workers AI & Forensic AI Endpoints (F1–F5).
- * Hardware-agnostic (Edge Workers AI + Local CPU deterministic fallback, zero NPU requirement).
+ * Gate 9 & 10: Cloudflare Workers AI & Forensic AI Endpoints (F1–F5).
+ * Hardware-agnostic (Edge Workers AI `env.AI` binding + REST API + Local CPU deterministic fallback).
  */
+function resolveAiRuntimeConfig(c: { env?: unknown }): CloudflareWorkersAiRuntimeConfig {
+  const envRecord =
+    typeof c.env === 'object' && c.env !== null ? (c.env as Record<string, unknown>) : {};
+  const aiBinding =
+    typeof envRecord.AI === 'object' &&
+    envRecord.AI !== null &&
+    typeof (envRecord.AI as { run?: unknown }).run === 'function'
+      ? (envRecord.AI as CloudflareAiBindingLike)
+      : undefined;
+
+  return {
+    aiBinding,
+    cloudflareAccountId:
+      typeof envRecord.CLOUDFLARE_ACCOUNT_ID === 'string'
+        ? envRecord.CLOUDFLARE_ACCOUNT_ID
+        : process.env.CLOUDFLARE_ACCOUNT_ID,
+    cloudflareApiToken:
+      typeof envRecord.CLOUDFLARE_API_TOKEN === 'string'
+        ? envRecord.CLOUDFLARE_API_TOKEN
+        : process.env.CLOUDFLARE_API_TOKEN,
+    aiGatewaySlug:
+      typeof envRecord.AI_GATEWAY_SLUG === 'string'
+        ? envRecord.AI_GATEWAY_SLUG
+        : process.env.AI_GATEWAY_SLUG,
+  };
+}
+
 cangrejoHonoApp.post('/api/ai/unpack-iocs', async (c) => {
   try {
     const rawBody = await c.req.json();
     const parsed = AiUnpackIocsRequestSchema.parse(rawBody);
-    const result = await CloudflareWorkersAiEngine.unpackCognitiveIocs(parsed.text, {
-      cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-      cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
-    });
+    const result = await CloudflareWorkersAiEngine.unpackCognitiveIocs(
+      parsed.text,
+      resolveAiRuntimeConfig(c)
+    );
     const edition = sqliteVault.consumeOsintCreditsSafe(1);
     const validated = AiUnpackIocsResponseSchema.parse({
       ...result,
@@ -2003,10 +2032,10 @@ cangrejoHonoApp.post('/api/ai/latent-links', async (c) => {
   try {
     const rawBody = await c.req.json();
     const parsed = AiLatentLinksRequestSchema.parse(rawBody);
-    const result = await CloudflareWorkersAiEngine.discoverLatentLinksRrf(parsed, {
-      cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-      cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
-    });
+    const result = await CloudflareWorkersAiEngine.discoverLatentLinksRrf(
+      parsed,
+      resolveAiRuntimeConfig(c)
+    );
     const edition = sqliteVault.consumeOsintCreditsSafe(1);
     const validated = AiLatentLinksResponseSchema.parse({
       ...result,
@@ -2028,10 +2057,10 @@ cangrejoHonoApp.post('/api/ai/anomalies', async (c) => {
     const rawBody = await c.req.json();
     const parsed = AiAnomalyClusterRequestSchema.parse(rawBody);
     const store = buildStoreFromGraphPayload(parsed);
-    const result = await CloudflareWorkersAiEngine.classifyInfrastructureAnomalies(store, {
-      cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-      cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
-    });
+    const result = await CloudflareWorkersAiEngine.classifyInfrastructureAnomalies(
+      store,
+      resolveAiRuntimeConfig(c)
+    );
     const edition = sqliteVault.consumeOsintCreditsSafe(1);
     const validated = AiAnomalyClusterResponseSchema.parse({
       ...result,
@@ -2060,10 +2089,7 @@ cangrejoHonoApp.post('/api/ai/daubert-synthesis', async (c) => {
         title: parsed.title,
         leadAnalyst: parsed.leadAnalyst,
       },
-      {
-        cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-        cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
-      }
+      resolveAiRuntimeConfig(c)
     );
     const edition = sqliteVault.consumeOsintCreditsSafe(2);
     const validated = AiDaubertSynthesisResponseSchema.parse({
@@ -2092,10 +2118,7 @@ cangrejoHonoApp.post('/api/ai/copilot', async (c) => {
         prompt: parsed.prompt,
         selectedEntityIds: parsed.selectedEntityIds,
       },
-      {
-        cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-        cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
-      }
+      resolveAiRuntimeConfig(c)
     );
     const edition = sqliteVault.consumeOsintCreditsSafe(1);
     const validated = AiForensicCopilotResponseSchema.parse({

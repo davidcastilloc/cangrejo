@@ -475,10 +475,10 @@ export class CloudflareWorkersAiEngine {
   }
 
   /**
-   * F4: Daubert / FRE 702 Sworn Forensic Dossier Narrative Synthesis (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`)
+   * Synchronous Daubert / FRE 702 Sworn Forensic Dossier Narrative Synthesis
    * with Map-Reduce PageRank context pruning (`<= 24k` tokens) and Ed25519 digital signature attestation.
    */
-  public static async synthesizeDaubertForensicNarrative(
+  public static synthesizeDaubertForensicNarrativeSync(
     store: GraphStore,
     options?: {
       expedienteId?: string;
@@ -564,6 +564,28 @@ export class CloudflareWorkersAiEngine {
         config
       ),
     };
+  }
+
+  /**
+   * F4: Daubert / FRE 702 Sworn Forensic Dossier Narrative Synthesis (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`)
+   * with Map-Reduce PageRank context pruning (`<= 24k` tokens) and Ed25519 digital signature attestation.
+   */
+  public static async synthesizeDaubertForensicNarrative(
+    store: GraphStore,
+    options?: {
+      expedienteId?: string;
+      expedienteTitle?: string;
+      title?: string;
+      leadAnalyst?: string;
+      maxContextNodes?: number;
+    },
+    config?: CloudflareWorkersAiRuntimeConfig
+  ) {
+    return CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrativeSync(
+      store,
+      options,
+      config
+    );
   }
 
   /**
