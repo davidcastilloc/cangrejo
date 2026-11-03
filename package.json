@@ -10,6 +10,8 @@
   ],
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "vite build",
+    "start": "bun run apps/web/bunServer.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:bun": "bun test",
@@ -20,6 +22,7 @@
     "test:gate3": "bun test tests/gate3-transforms-formats.test.ts",
     "test:gate4": "bun test tests/gate4-modern-stack.test.ts",
     "test:gate5": "bun test tests/gate5-forensic-optimizations.test.ts",
+    "test:gate6": "bun test tests/gate6-production-completeness.test.ts",
     "moon:projects": "moon projects",
     "moon:check": "moon run :typecheck :build :test",
     "moon:ci": "moon ci"

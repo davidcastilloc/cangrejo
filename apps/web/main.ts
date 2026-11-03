@@ -15,7 +15,7 @@ import {
   type MaltegoLinkData,
   type Point2D,
 } from '@cangrejo/core';
-import { Stix21Exporter } from '@cangrejo/transforms';
+import { Stix21Exporter } from '../../packages/transforms/src/formats/Stix21Exporter.js';
 import {
   BOOKMARK_PALETTE_RGBA,
   GraphCanvas,
@@ -1380,6 +1380,127 @@ document.getElementById('btn-export-stix21')?.addEventListener('click', () => {
     `Exportado Bundle OASIS STIX 2.1 (${bundle.objects.length} objetos) • Cadena de Custodia SHA-256: ${bundle.x_cangrejo_custody.canonicalDigestHex.slice(0, 16)}…`
   );
 });
+
+document.getElementById('btn-export-dossier')?.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/export/dossier-html', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...serializeCurrentStore(),
+        title: 'Expediente Pericial de Inteligencia OSINT — CANGREJO',
+        caseTier: 'ORO',
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      dossier?: {
+        expedienteId: string;
+        sha256CustodyDigest: string;
+        html: string;
+      };
+    };
+    if (!data.ok || !data.dossier) {
+      appendLog(`Error generando Dossier Forense: ${data.error ?? 'Respuesta inválida'}`);
+      return;
+    }
+
+    const blob = new Blob([data.dossier.html], { type: 'text/html; charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cangrejo_dossier_${data.dossier.expedienteId}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    appendLog(
+      `Dossier Forense HTML5/Imprimible generado (${data.dossier.expedienteId}) • Sello SHA-256: ${data.dossier.sha256CustodyDigest.slice(0, 16)}…`
+    );
+  } catch (err) {
+    appendLog(`Error exportando Dossier Forense: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-vault-save')?.addEventListener('click', async () => {
+  try {
+    const payload = serializeCurrentStore();
+    const res = await fetch('/api/vault/expedientes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: 'expediente-activo',
+        title: 'Expediente Operación Cangrejo',
+        caseTier: 'ORO',
+        ...payload,
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      expediente?: { id: string; entityCount: number; linkCount: number };
+    };
+    if (!data.ok || !data.expediente) {
+      appendLog(`Error guardando en Bóveda SQLite: ${data.error}`);
+      return;
+    }
+    appendLog(
+      `Expediente "${data.expediente.id}" persistido en Bóveda SQLite (${data.expediente.entityCount} entidades, ${data.expediente.linkCount} enlaces).`
+    );
+  } catch (err) {
+    appendLog(`Error conectando con Bóveda SQLite: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-decrypt-mtgj')?.addEventListener('click', async () => {
+  const passphrase = window.prompt(
+    'Introduce la frase de paso para descifrar y verificar la autenticidad topológica AES-GMAC del sobre .cgrj activo en consola:',
+    'correct-horse-battery-staple-osint-2026'
+  );
+  if (!passphrase) return;
+
+  try {
+    const envelope = JSON.parse(consoleBuffers.json) as unknown;
+    const res = await fetch('/api/import/mtgj-decrypted', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ envelope, passphrase }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      entities?: Array<{ id: string }>;
+      links?: Array<{ id: string }>;
+    };
+    if (!data.ok) {
+      appendLog(`Fallo de descifrado / verificación AES-GMAC: ${data.error}`);
+      return;
+    }
+    appendLog(
+      `Bóveda Cero verificada con éxito (AES-GMAC intacto): ${data.entities?.length ?? 0} entidades y ${data.links?.length ?? 0} enlaces restaurados.`
+    );
+  } catch (err) {
+    appendLog(`Primero cifra un sobre con "Bóveda Cero .cgrj" antes de descifrar (${String(err)}).`);
+  }
+});
+
+async function refreshCollaborationPresence(): Promise<void> {
+  try {
+    const res = await fetch('/api/collab/rooms/expediente-apt29');
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      ok: boolean;
+      analysts?: Array<{ displayName: string; forensicRank: string }>;
+    };
+    const countEl = document.getElementById('lbl-collab-count');
+    if (countEl && Array.isArray(data.analysts)) {
+      countEl.textContent = String(data.analysts.length);
+    }
+  } catch {
+    // Graceful no-op when running offline
+  }
+}
+void refreshCollaborationPresence();
 
 // =============================================================================
 // 9. 60 FPS Impeccable Style Scenegraph Renderer (Micro-Badges + Backed Edge Pills + Radar Minimap)

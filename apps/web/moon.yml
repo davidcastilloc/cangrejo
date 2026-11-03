@@ -1,0 +1,59 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "application"
+stack: "frontend"
+language: "typescript"
+
+project:
+  name: "@cangrejo/web"
+  description: "CANGREJO Workstation Application & Hono Web-Standard API Server (Bun.serve / Vite / Cloudflare Workers)"
+
+dependsOn:
+  - "core"
+  - "schemas"
+  - "platform-bridge"
+  - "database-d1"
+  - "design-tokens"
+  - "renderer"
+  - "transforms"
+  - "layout-rs"
+
+tags:
+  - "application"
+  - "web"
+  - "hono"
+  - "bun"
+
+tasks:
+  typecheck:
+    command: "bun x tsc --noEmit -p ../../tsconfig.json"
+    deps:
+      - "core:typecheck"
+      - "renderer:typecheck"
+      - "transforms:typecheck"
+      - "database-d1:typecheck"
+    inputs:
+      - "**/*"
+      - "/index.html"
+      - "/tsconfig.json"
+
+  build:
+    command: "bun x vite build"
+    options:
+      runFromWorkspaceRoot: true
+    deps:
+      - "typecheck"
+      - "layout-rs:build"
+    inputs:
+      - "**/*"
+      - "/index.html"
+      - "/vite.config.ts"
+
+  test:
+    command: "bun test ../../tests/gate6-production-completeness.test.ts"
+    deps:
+      - "build"
+      - "transforms:test"
+    inputs:
+      - "**/*"
+      - "/tests/gate6-production-completeness.test.ts"

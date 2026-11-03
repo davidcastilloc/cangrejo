@@ -1,7 +1,9 @@
 # Configures all projects within the workspace to create a project graph.
 # Accepts a list of globs, a mapping of projects to relative file paths,
 # or both values.
-projects: ["packages/*"]
+projects:
+  - "packages/*"
+  - "apps/*"
 
 # Configures the version control system (VCS). Also known as
 # source code management (SCM).
@@ -11,7 +13,4 @@ vcs:
 
   # The upstream version control provider, where the repository
   # source code is stored.
-  # @since 1.8.0
-  # @values "bitbucket" | "bitbucket-legacy" | "github" | "gitlab" | "other"
   provider: "github"
-
