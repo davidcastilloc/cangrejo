@@ -30,7 +30,7 @@ export default {
   async fetch(
     request: Request,
     env: CangrejoCloudflareEnv,
-    ctx: CloudflareExecutionContextLike
+    ctx?: CloudflareExecutionContextLike
   ): Promise<Response> {
     try {
       const url = new URL(request.url);
