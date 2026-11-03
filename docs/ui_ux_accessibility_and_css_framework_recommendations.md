@@ -1,9 +1,9 @@
 # UI/UX Accessibility Guidelines and CSS Architecture Technical Recommendations for Cangrejo
 
 **Document Version**: 1.0.0  
-**Target Application**: Cangrejo OSINT Studio (`c:\Users\pc911\teamwork_projects\maltego_web_app`)  
+**Target Application**: Cangrejo OSINT Studio  
 **Status**: Authoritative Technical Architecture Recommendation  
-**Author**: Architecture Review Board & UI/UX Working Group (Worker M3)  
+**Author**: Architecture Review Board & UI/UX Working Group  
 **Date**: November 2, 2026  
 **Applicable Standards**: WCAG 2.1 Level AA / AAA, Taste Skill v2, Impeccable Style System, Maltego Desktop v4.13.0 Blueprint  
 

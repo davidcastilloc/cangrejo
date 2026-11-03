@@ -3,7 +3,7 @@
 **Proyecto**: Plataforma de Análisis de Enlaces y Grafos de Inteligencia Multiplataforma (Cangrejo)  
 **Hito**: Milestone M4 — Hoja de Ruta, Complejidad y Estrategia de Validación  
 **Documento**: `complexity_and_risk_matrix.md`  
-**Autor**: `worker_m4` (Roadmap & Validation Architect)  
+**Autor**: Cangrejo Architecture & Engineering Team  
 **Fecha**: 2 de Noviembre de 2026  
 **Estado**: APROBADO PARA PLANIFICACIÓN Y EJECUCIÓN  
 

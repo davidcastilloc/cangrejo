@@ -2337,20 +2337,20 @@ document.getElementById('btn-ai-materialize')?.addEventListener('click', async (
       for (let idx = 0; idx < lastAiUnpackedItems.length; idx++) {
         const item = lastAiUnpackedItems[idx]!;
         const id = Guid.generate();
-        const ent = registry.createEntityInstance(item.typeName, item.canonicalValue, {
+        const ent = registry.createEntity(item.typeName, item.canonicalValue, {
           id,
           weight: 92,
           bookmark: 4,
         });
         const angle = (idx / Math.max(1, lastAiUnpackedItems.length)) * Math.PI * 2;
-        store.addEntity(ent, { x: Math.cos(angle) * 280, y: Math.sin(angle) * 280 }, false);
+        store.addEntity(ent, { x: Math.cos(angle) * 280, y: Math.sin(angle) * 280, z: 0 }, false);
         addedNodes++;
       }
 
       for (const sug of lastAiLatentSuggestions) {
         const srcId = Guid.parse(sug.sourceEntityId);
         const dstId = Guid.parse(sug.targetEntityId);
-        if (store.dataStore.containsEntity(srcId) && store.dataStore.containsEntity(dstId)) {
+        if (store.dataStore.hasEntity(srcId) && store.dataStore.hasEntity(dstId)) {
           store.addLink(
             makeSimpleLink(Guid.generate(), `AI RRF (${sug.rrfScore})`, '#A855F7'),
             srcId,

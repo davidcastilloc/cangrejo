@@ -3,7 +3,7 @@
 **Proyecto**: Plataforma de Análisis de Enlaces y Grafos de Inteligencia Multiplataforma (Cangrejo)  
 **Hito**: Milestone M4 — Hoja de Ruta, Complejidad y Estrategia de Validación  
 **Documento**: `development_phases.md`  
-**Autor**: `worker_m4` (Roadmap & Validation Architect)  
+**Autor**: Cangrejo Architecture & Engineering Team  
 **Fecha**: 2 de Noviembre de 2026  
 **Estado**: APROBADO PARA PLANIFICACIÓN Y EJECUCIÓN  
 
@@ -13,7 +13,7 @@
 
 El desarrollo de una plataforma de análisis de grafos e inteligencia de amenazas que alcance paridad funcional con sistemas maduros (como Paterva Maltego v4.13.0) y a la vez traslade la solución a una arquitectura moderna (Tauri v2, PixiJS v8 WebGPU, Cloudflare Workers/Durable Objects, y sincronización CRDT en tiempo real) requiere un orden de construcción rigurosamente desacoplado.
 
-Construir la interfaz de usuario o las características colaborativas antes de contar con un motor de almacenamiento transaccional probado en memoria (`GraphStore`) o antes de validar los esquemas de cable provoca retrabajos destructivos. Por tanto, esta hoja de ruta aplica una metodología de **desarrollo guiado por especificaciones (Spec-Driven Development)**, dividida en **6 fases lógicas (Fase 0 a Fase 5)** que conducen a **4 hitos de valor incremental verificables**:
+Construir la interfaz de usuario o las características colaborativas antes de contar con un motor de almacenamiento transaccional probado en memoria (`GraphStore`) o antes de validar los esquemas de cable provoca retrabajos destructivos. Por tanto, esta hoja de ruta aplica una metodología de **ingeniería guiada por contratos formales (Contract-First Engineering)**, dividida en **6 fases lógicas (Fase 0 a Fase 5)** que conducen a **4 hitos de valor incremental verificables**:
 
 ```mermaid
 timeline

@@ -53,7 +53,7 @@ export default defineConfig({
     port: 5173,
     host: '127.0.0.1',
     watch: {
-      ignored: ['**/target/**', '**/.moon/**', '**/.specify/**', '**/specs/**'],
+      ignored: ['**/target/**', '**/.moon/**'],
     },
   },
 });

@@ -3,7 +3,7 @@
 **Project**: Next-Generation Intelligence Graph & Link Analysis Platform  
 **Milestone**: M3 — Technology Evaluation, Trade-offs & Benchmark Analysis  
 **Document**: `benchmarks_and_scalability.md`  
-**Author**: `worker_m3` (Tech Evaluator & Benchmarking Specialist)  
+**Author**: Cangrejo Systems & Performance Team  
 **Date**: November 2, 2026  
 **Status**: APPROVED TECHNICAL SPECIFICATION  
 

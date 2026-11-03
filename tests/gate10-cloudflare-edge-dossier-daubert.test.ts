@@ -54,7 +54,10 @@ describe('Gate 10: Cloudflare Workers Edge Entrypoint, Daubert/Ed25519 HTML5 Dos
 
     // Verify non-API requests delegate to env.ASSETS
     const assetReq = new Request('https://edge.cangrejo.io/index.html', { method: 'GET' });
-    const assetRes = await cloudflareWorker.fetch(assetReq, mockEnv);
+    const assetRes = await cloudflareWorker.fetch(assetReq, mockEnv, {
+      waitUntil: () => {},
+      passThroughOnException: () => {},
+    });
     expect(assetRes.status).toBe(200);
     expect(await assetRes.text()).toContain('CANGREJO SPA');
   });

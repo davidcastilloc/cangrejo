@@ -6,5 +6,3 @@ packages/layout-rs/target
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-.specify
-specs

@@ -28,14 +28,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# Local Workflow & Private Scratch (Never Tracked)
-.specify/
-specs/
-.agents/
-.sisyphus/
-.antigravitycli/
-scratch/
-
 # Logs & Coverage
 logs/
 *.log

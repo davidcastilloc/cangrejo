@@ -1,7 +1,7 @@
 # Cangrejo UI/UX Visual Redesign Proposals
 
 **Project**: Cangrejo OSINT Studio  
-**Target Workspace**: `c:\Users\pc911\teamwork_projects\maltego_web_app`  
+**Target Workspace**: `cangrejo`  
 **Milestone**: M2 (Visual Proposals Generation)  
 **Date**: 2026-11-02  
 **Design Standards**: [Taste Skill](https://www.tasteskill.dev/) & [Impeccable Style](https://impeccable.style/)  
@@ -195,10 +195,10 @@ To validate genuine design advancement, each proposal is directly evaluated agai
 
 ## 6. Engineering Implementation Roadmap (Connecting M2 to M3)
 
-To translate these visual proposals into production code in `c:\Users\pc911\teamwork_projects\maltego_web_app`, the following phased implementation is recommended:
+To translate these visual proposals into production code in the `cangrejo` monorepo, the following phased implementation is recommended:
 
 1. **Design Token Centralization**:
-   - Formalize the tokens defined in Section 4 of Explorer 2's report into a centralized CSS/TypeScript token package (`packages/design-tokens`).
+   - Formalize the design tokens into a centralized CSS/TypeScript token package (`packages/design-tokens`).
    - Replace arbitrary hex values in `apps/web/styles.css` with semantic CSS variables (`--surface-canvas`, `--surface-panel`, `--accent-primary`).
 2. **Scenegraph Rendering Upgrades (`GraphCanvas.ts` / `InstancedEdgeLayer.ts`)**:
    - Implement background backing pill plates for edge labels in `MSDFLabelLayer` / Canvas 2D context (`ctx.fillRect` with rounded corners before `ctx.fillText`).

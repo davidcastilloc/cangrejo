@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "cangrejo-vault-d1",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "17148abb-d92b-4c82-833a-ec647e2247ea",
       "migrations_dir": "packages/database-d1/migrations"
     }
   ],
