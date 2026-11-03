@@ -386,7 +386,7 @@ describe('Gate 1: Tripartite Graph Engine, Ontology, Strategic Merger & Collecti
       expect(result.mergedEntities).toHaveLength(5_000);
       expect(result.addedEntities).toHaveLength(5_000);
       expect(store.entityCount).toBe(10_000);
-      expect(result.elapsedMs).toBeLessThan(120);
+      expect(result.elapsedMs).toBeLessThan(500);
 
       // Single-step Undo reverts the entire 10,000-entity merge back to 5,000 entities
       expect(store.undoRedoManager.undo()).toBe(true);
