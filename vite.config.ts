@@ -38,6 +38,7 @@ function cangrejoOsintApiPlugin(): Plugin {
 export default defineConfig({
   plugins: [cangrejoOsintApiPlugin()],
   resolve: {
+    preserveSymlinks: true,
     alias: {
       '@cangrejo/core': resolve(__dirname, 'packages/core/src/index.ts'),
       '@cangrejo/renderer': resolve(__dirname, 'packages/renderer/src/index.ts'),
