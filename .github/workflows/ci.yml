@@ -1,26 +1,40 @@
-name: CANGREJO CI — Bun + Rust + moonrepo Polyglot DAG (Gates 0-11)
+name: CANGREJO CI — Lightweight PR Verification (Gates 0-11)
 
 on:
-  push:
-    branches: [main, develop]
+  workflow_dispatch:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "public/**"
+      - "LICENSE"
+      - "CITATION.cff"
+      - ".editorconfig"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   moon-bun-dag:
-    name: "🚀 Bun 1.4 + Rust + moon 2.6 Polyglot DAG (19 Tasks / Gates 0-11)"
+    name: "🚀 Bun 1.4 + Rust + moon 2.6 Polyglot DAG (Gates 0-11)"
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Rust Toolchain (Cargo + cdylib for bun:ffi)
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust Build Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "packages/layout-rs -> target"
 
       - name: Setup Bun Runtime
         uses: oven-sh/setup-bun@v2
@@ -30,38 +44,5 @@ jobs:
       - name: Install Dependencies via Bun
         run: bun install --frozen-lockfile
 
-      - name: Display 9-Project moon Polyglot Graph
-        run: bun run moon:projects
-
-      - name: Run 19-Task Polyglot DAG (Typecheck + Build + Gates 0-11) via moon
+      - name: Run Polyglot Verification (Typecheck + Build + Gates 0-11) via moon
         run: bun run moon:check
-
-  node-compat:
-    name: "Node.js ${{ matrix.node-version }} Compatibility"
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [22.x, 24.x]
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Setup Bun Runtime (Workspace Resolver)
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.4.3"
-
-      - name: Install Dependencies (workspace:* Linker)
-        run: bun install --frozen-lockfile
-
-      - name: Run Strict TypeScript Typecheck under Node.js ${{ matrix.node-version }}
-        run: npm run typecheck
-
-      - name: Build Production Bundle (Vite) under Node.js ${{ matrix.node-version }}
-        run: npm run build

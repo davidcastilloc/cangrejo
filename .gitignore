@@ -18,6 +18,8 @@ tsconfig.tsbuildinfo
 .env
 .env.*
 !.env.example
+.dev.vars
+.wrangler/
 
 # OS & Editor Artifacts
 .DS_Store

@@ -1,5 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  "account_id": "aedd0159259bcb5220041dfe0f088976",
   "name": "cangrejo-osint-workstation",
   "main": "apps/web/cloudflareWorker.ts",
   "compatibility_date": "2026-11-03",
