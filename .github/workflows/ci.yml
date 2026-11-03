@@ -2,6 +2,15 @@ name: CANGREJO CI — Lightweight PR Verification (Gates 0-11)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "public/**"
+      - "LICENSE"
+      - "CITATION.cff"
+      - ".editorconfig"
   pull_request:
     branches: [main]
     paths-ignore:

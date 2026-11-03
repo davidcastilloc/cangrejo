@@ -1,9 +1,10 @@
+import type { CloudflareD1DatabaseLike } from '../../packages/database-d1/src/index.js';
 import type { CloudflareAiBindingLike } from '../../packages/transforms/src/index.js';
 import { cangrejoHonoApp } from './honoApp.js';
 
 export interface CangrejoCloudflareEnv {
   AI?: CloudflareAiBindingLike;
-  DB?: unknown;
+  DB?: CloudflareD1DatabaseLike;
   VECTORIZE_INDEX?: {
     query(vector: number[] | Float32Array, options?: Record<string, unknown>): Promise<unknown>;
     upsert(vectors: Array<Record<string, unknown>>): Promise<unknown>;

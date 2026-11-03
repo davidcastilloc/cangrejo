@@ -7,7 +7,7 @@
 # ------------------------------------------------------------------------------
 FROM rust:1.85-slim-bookworm AS rust-builder
 WORKDIR /build/packages/layout-rs
-COPY packages/layout-rs/Cargo.toml ./Cargo.toml
+COPY packages/layout-rs/Cargo.toml packages/layout-rs/Cargo.lock ./
 COPY packages/layout-rs/src ./src
 RUN cargo build --release
 
@@ -19,7 +19,9 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY packages ./packages
 COPY apps ./apps
-COPY index.html vite.config.ts tsconfig.json ./
+COPY public ./public
+COPY schemas ./schemas
+COPY index.html vite.config.ts tsconfig.base.json tsconfig.json ./
 COPY --from=rust-builder /build/packages/layout-rs/target/release/libcangrejo_layout_rs.so ./packages/layout-rs/target/release/libcangrejo_layout_rs.so
 
 RUN bun install --frozen-lockfile && bun run build
@@ -41,6 +43,7 @@ COPY --from=bun-builder /app/package.json /app/bun.lock ./
 COPY --from=bun-builder /app/node_modules ./node_modules
 COPY --from=bun-builder /app/packages ./packages
 COPY --from=bun-builder /app/apps ./apps
+COPY --from=bun-builder /app/schemas ./schemas
 COPY --from=bun-builder /app/dist ./dist
 
 VOLUME ["/data"]

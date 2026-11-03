@@ -10,7 +10,10 @@ import {
   getPartPrimaryValue,
   type MaltegoLinkData,
 } from '../../packages/core/src/index.js';
-import { BunSqliteVault } from '../../packages/database-d1/src/index.js';
+import {
+  BunSqliteVault,
+  type CloudflareD1DatabaseLike,
+} from '../../packages/database-d1/src/index.js';
 import {
   AiAnomalyClusterRequestSchema,
   AiAnomalyClusterResponseSchema,
@@ -45,9 +48,22 @@ import {
   type CloudflareWorkersAiRuntimeConfig,
 } from '../../packages/transforms/src/index.js';
 
-export const sqliteVault = new BunSqliteVault(':memory:');
+export const sqliteVault = new BunSqliteVault(BunSqliteVault.resolveDefaultDbPath());
 export const collabHub = new CollaborationRoomHub();
 export const inFlightPesquisas = new Map<string, Promise<Record<string, unknown>>>();
+
+function extractD1Binding(env: unknown): CloudflareD1DatabaseLike | undefined {
+  if (!env || typeof env !== 'object') return undefined;
+  const candidate = (env as Record<string, unknown>).DB;
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    typeof (candidate as CloudflareD1DatabaseLike).prepare === 'function'
+  ) {
+    return candidate as CloudflareD1DatabaseLike;
+  }
+  return undefined;
+}
 
 // Seed default collaborative room with lead forensic analysts
 collabHub.joinRoom('expediente-apt29', {
@@ -164,11 +180,14 @@ cangrejoHonoApp.use('/api/*', async (c, next) => {
 
 cangrejoHonoApp.get('/api/health', (c) => {
   const isBun = typeof globalThis !== 'undefined' && 'Bun' in globalThis;
+  const d1 = extractD1Binding(c.env);
   return c.json({
     ok: true,
     engine: 'CANGREJO v1.0.0 (Cangrejo de Oro)',
     runtime: isBun ? 'Bun' : 'Node.js',
     sqliteEngine: sqliteVault.engine,
+    sqlitePath: sqliteVault.dbPath,
+    d1Bound: Boolean(d1),
     activeAnalysts: collabHub.listRoomAnalysts('expediente-apt29').length,
     auditLogCount: sqliteVault.listPesquisaAudits(100).length,
   });
@@ -287,18 +306,46 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
   });
 });
 
-cangrejoHonoApp.get('/api/vault/expedientes', (c) => {
+cangrejoHonoApp.get('/api/vault/expedientes', async (c) => {
+  const d1 = extractD1Binding(c.env);
+  const localExpedientes = sqliteVault.listExpedientes();
+  const d1Expedientes = d1 ? await sqliteVault.listExpedientesFromD1Safe(d1) : null;
+  const mergedMap = new Map(localExpedientes.map((item) => [item.id, item]));
+  if (d1Expedientes) {
+    for (const item of d1Expedientes) {
+      const existing = mergedMap.get(item.id);
+      if (!existing || item.updatedAt >= existing.updatedAt) {
+        mergedMap.set(item.id, item);
+      }
+    }
+  }
+  const expedientes = Array.from(mergedMap.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+
   return c.json({
     ok: true,
     sqliteEngine: sqliteVault.engine,
-    expedientes: sqliteVault.listExpedientes(),
+    d1Bound: Boolean(d1),
+    expedientes,
     recentAudits: sqliteVault.listPesquisaAudits(15),
   });
 });
 
-cangrejoHonoApp.get('/api/vault/expedientes/:id', (c) => {
+cangrejoHonoApp.get('/api/vault/expedientes/:id', async (c) => {
   const id = c.req.param('id');
-  const record = sqliteVault.getExpediente(id);
+  const d1 = extractD1Binding(c.env);
+  let record = sqliteVault.getExpediente(id);
+  if (!record && d1) {
+    const d1Record = await sqliteVault.getExpedienteFromD1Safe(d1, id);
+    if (d1Record) {
+      record = sqliteVault.saveExpediente({
+        id: d1Record.id,
+        titleOrMeta: { title: d1Record.title, caseTier: d1Record.caseTier },
+        entityCount: d1Record.entityCount,
+        linkCount: d1Record.linkCount,
+        cgrjPayload: d1Record.cgrjPayload,
+      });
+    }
+  }
   if (!record) {
     return c.json({ ok: false, error: `Expediente '${id}' not found in SQLite Vault` }, 404);
   }
@@ -310,6 +357,7 @@ cangrejoHonoApp.get('/api/vault/expedientes/:id', (c) => {
   }
   return c.json({
     ok: true,
+    d1Bound: Boolean(d1),
     expediente: record,
     payload: parsedPayload,
   });
@@ -317,6 +365,7 @@ cangrejoHonoApp.get('/api/vault/expedientes/:id', (c) => {
 
 cangrejoHonoApp.post('/api/vault/expedientes', async (c) => {
   try {
+    const d1 = extractD1Binding(c.env);
     const body = (await c.req.json()) as Record<string, unknown>;
     const id = typeof body.id === 'string' && body.id.trim() ? body.id.trim() : `exp-${Date.now()}`;
     const entities = Array.isArray(body.entities) ? body.entities : [];
@@ -328,7 +377,8 @@ cangrejoHonoApp.post('/api/vault/expedientes', async (c) => {
       linkCount: links.length,
       cgrjPayload: body,
     });
-    return c.json({ ok: true, expediente: record });
+    const d1Persisted = d1 ? await sqliteVault.saveExpedienteToD1Safe(d1, record) : false;
+    return c.json({ ok: true, d1Bound: Boolean(d1), d1Persisted, expediente: record });
   } catch (err) {
     console.error('[Hono /api/vault/expedientes] Error saving expediente:', err);
     return c.json(

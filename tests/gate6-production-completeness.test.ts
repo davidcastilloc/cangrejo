@@ -1,9 +1,14 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cangrejoHonoApp } from '../apps/web/honoApp.js';
-import { createCangrejoProductionFetchHandler } from '../apps/web/bunServer.js';
+import {
+  createCangrejoProductionFetchHandler,
+  resolveBunServerBindConfig,
+} from '../apps/web/bunServer.js';
 import { EntityRegistry, GraphStore, Guid, createPropertyBag } from '../packages/core/src/index.js';
+import { BunSqliteVault } from '../packages/database-d1/src/index.js';
 import { ForensicDossierGenerator } from '../packages/transforms/src/index.js';
 
 describe('Gate 6: Production Packaging, SQLite Vault Retrieval, Symmetric Bóveda Cero (.cgrj), Real OSINT Connectors, Live Collaboration & Forensic Dossier', () => {
@@ -22,8 +27,41 @@ describe('Gate 6: Production Packaging, SQLite Vault Retrieval, Symmetric Bóved
     const apiRes = await prodFetch(new Request('http://127.0.0.1:8787/api/health'));
     expect(apiRes.status).toBe(200);
     expect(apiRes.headers.get('X-Cangrejo-Engine')).toBe('Cangrejo-Oro-v1.0');
-    const apiBody = (await apiRes.json()) as { ok: boolean };
+    const apiBody = (await apiRes.json()) as { ok: boolean; sqlitePath: string };
     expect(apiBody.ok).toBe(true);
+    expect(typeof apiBody.sqlitePath).toBe('string');
+
+    // Verify Docker / production bind config and persistent SQLite WAL file path resolution
+    expect(resolveBunServerBindConfig({})).toEqual({ hostname: '127.0.0.1', port: 3000 });
+    expect(
+      resolveBunServerBindConfig({ CANGREJO_HOST: '0.0.0.0', CANGREJO_PORT: '3000' })
+    ).toEqual({ hostname: '0.0.0.0', port: 3000 });
+    expect(BunSqliteVault.resolveDefaultDbPath({})).toBe(':memory:');
+    expect(
+      BunSqliteVault.resolveDefaultDbPath({ CANGREJO_SQLITE_PATH: '/data/cangrejo_vault.sqlite' })
+    ).toBe('/data/cangrejo_vault.sqlite');
+
+    const tmpSqliteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cangrejo-wal-'));
+    const tmpSqliteFile = path.join(tmpSqliteDir, 'nested', 'cangrejo_vault.sqlite');
+    try {
+      const vault1 = new BunSqliteVault(tmpSqliteFile);
+      vault1.saveExpediente({
+        id: 'exp-wal-persist',
+        titleOrMeta: { title: 'Persistencia WAL Docker', caseTier: 'PLATINO' },
+        entityCount: 2,
+        linkCount: 1,
+        cgrjPayload: { entities: [{ id: '1', value: 'wal.cangrejo.org' }], links: [] },
+      });
+      vault1.close();
+
+      const vault2 = new BunSqliteVault(tmpSqliteFile);
+      const reloaded = vault2.getExpediente('exp-wal-persist');
+      expect(reloaded?.title).toBe('Persistencia WAL Docker');
+      expect(reloaded?.caseTier).toBe('PLATINO');
+      vault2.close();
+    } finally {
+      fs.rmSync(tmpSqliteDir, { recursive: true, force: true });
+    }
 
     const rootRes = await prodFetch(new Request('http://127.0.0.1:8787/'));
     expect(rootRes.status).toBe(200);

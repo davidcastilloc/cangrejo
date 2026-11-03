@@ -1,0 +1,9 @@
+[package]
+name = "cangrejo-tauri-desktop"
+version = "1.0.0"
+description = "CANGREJO Native Tauri v2 Desktop Host with Rayon Barnes-Hut Acceleration"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+cangrejo-layout-rs = { path = "../../../packages/layout-rs" }

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import { D1SchemaRunner } from './D1SchemaRunner.js';
 
 const getDefaultLicenseHmacSecret = (): string =>
@@ -85,6 +86,21 @@ export interface CangrejoEditionState {
     maxEntitiesPerExpediente: number;
   };
   updatedAt: number;
+}
+
+export interface CloudflareD1PreparedStatementLike {
+  bind(...values: unknown[]): CloudflareD1PreparedStatementLike;
+  run<T = unknown>(): Promise<{ success?: boolean; results?: T[] }>;
+  first<T = unknown>(colName?: string): Promise<T | null>;
+  all<T = unknown>(): Promise<{ results?: T[] }>;
+}
+
+export interface CloudflareD1DatabaseLike {
+  prepare(query: string): CloudflareD1PreparedStatementLike;
+  exec?(query: string): Promise<unknown>;
+  batch?<T = unknown>(
+    statements: CloudflareD1PreparedStatementLike[]
+  ): Promise<Array<{ results?: T[] }>>;
 }
 
 interface SqliteStatementLike {
@@ -349,11 +365,43 @@ function normalizeExpedienteMeta(rawTitleOrMeta: unknown): {
 export class BunSqliteVault {
   public readonly db: SqliteDbLike;
   public readonly engine: 'bun:sqlite' | 'node:sqlite';
+  public readonly dbPath: string;
+
+  /**
+   * Resolves the SQLite database path from `CANGREJO_SQLITE_PATH` environment variable,
+   * defaulting to `:memory:` when unset (e.g., in unit tests or stateless edge isolates).
+   */
+  public static resolveDefaultDbPath(
+    env: Record<string, string | undefined> | undefined = typeof process !== 'undefined'
+      ? process.env
+      : undefined
+  ): string {
+    const raw = env?.CANGREJO_SQLITE_PATH;
+    return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : ':memory:';
+  }
 
   public constructor(dbPath = ':memory:') {
+    this.dbPath = dbPath;
+    if (dbPath !== ':memory:' && !dbPath.startsWith('file:')) {
+      try {
+        const parentDir = path.dirname(path.resolve(dbPath));
+        if (typeof fs?.mkdirSync === 'function' && !fs.existsSync(parentDir)) {
+          fs.mkdirSync(parentDir, { recursive: true });
+        }
+      } catch {
+        // Ignore directory creation errors in restricted runtimes
+      }
+    }
     const opened = openNativeSqlite(dbPath);
     this.db = opened.db;
     this.engine = opened.engine;
+    if (dbPath !== ':memory:') {
+      try {
+        this.db.exec('PRAGMA journal_mode = WAL;');
+      } catch {
+        // Ignore if WAL is unsupported in fallback memory engine
+      }
+    }
     this.db.exec('PRAGMA foreign_keys = ON;');
     this.db.exec('PRAGMA recursive_triggers = ON;');
     this.initializeVaultTables();
@@ -1270,6 +1318,187 @@ export class BunSqliteVault {
       currentDigestHex: r.current_digest_hex,
       detectedAt: r.detected_at,
     }));
+  }
+
+  private async ensureD1TablesSafe(d1: CloudflareD1DatabaseLike): Promise<void> {
+    try {
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_expedientes (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            case_tier TEXT NOT NULL DEFAULT 'ORO',
+            entity_count INTEGER NOT NULL DEFAULT 0,
+            link_count INTEGER NOT NULL DEFAULT 0,
+            cgrj_payload TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+          )`
+        )
+        .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_pesquisa_audit (
+            id TEXT PRIMARY KEY,
+            transform_id TEXT NOT NULL,
+            target_value TEXT NOT NULL,
+            discovered_count INTEGER NOT NULL DEFAULT 0,
+            elapsed_ms REAL NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+          )`
+        )
+        .run();
+    } catch {
+      // Ignore schema bootstrap errors on read-only or pre-migrated D1 instances
+    }
+  }
+
+  /**
+   * Persists a saved Expediente to a Cloudflare D1 binding (`env.DB`) when running on Cloudflare Workers.
+   */
+  public async saveExpedienteToD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    record: ExpedienteRecord
+  ): Promise<boolean> {
+    if (!d1 || typeof d1.prepare !== 'function') return false;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      await d1
+        .prepare(
+          `INSERT INTO cangrejo_expedientes (id, title, case_tier, entity_count, link_count, cgrj_payload, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             title = excluded.title,
+             case_tier = excluded.case_tier,
+             entity_count = excluded.entity_count,
+             link_count = excluded.link_count,
+             cgrj_payload = excluded.cgrj_payload,
+             updated_at = excluded.updated_at`
+        )
+        .bind(
+          record.id,
+          record.title,
+          record.caseTier,
+          record.entityCount,
+          record.linkCount,
+          record.cgrjPayload,
+          record.updatedAt
+        )
+        .run();
+      return true;
+    } catch (err) {
+      console.error('[BunSqliteVault] Cloudflare D1 saveExpediente failed gracefully:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Retrieves an Expediente from a Cloudflare D1 binding (`env.DB`) by ID.
+   */
+  public async getExpedienteFromD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    id: string
+  ): Promise<ExpedienteRecord | null> {
+    if (!d1 || typeof d1.prepare !== 'function') return null;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      const row = await d1
+        .prepare(
+          `SELECT id, title, case_tier, entity_count, link_count, cgrj_payload, updated_at
+           FROM cangrejo_expedientes
+           WHERE id = ?`
+        )
+        .bind(id)
+        .first<{
+          id: string;
+          title: string;
+          case_tier: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
+          entity_count: number;
+          link_count: number;
+          cgrj_payload: string;
+          updated_at: number;
+        }>();
+      if (!row) return null;
+      return {
+        id: row.id,
+        title: row.title,
+        caseTier: row.case_tier,
+        entityCount: Number(row.entity_count ?? 0),
+        linkCount: Number(row.link_count ?? 0),
+        cgrjPayload: row.cgrj_payload,
+        updatedAt: Number(row.updated_at ?? Date.now()),
+      };
+    } catch (err) {
+      console.error('[BunSqliteVault] Cloudflare D1 getExpediente failed gracefully:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Lists saved Expedientes from a Cloudflare D1 binding (`env.DB`).
+   */
+  public async listExpedientesFromD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined
+  ): Promise<Array<Omit<ExpedienteRecord, 'cgrjPayload'>> | null> {
+    if (!d1 || typeof d1.prepare !== 'function') return null;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      const res = await d1
+        .prepare(
+          `SELECT id, title, case_tier, entity_count, link_count, updated_at
+           FROM cangrejo_expedientes
+           ORDER BY updated_at DESC`
+        )
+        .all<{
+          id: string;
+          title: string;
+          case_tier: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
+          entity_count: number;
+          link_count: number;
+          updated_at: number;
+        }>();
+      const rows = Array.isArray(res?.results) ? res.results : [];
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        caseTier: r.case_tier,
+        entityCount: Number(r.entity_count ?? 0),
+        linkCount: Number(r.link_count ?? 0),
+        updatedAt: Number(r.updated_at ?? Date.now()),
+      }));
+    } catch (err) {
+      console.error('[BunSqliteVault] Cloudflare D1 listExpedientes failed gracefully:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Records a Pesquisa OSINT audit entry to a Cloudflare D1 binding (`env.DB`).
+   */
+  public async recordPesquisaAuditToD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    entry: Omit<PesquisaAuditEntry, 'createdAt'> & { createdAt?: number }
+  ): Promise<boolean> {
+    if (!d1 || typeof d1.prepare !== 'function') return false;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      await d1
+        .prepare(
+          `INSERT INTO cangrejo_pesquisa_audit (id, transform_id, target_value, discovered_count, elapsed_ms, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          entry.id,
+          entry.transformId,
+          entry.targetValue,
+          entry.discoveredCount,
+          entry.elapsedMs,
+          entry.createdAt ?? Date.now()
+        )
+        .run();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   public close(): void {

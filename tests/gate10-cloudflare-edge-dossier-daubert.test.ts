@@ -63,6 +63,97 @@ describe('Gate 10: Cloudflare Workers Edge Entrypoint, Daubert/Ed25519 HTML5 Dos
     });
     expect(assetRes.status).toBe(200);
     expect(await assetRes.text()).toContain('CANGREJO SPA');
+
+    // Verify Cloudflare D1 (env.DB) persistence & retrieval in cloudflareWorker.ts
+    const d1Rows = new Map<string, Record<string, unknown>>();
+    const mockEnvWithD1: CangrejoCloudflareEnv = {
+      ...mockEnv,
+      DB: {
+        prepare: (query: string) => {
+          let boundArgs: unknown[] = [];
+          const stmt = {
+            bind: (...values: unknown[]) => {
+              boundArgs = values;
+              return stmt;
+            },
+            run: async () => {
+              if (query.includes('INSERT INTO cangrejo_expedientes')) {
+                const [id, title, case_tier, entity_count, link_count, cgrj_payload, updated_at] =
+                  boundArgs;
+                d1Rows.set(String(id), {
+                  id,
+                  title,
+                  case_tier,
+                  entity_count,
+                  link_count,
+                  cgrj_payload,
+                  updated_at,
+                });
+              }
+              return { success: true };
+            },
+            first: async <T = unknown>() => {
+              const id = String(boundArgs[0] ?? '');
+              return ((d1Rows.get(id) as T | undefined) ?? null) as T | null;
+            },
+            all: async <T = unknown>() => ({
+              results: Array.from(d1Rows.values()) as T[],
+            }),
+          };
+          return stmt;
+        },
+      },
+    };
+
+    const saveD1Req = new Request('https://edge.cangrejo.io/api/vault/expedientes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: 'exp-edge-d1-001',
+        title: { title: 'Expediente D1 Edge', caseTier: 'PLATINO' },
+        entities: [{ id: '901', typeName: 'maltego.Domain', value: 'd1.cangrejo.org' }],
+        links: [],
+      }),
+    });
+    const saveD1Res = await cloudflareWorker.fetch(saveD1Req, mockEnvWithD1);
+    expect(saveD1Res.status).toBe(200);
+    const saveD1Json = (await saveD1Res.json()) as {
+      ok: boolean;
+      d1Bound: boolean;
+      d1Persisted: boolean;
+    };
+    expect(saveD1Json.ok).toBe(true);
+    expect(saveD1Json.d1Bound).toBe(true);
+    expect(saveD1Json.d1Persisted).toBe(true);
+    expect(d1Rows.has('exp-edge-d1-001')).toBe(true);
+
+    // Seed a D1-only row and verify GET /api/vault/expedientes/:id hydrates from env.DB
+    d1Rows.set('exp-edge-d1-remote', {
+      id: 'exp-edge-d1-remote',
+      title: 'Expediente Remoto D1',
+      case_tier: 'ORO',
+      entity_count: 1,
+      link_count: 0,
+      cgrj_payload: JSON.stringify({
+        id: 'exp-edge-d1-remote',
+        entities: [{ id: '902', typeName: 'maltego.Domain', value: 'remote-d1.cangrejo.org' }],
+        links: [],
+      }),
+      updated_at: Date.now(),
+    });
+    const getD1Res = await cloudflareWorker.fetch(
+      new Request('https://edge.cangrejo.io/api/vault/expedientes/exp-edge-d1-remote'),
+      mockEnvWithD1
+    );
+    expect(getD1Res.status).toBe(200);
+    const getD1Json = (await getD1Res.json()) as {
+      ok: boolean;
+      d1Bound: boolean;
+      expediente: { id: string; title: string };
+    };
+    expect(getD1Json.ok).toBe(true);
+    expect(getD1Json.d1Bound).toBe(true);
+    expect(getD1Json.expediente.title).toBe('Expediente Remoto D1');
   });
 
   it('2. embeds Sección 4 (Daubert / FRE 702 + Ed25519 digital signature) directly inside exported HTML5 Forensic Dossiers (/api/export/dossier-html)', async () => {

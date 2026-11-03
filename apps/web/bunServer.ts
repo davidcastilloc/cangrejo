@@ -72,6 +72,27 @@ export function createCangrejoProductionFetchHandler(
   };
 }
 
+/**
+ * Resolves the network bind configuration (`hostname` and `port`) for `Bun.serve`,
+ * honoring both `CANGREJO_HOST` / `CANGREJO_PORT` (used in `Dockerfile` and `docker-compose.yml`)
+ * and standard `HOST` / `PORT` environment variables.
+ */
+export function resolveBunServerBindConfig(
+  env: Record<string, string | undefined> | undefined = typeof process !== 'undefined'
+    ? process.env
+    : undefined
+): { hostname: string; port: number } {
+  const rawHost = env?.CANGREJO_HOST ?? env?.HOST;
+  const hostname =
+    typeof rawHost === 'string' && rawHost.trim().length > 0 ? rawHost.trim() : '127.0.0.1';
+
+  const rawPort = env?.CANGREJO_PORT ?? env?.PORT;
+  const parsedPort = rawPort !== undefined ? Number(rawPort) : 3000;
+  const port = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 3000;
+
+  return { hostname, port };
+}
+
 // Start standalone Bun.serve server when executed directly (`bun run apps/web/bunServer.ts`)
 const g = globalThis as Record<string, unknown>;
 if (
@@ -84,10 +105,10 @@ if (
       hostname: string;
     };
   };
-  const port = Number(process.env.PORT ?? 8787);
+  const { hostname, port } = resolveBunServerBindConfig();
   const server = bunObj.serve({
     port,
-    hostname: '127.0.0.1',
+    hostname,
     fetch: createCangrejoProductionFetchHandler(),
   });
   console.log(

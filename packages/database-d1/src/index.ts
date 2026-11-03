@@ -8,6 +8,8 @@ export {
   BunSqliteVault,
   type CangrejoEditionState,
   type CangrejoEditionTier,
+  type CloudflareD1DatabaseLike,
+  type CloudflareD1PreparedStatementLike,
   type ExpedienteRecord,
   type PesquisaAuditEntry,
   type ProviderKeySummary,
