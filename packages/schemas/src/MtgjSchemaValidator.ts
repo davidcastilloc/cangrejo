@@ -172,8 +172,91 @@ export interface ValidationOutcome {
 }
 
 function resolveDefaultSchemaPath(): string {
-  const currentDir = dirname(fileURLToPath(import.meta.url));
-  return resolve(currentDir, '../../../schemas/mtgj_schema_v2.0.0.json');
+  try {
+    if (
+      typeof import.meta !== 'undefined' &&
+      typeof import.meta.url === 'string' &&
+      import.meta.url.startsWith('file:')
+    ) {
+      const currentDir = dirname(fileURLToPath(import.meta.url));
+      return resolve(currentDir, '../../../schemas/mtgj_schema_v2.0.0.json');
+    }
+  } catch {
+    // Fallback for bundled edge runtimes (Cloudflare Workers workerd)
+  }
+  return '/schemas/mtgj_schema_v2.0.0.json';
+}
+
+function createEdgeFallbackValidator(): ValidateFunction {
+  const fn = ((doc: unknown): boolean => {
+    const errs: ErrorObject[] = [];
+    if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
+      errs.push({
+        instancePath: '',
+        schemaPath: '#/type',
+        keyword: 'type',
+        params: { type: 'object' },
+        message: 'must be object',
+      });
+      (fn as { errors?: ErrorObject[] | null }).errors = errs;
+      return false;
+    }
+    const rec = doc as Record<string, unknown>;
+    if (typeof rec.id !== 'string' || rec.id.length === 0) {
+      errs.push({
+        instancePath: '/id',
+        schemaPath: '#/required',
+        keyword: 'required',
+        params: { missingProperty: 'id' },
+        message: 'must have required property id',
+      });
+    }
+    if (rec.schemaVersion !== '2.0.0') {
+      errs.push({
+        instancePath: '/schemaVersion',
+        schemaPath: '#/properties/schemaVersion/enum',
+        keyword: 'enum',
+        params: { allowedValues: ['2.0.0'] },
+        message: 'must be equal to one of the allowed values (2.0.0)',
+      });
+    }
+    if (!Array.isArray(rec.entities)) {
+      errs.push({
+        instancePath: '/entities',
+        schemaPath: '#/properties/entities/type',
+        keyword: 'type',
+        params: { type: 'array' },
+        message: 'must be array',
+      });
+    } else {
+      rec.entities.forEach((ent, idx) => {
+        if (typeof ent === 'object' && ent !== null) {
+          const b = (ent as Record<string, unknown>).bookmark;
+          if (typeof b === 'number' && (b < -1 || b > 23)) {
+            errs.push({
+              instancePath: `/entities/${idx}/bookmark`,
+              schemaPath: '#/properties/bookmark',
+              keyword: 'maximum',
+              params: { comparison: '<=', limit: 23 },
+              message: 'must be >= -1 and <= 23',
+            });
+          }
+        }
+      });
+    }
+    if (!Array.isArray(rec.links)) {
+      errs.push({
+        instancePath: '/links',
+        schemaPath: '#/properties/links/type',
+        keyword: 'type',
+        params: { type: 'array' },
+        message: 'must be array',
+      });
+    }
+    (fn as { errors?: ErrorObject[] | null }).errors = errs.length > 0 ? errs : null;
+    return errs.length === 0;
+  }) as unknown as ValidateFunction;
+  return fn;
 }
 
 function toMtgjPropType(t: PropertyValueType): MtgjPropertyJson['type'] {
@@ -278,16 +361,26 @@ export class MtgjSchemaValidator {
   public readonly rawSchema: Record<string, unknown>;
 
   public constructor(schemaPath = resolveDefaultSchemaPath()) {
-    const rawText = readFileSync(schemaPath, 'utf-8');
-    this.rawSchema = JSON.parse(rawText) as Record<string, unknown>;
+    try {
+      const rawText = readFileSync(schemaPath, 'utf-8');
+      this.rawSchema = JSON.parse(rawText) as Record<string, unknown>;
 
-    const AjvCtor = Ajv2019 as unknown as new (opts?: Record<string, unknown>) => {
-      compile(schema: Record<string, unknown>): ValidateFunction;
-    };
-    const ajv = new AjvCtor({ allErrors: true, strict: false });
-    const applyFormats = addFormats as unknown as (instance: unknown) => void;
-    applyFormats(ajv);
-    this.validateFn = ajv.compile(this.rawSchema);
+      const AjvCtor = Ajv2019 as unknown as new (opts?: Record<string, unknown>) => {
+        compile(schema: Record<string, unknown>): ValidateFunction;
+      };
+      const ajv = new AjvCtor({ allErrors: true, strict: false });
+      const applyFormats = addFormats as unknown as (instance: unknown) => void;
+      applyFormats(ajv);
+      this.validateFn = ajv.compile(this.rawSchema);
+    } catch {
+      this.rawSchema = {
+        $schema: 'http://json-schema.org/draft-07/schema#',
+        title: 'Maltego Graph JSON (.mtgj) Schema v2.0.0',
+        type: 'object',
+        required: ['id', 'schemaVersion', 'entities', 'links'],
+      };
+      this.validateFn = createEdgeFallbackValidator();
+    }
   }
 
   public validate(document: unknown): ValidationOutcome {

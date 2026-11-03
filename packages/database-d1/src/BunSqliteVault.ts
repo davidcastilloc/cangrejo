@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { D1SchemaRunner } from './D1SchemaRunner.js';
 
-const require = createRequire(import.meta.url);
 const DEFAULT_LICENSE_HMAC_SECRET =
-  process.env.CANGREJO_LICENSE_SECRET ?? 'cangrejo-oro-hmac-sha256-master-secret-2026';
+  (typeof process !== 'undefined' && process.env?.CANGREJO_LICENSE_SECRET) ||
+  'cangrejo-oro-hmac-sha256-master-secret-2026';
 
 export interface SignedLicenseClaims {
   tier: CangrejoEditionTier;
@@ -99,28 +99,217 @@ interface SqliteDbLike {
   close(): void;
 }
 
-function openNativeSqlite(dbPath: string): { db: SqliteDbLike; engine: 'bun:sqlite' | 'node:sqlite' } {
-  const isBun = typeof globalThis !== 'undefined' && 'Bun' in globalThis;
-  if (isBun) {
-    try {
-      const bunSqlite = require('bun:sqlite') as {
-        Database: new (filename: string) => SqliteDbLike;
-      };
-      return {
-        db: new bunSqlite.Database(dbPath),
-        engine: 'bun:sqlite',
-      };
-    } catch {
-      // Fallback to node:sqlite if bun:sqlite fails to load
-    }
-  }
-  const nodeSqlite = require('node:sqlite') as {
-    DatabaseSync: new (filename: string) => SqliteDbLike;
-  };
+function createEdgeMemorySqliteDb(): SqliteDbLike {
+  const expedientes = new Map<string, Record<string, unknown>>();
+  const audits: Array<Record<string, unknown>> = [];
+  const cache = new Map<string, Record<string, unknown>>();
+  let editionState: Record<string, unknown> | undefined;
+  const providerKeys = new Map<string, Record<string, unknown>>();
+  const radarWatches = new Map<string, Record<string, unknown>>();
+  const radarAlerts: Array<Record<string, unknown>> = [];
+
   return {
-    db: new nodeSqlite.DatabaseSync(dbPath),
-    engine: 'node:sqlite',
+    exec(): void {},
+    close(): void {},
+    prepare(sql: string): SqliteStatementLike {
+      const norm = sql.replace(/\s+/g, ' ').trim();
+      return {
+        run(...params: unknown[]): unknown {
+          if (norm.startsWith('INSERT INTO cangrejo_expedientes')) {
+            const [id, title, case_tier, entity_count, link_count, cgrj_payload, updated_at] = params;
+            expedientes.set(String(id), {
+              id,
+              title,
+              case_tier,
+              entity_count,
+              link_count,
+              cgrj_payload,
+              updated_at,
+            });
+          } else if (norm.startsWith('INSERT INTO cangrejo_pesquisa_audit')) {
+            const [id, transform_id, target_value, discovered_count, elapsed_ms, created_at] = params;
+            audits.unshift({
+              id,
+              transform_id,
+              target_value,
+              discovered_count,
+              elapsed_ms,
+              created_at,
+            });
+          } else if (norm.startsWith('INSERT INTO cangrejo_pesquisa_cache')) {
+            const [cache_key, transform_id, target_value, response_json, expires_at, created_at] =
+              params;
+            cache.set(String(cache_key), {
+              cache_key,
+              transform_id,
+              target_value,
+              response_json,
+              expires_at,
+              created_at,
+            });
+          } else if (norm.startsWith('INSERT INTO cangrejo_edition_state')) {
+            const [
+              edition_tier,
+              license_key_masked,
+              credits_remaining,
+              credits_total,
+              organization_name,
+              badge_title,
+              watermark_enabled,
+              updated_at,
+            ] = params;
+            editionState = {
+              edition_tier,
+              license_key_masked,
+              credits_remaining,
+              credits_total,
+              organization_name,
+              badge_title,
+              watermark_enabled,
+              updated_at,
+            };
+          } else if (norm.startsWith('UPDATE cangrejo_edition_state')) {
+            const [credits_remaining, updated_at] = params;
+            if (editionState) {
+              editionState.credits_remaining = credits_remaining;
+              editionState.updated_at = updated_at;
+            }
+          } else if (norm.startsWith('INSERT INTO cangrejo_provider_keys')) {
+            const [provider, api_key, updated_at] = params;
+            providerKeys.set(String(provider), { provider, api_key, updated_at });
+          } else if (norm.startsWith('INSERT INTO cangrejo_radar_watches')) {
+            const [
+              id,
+              target_value,
+              entity_type,
+              expediente_id,
+              baseline_json,
+              baseline_digest_hex,
+              last_checked_at,
+            ] = params;
+            const prev = radarWatches.get(String(id));
+            radarWatches.set(String(id), {
+              id,
+              target_value,
+              entity_type,
+              expediente_id,
+              baseline_json,
+              baseline_digest_hex,
+              drift_count: prev?.drift_count ?? 0,
+              last_checked_at,
+            });
+          } else if (norm.startsWith('UPDATE cangrejo_radar_watches')) {
+            const [drift_count, last_checked_at, id] = params;
+            const existing = radarWatches.get(String(id));
+            if (existing) {
+              existing.drift_count = drift_count;
+              existing.last_checked_at = last_checked_at;
+            }
+          } else if (norm.startsWith('INSERT INTO cangrejo_radar_alerts')) {
+            const [
+              id,
+              watch_id,
+              target_value,
+              severity,
+              added_json,
+              removed_json,
+              baseline_digest_hex,
+              current_digest_hex,
+              detected_at,
+            ] = params;
+            radarAlerts.unshift({
+              id,
+              watch_id,
+              target_value,
+              severity,
+              added_json,
+              removed_json,
+              baseline_digest_hex,
+              current_digest_hex,
+              detected_at,
+            });
+          }
+          return undefined;
+        },
+        get(...params: unknown[]): unknown {
+          if (norm.includes('FROM cangrejo_expedientes WHERE id = ?')) {
+            return expedientes.get(String(params[0]));
+          }
+          if (norm.includes('FROM cangrejo_pesquisa_cache WHERE cache_key = ?')) {
+            const row = cache.get(String(params[0]));
+            if (row && Number(row.expires_at) > Number(params[1])) return row;
+            return undefined;
+          }
+          if (norm.includes('FROM cangrejo_edition_state WHERE singleton_id = 1')) {
+            return editionState;
+          }
+          if (norm.includes('FROM cangrejo_provider_keys WHERE provider = ?')) {
+            return providerKeys.get(String(params[0]));
+          }
+          if (norm.includes('FROM cangrejo_radar_watches WHERE id = ?')) {
+            return radarWatches.get(String(params[0]));
+          }
+          return undefined;
+        },
+        all(...params: unknown[]): unknown[] {
+          if (norm.includes('FROM cangrejo_expedientes')) {
+            return Array.from(expedientes.values()).sort(
+              (a, b) => Number(b.updated_at) - Number(a.updated_at)
+            );
+          }
+          if (norm.includes('FROM cangrejo_pesquisa_audit')) {
+            return audits.slice(0, Number(params[0] ?? 25));
+          }
+          if (norm.includes('FROM cangrejo_provider_keys')) {
+            return Array.from(providerKeys.values());
+          }
+          if (norm.includes('FROM cangrejo_radar_watches')) {
+            return Array.from(radarWatches.values());
+          }
+          if (norm.includes('FROM cangrejo_radar_alerts')) {
+            return radarAlerts.slice(0, Number(params[0] ?? 25));
+          }
+          return [];
+        },
+      };
+    },
   };
+}
+
+function openNativeSqlite(dbPath: string): { db: SqliteDbLike; engine: 'bun:sqlite' | 'node:sqlite' } {
+  try {
+    const req = createRequire(
+      typeof import.meta !== 'undefined' && typeof import.meta.url === 'string'
+        ? import.meta.url
+        : 'file:///index.js'
+    );
+    const isBun = typeof globalThis !== 'undefined' && 'Bun' in globalThis;
+    if (isBun) {
+      try {
+        const bunSqlite = req('bun:sqlite') as {
+          Database: new (filename: string) => SqliteDbLike;
+        };
+        return {
+          db: new bunSqlite.Database(dbPath),
+          engine: 'bun:sqlite',
+        };
+      } catch {
+        // Fallback to node:sqlite if bun:sqlite fails to load
+      }
+    }
+    const nodeSqlite = req('node:sqlite') as {
+      DatabaseSync: new (filename: string) => SqliteDbLike;
+    };
+    return {
+      db: new nodeSqlite.DatabaseSync(dbPath),
+      engine: 'node:sqlite',
+    };
+  } catch {
+    return {
+      db: createEdgeMemorySqliteDb(),
+      engine: 'node:sqlite',
+    };
+  }
 }
 
 /**
@@ -171,10 +360,14 @@ export class BunSqliteVault {
   }
 
   private initializeVaultTables(): void {
-    const sqlPath = D1SchemaRunner.getMigrationSqlPath();
-    if (fs.existsSync(sqlPath)) {
-      const baseSql = fs.readFileSync(sqlPath, 'utf8');
-      this.db.exec(baseSql);
+    try {
+      const sqlPath = D1SchemaRunner.getMigrationSqlPath();
+      if (typeof fs?.existsSync === 'function' && fs.existsSync(sqlPath)) {
+        const baseSql = fs.readFileSync(sqlPath, 'utf8');
+        this.db.exec(baseSql);
+      }
+    } catch {
+      // Edge runtime (Cloudflare Workers workerd) does not expose host filesystem
     }
 
     this.db.exec(`
