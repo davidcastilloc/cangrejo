@@ -1,5 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cangrejoHonoApp } from '../apps/web/honoApp.js';
+import { CloudflareWorkersAiEngine } from '../packages/transforms/src/index.js';
 
 describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 Importer & MITRE ATT&CK v15 Kill-Chain Mapper', () => {
   it('1. serves MCP JSON-RPC 2.0 protocol (initialize, tools/list, tools/call) at /api/mcp for external AI agents', async () => {
@@ -173,5 +176,21 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     expect(techIds).toContain('T1568.002'); // Fast Flux / Cyclic Routing
     expect(techIds).toContain('T1657'); // Financial Theft / Crypto
     expect(json.timelineEvents[0]!.stepOrder).toBe(1);
+
+    // Verify live env.AI.run invocation in invokeWorkersAiModel & UI buttons
+    const invokedModels: string[] = [];
+    await CloudflareWorkersAiEngine.unpackCognitiveIocs('hxxps[:]//test[.]apt29[.]org', {
+      aiBinding: {
+        run: async (model) => {
+          invokedModels.push(model);
+          return { response: 'ok' };
+        },
+      },
+    });
+    expect(invokedModels).toContain('@cf/meta/llama-3.1-8b-instruct-fp8');
+
+    const indexHtml = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
+    expect(indexHtml).toContain('id="btn-import-stix21"');
+    expect(indexHtml).toContain('id="btn-ai-run-tools"');
   });
 });

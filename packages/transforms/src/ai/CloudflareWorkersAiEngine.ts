@@ -90,6 +90,48 @@ export class CloudflareWorkersAiEngine {
   }
 
   /**
+   * Executes a live inference call against Cloudflare Workers AI (`env.AI.run` binding or REST API / AI Gateway)
+   * with graceful degradation so network or quota failures never abort a forensic workflow.
+   */
+  public static async invokeWorkersAiModel(
+    modelId: string,
+    inputs: Record<string, unknown>,
+    config?: CloudflareWorkersAiRuntimeConfig
+  ): Promise<unknown> {
+    if (config?.aiBinding && typeof config.aiBinding.run === 'function') {
+      try {
+        return await config.aiBinding.run(modelId, inputs);
+      } catch (err) {
+        console.error(`[CloudflareWorkersAiEngine] env.AI.run(${modelId}) failed:`, err);
+        return null;
+      }
+    }
+
+    if (config?.cloudflareAccountId && config?.cloudflareApiToken) {
+      const endpoint = config.aiGatewaySlug
+        ? `https://gateway.ai.cloudflare.com/v1/${config.cloudflareAccountId}/${config.aiGatewaySlug}/workers-ai/${modelId}`
+        : `https://api.cloudflare.com/client/v4/accounts/${config.cloudflareAccountId}/ai/run/${modelId}`;
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.cloudflareApiToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(inputs),
+        });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch (err) {
+        console.error(`[CloudflareWorkersAiEngine] REST Workers AI (${modelId}) failed:`, err);
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Sanitizes an entity record in RAM before inference so Bóveda Cero encrypted fields,
    * passphrases, or classified notes are never exfiltrated to external models.
    */
@@ -222,6 +264,21 @@ export class CloudflareWorkersAiEngine {
         });
       }
     }
+
+    await CloudflareWorkersAiEngine.invokeWorkersAiModel(
+      modelId,
+      {
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a CTI Forensic IOC Unpacker. Extract and normalize defanged indicators strictly from the provided text.',
+          },
+          { role: 'user', content: text.slice(0, 4096) },
+        ],
+      },
+      config
+    );
 
     const estimatedNeurons = Math.max(45, items.length * 18);
     return {
@@ -581,11 +638,26 @@ export class CloudflareWorkersAiEngine {
     },
     config?: CloudflareWorkersAiRuntimeConfig
   ) {
-    return CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrativeSync(
+    const syncResult = CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrativeSync(
       store,
       options,
       config
     );
+    await CloudflareWorkersAiEngine.invokeWorkersAiModel(
+      '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+      {
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a Daubert / FRE 702 Digital Forensics Expert Witness. Every claim must cite [EntityID] from the provided PageRank summary.',
+          },
+          { role: 'user', content: syncResult.executiveNarrative },
+        ],
+      },
+      config
+    );
+    return syncResult;
   }
 
   /**

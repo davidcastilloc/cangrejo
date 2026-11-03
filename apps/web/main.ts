@@ -2422,6 +2422,13 @@ document.getElementById('btn-ai-f4-daubert')?.addEventListener('click', async ()
   }
 });
 
+let lastCopilotToolCalls: Array<{
+  toolName: string;
+  transformId: string;
+  targetValue: string;
+  reason: string;
+}> = [];
+
 document.getElementById('btn-ai-f5-ask')?.addEventListener('click', async () => {
   try {
     const payload = serializeCurrentStore();
@@ -2439,9 +2446,15 @@ document.getElementById('btn-ai-f5-ask')?.addEventListener('click', async () => 
     const data = (await res.json()) as {
       ok: boolean;
       answer: string;
-      suggestedToolCalls: Array<{ toolName: string; targetValue: string; reason: string }>;
+      suggestedToolCalls: Array<{
+        toolName: string;
+        transformId: string;
+        targetValue: string;
+        reason: string;
+      }>;
     };
     if (data.ok) {
+      lastCopilotToolCalls = data.suggestedToolCalls ?? [];
       await syncEditionBadge();
       const tools = data.suggestedToolCalls
         .map((t) => `  -> Tool: ${t.toolName}(${t.targetValue}) — ${t.reason}`)
@@ -2450,6 +2463,61 @@ document.getElementById('btn-ai-f5-ask')?.addEventListener('click', async () => 
     }
   } catch (err) {
     setAiOutput(`Error en F5 Copilot: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-ai-run-tools')?.addEventListener('click', async () => {
+  try {
+    if (lastCopilotToolCalls.length === 0) {
+      setAiOutput('Primero ejecuta una consulta en F5 para obtener herramientas sugeridas.');
+      return;
+    }
+    let executed = 0;
+    for (const call of lastCopilotToolCalls) {
+      for (const ent of store.dataStore.getEntities().values()) {
+        if (getPartPrimaryValue(ent) === call.targetValue) {
+          await executeTransformOnEntity(ent, call.transformId);
+          executed++;
+          break;
+        }
+      }
+    }
+    setAiOutput(
+      `[Ejecución Tool-Calling F5]: Se ejecutaron ${executed} pesquisas recomendadas por el Comisario IA sobre el grafo activo.`
+    );
+  } catch (err) {
+    setAiOutput(`Error ejecutando herramientas sugeridas: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-import-stix21')?.addEventListener('click', async () => {
+  try {
+    const bundle = Stix21Exporter.exportFromStore(store, {
+      expedienteTitle: 'Bundle STIX 2.1 Verificado',
+      caseTier: 'ORO',
+    });
+    const res = await fetch('/api/import/stix21', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bundle }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      custodyVerified: boolean;
+      custodyReason: string;
+      computedDigestHex: string;
+      entityCount: number;
+      linkCount: number;
+    };
+    if (data.ok) {
+      appendLog(
+        `[Importador STIX 2.1]: ${data.entityCount} entidades y ${data.linkCount} relaciones verificadas • Custodia SHA-256 (${data.computedDigestHex.slice(0, 16)}…): ${
+          data.custodyVerified ? 'ÍNTEGRA' : 'MANIPULADA'
+        } (${data.custodyReason})`
+      );
+    }
+  } catch (err) {
+    appendLog(`Error importando STIX 2.1: ${String(err)}`);
   }
 });
 

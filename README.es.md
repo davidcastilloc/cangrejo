@@ -45,6 +45,7 @@ Para dotar al proyecto de una identidad propia e inconfundible dentro del ecosis
 | **Pesquisa (`@cangrejo/transforms`)** | Transformación automatizada OSINT en vivo (DNS, Certificados X.509, BGP/ASN, RDAP, Cripto). | Término clásico detectivesco para la indagación sistemática de evidencias. |
 | **Motor Catatumbo (`@cangrejo/renderer`)** | Renderizador instanciado WebGPU a 60 FPS + pipeline de layouts en 3 niveles. | El *Relámpago del Catatumbo*, faro natural perpetuo que ilumina la oscuridad. |
 | **Bóveda Cero** | Cifrado selectivo Zero-Knowledge (`AES-256-GCM` + `AES-GMAC`) de atributos sensibles manteniendo la topología consultable. | Protección criptográfica de conocimiento cero para expedientes clasificados. |
+| **Comisario IA (`CloudflareWorkersAiEngine`)** | 5 capacidades cognitivas en Cloudflare Workers AI Edge + CPU universal (`F1` Desofuscador IOCs, `F2` Vínculos Latentes `Vectorize RRF k=60`, `F3` Anomalías, `F4` Dictamen Judicial `Daubert / Ed25519` y `F5` Copiloto Forense + `MITRE ATT&CK v15` + Servidor `MCP`). | El investigador jefe que sintetiza pruebas admisibles en juicio sin alucinación. |
 
 ---
 
@@ -62,9 +63,9 @@ Para dotar al proyecto de una identidad propia e inconfundible dentro del ecosis
 
 ---
 
-## 🚀 Inicio Rápido (Impulsado por **Bun 1.4**, **Rust** y **moon 2.6**)
+## 🚀 Inicio Rápido (Impulsado por **Bun 1.4**, **Rust**, **Cloudflare Workers AI** y **moon 2.6**)
 
-**Cangrejo** utiliza **[Bun (`v1.4.3+`)](https://bun.sh)** como runtime ultrarrápido de TypeScript, **Rust (`cangrejo-layout-rs`)** para el cálculo nativo Barnes-Hut $O(V \log V)$ vía `bun:ffi` zero-copy, y **[moon (`v2.6.5+`)](https://moonrepo.dev)** para ejecutar el grafo de dependencias políglota (DAG) con caché direccionable por contenido en los **9 proyectos del monorepo (`Gates 0-6`, 53 tests automatizados)**:
+**Cangrejo** utiliza **[Bun (`v1.4.3+`)](https://bun.sh)** como runtime ultrarrápido de TypeScript, **Rust (`cangrejo-layout-rs`)** para el cálculo nativo Barnes-Hut $O(V \log V)$ vía `bun:ffi` zero-copy, **Cloudflare Workers AI / Vectorize / D1** (`wrangler.jsonc`) sin requerir NPU ni GPU en el cliente, y **[moon (`v2.6.5+`)](https://moonrepo.dev)** para ejecutar el grafo de dependencias políglota (DAG) con caché direccionable por contenido en los **9 proyectos del monorepo (`Gates 0-11`, 70 tests automatizados: 67 TS + 3 Rust)**:
 
 ```bash
 # 1. Instalar dependencias del monorepo con Bun
@@ -73,11 +74,11 @@ bun install
 # 2. Inspeccionar la tabla de los 9 proyectos políglotas en moon
 bun run moon:projects
 
-# 3. Ejecutar las 19 tareas del DAG (typecheck + Rust build + Vite build + tests Gates 0-6) con moon
+# 3. Ejecutar las 19 tareas del DAG (typecheck + Rust build + Vite build + tests Gates 0-11) con moon
 #    • Ejecución en caché (Warm): ~248 ms ("❯❯❯❯ to the moon")
 bun run moon:check
 
-# 4. Ejecutar directamente el runner nativo de Bun (50 tests TS en Gates 0-6)
+# 4. Ejecutar directamente el runner nativo de Bun (67 tests TS en Gates 0-11)
 bun test
 
 # 5. Iniciar la estación de trabajo interactiva en http://127.0.0.1:5173
