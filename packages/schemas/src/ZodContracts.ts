@@ -259,3 +259,175 @@ export const RawTextIngestRequestSchema = z
     centerY: z.number().optional(),
   })
   .passthrough();
+
+/**
+ * Gate 9 Schemas: Cloudflare Workers AI & Forensic AI Engine (F1–F5).
+ * Hardware-agnostic (Edge Workers AI + Local CPU/Wasm fallback, zero NPU assumption).
+ * Every object schema strictly enforces `.passthrough()`.
+ */
+export const AiExecutionMetaSchema = z
+  .object({
+    modelId: z.string(),
+    executionBackend: z.enum([
+      'CLOUDFLARE_WORKERS_AI_BINDING',
+      'CLOUDFLARE_WORKERS_AI_REST',
+      'LOCAL_CPU_DETERMINISTIC',
+    ]),
+    estimatedNeurons: z.number().int().min(0),
+    estimatedCostUsd: z.number().min(0),
+    bovedaCeroSanitized: z.boolean(),
+    hardwareRequirement: z.literal('NONE_UNIVERSAL_CPU_OR_EDGE'),
+  })
+  .passthrough();
+
+export const AiUnpackIocsRequestSchema = z
+  .object({
+    text: z.string().min(1),
+    sanitizeClassified: z.boolean().optional(),
+  })
+  .passthrough();
+
+export const AiUnpackedIocItemSchema = z
+  .object({
+    rawFragment: z.string(),
+    canonicalValue: z.string(),
+    typeName: z.string(),
+    wasDefanged: z.boolean(),
+    startByteOffset: z.number().int().min(0),
+    endByteOffset: z.number().int().min(0),
+    confidence: z.number().min(0).max(1),
+    rationale: z.string(),
+  })
+  .passthrough();
+
+export const AiUnpackIocsResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    unpackedCount: z.number().int().min(0),
+    items: z.array(AiUnpackedIocItemSchema),
+    aiMeta: AiExecutionMetaSchema,
+  })
+  .passthrough();
+
+export const AiLatentLinksRequestSchema = z
+  .object({
+    expedienteId: z.string().optional(),
+    entities: z.array(z.record(z.string(), z.unknown())),
+    links: z.array(z.record(z.string(), z.unknown())).optional(),
+    topK: z.number().int().min(1).max(25).optional(),
+  })
+  .passthrough();
+
+export const AiLatentLinkSuggestionSchema = z
+  .object({
+    sourceEntityId: z.string(),
+    targetEntityId: z.string(),
+    sourceValue: z.string(),
+    targetValue: z.string(),
+    suggestedLabel: z.string(),
+    rrfScore: z.number().min(0),
+    vectorCosineSimilarity: z.number().min(0).max(1),
+    lexicalOverlapScore: z.number().min(0).max(1),
+    evidenceExplanation: z.string(),
+  })
+  .passthrough();
+
+export const AiLatentLinksResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    vectorizeNamespace: z.string().max(63),
+    rrfConstantK: z.literal(60),
+    suggestions: z.array(AiLatentLinkSuggestionSchema),
+    aiMeta: AiExecutionMetaSchema,
+  })
+  .passthrough();
+
+export const AiAnomalyClusterRequestSchema = z
+  .object({
+    entities: z.array(z.record(z.string(), z.unknown())),
+    links: z.array(z.record(z.string(), z.unknown())),
+  })
+  .passthrough();
+
+export const AiAnomalyFindingSchema = z
+  .object({
+    patternId: z.string(),
+    patternType: z.enum([
+      'FAST_FLUX_INFRASTRUCTURE',
+      'CRYPTO_PEEL_CHAIN_LAUNDERING',
+      'SHARED_C2_CERTIFICATE_PIVOT',
+      'HIGH_CENTRALITY_HUB_ANOMALY',
+    ]),
+    severity: z.enum(['CRITICO', 'ALTO', 'MEDIO']),
+    involvedEntityIds: z.array(z.string()),
+    confidence: z.number().min(0).max(1),
+    forensicExplanation: z.string(),
+  })
+  .passthrough();
+
+export const AiAnomalyClusterResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    anomalies: z.array(AiAnomalyFindingSchema),
+    aiMeta: AiExecutionMetaSchema,
+  })
+  .passthrough();
+
+export const AiDaubertSynthesisRequestSchema = z
+  .object({
+    expedienteId: z.string().optional(),
+    title: z.string().optional(),
+    leadAnalyst: z.string().optional(),
+    entities: z.array(z.record(z.string(), z.unknown())),
+    links: z.array(z.record(z.string(), z.unknown())).optional(),
+  })
+  .passthrough();
+
+export const AiDaubertSynthesisResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    standard: z.literal('DAUBERT_FRE_702_VERIFIED'),
+    contextPruned: z.boolean(),
+    examinedNodeCount: z.number().int().min(0),
+    executiveNarrative: z.string(),
+    citedEntityIds: z.array(z.string()),
+    attestation: z
+      .object({
+        algorithm: z.literal('Ed25519'),
+        canonicalSha256Hex: z.string(),
+        signatureHex: z.string(),
+        publicKeyPem: z.string(),
+        signedAtIso: z.string(),
+      })
+      .passthrough(),
+    aiMeta: AiExecutionMetaSchema,
+  })
+  .passthrough();
+
+export const AiForensicCopilotRequestSchema = z
+  .object({
+    prompt: z.string().min(1),
+    entities: z.array(z.record(z.string(), z.unknown())),
+    links: z.array(z.record(z.string(), z.unknown())).optional(),
+    selectedEntityIds: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
+export const AiForensicCopilotResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    answer: z.string(),
+    citedEntityIds: z.array(z.string()),
+    suggestedToolCalls: z.array(
+      z
+        .object({
+          toolName: z.string(),
+          transformId: z.string(),
+          targetValue: z.string(),
+          reason: z.string(),
+        })
+        .passthrough()
+    ),
+    aiMeta: AiExecutionMetaSchema,
+  })
+  .passthrough();

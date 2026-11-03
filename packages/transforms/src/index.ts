@@ -12,8 +12,7 @@ export * from './formats/MtgjJsonHandler.js';
 export * from './formats/MtglLegacyMigrator.js';
 export * from './formats/Stix21Exporter.js';
 export * from './formats/ForensicDossierGenerator.js';
-
-
+export * from './ai/CloudflareWorkersAiEngine.js';
 
 export * from './hub/HubClient.js';
 export * from './hub/OAuthPkceManager.js';

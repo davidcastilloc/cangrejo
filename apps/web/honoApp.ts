@@ -12,6 +12,16 @@ import {
 } from '../../packages/core/src/index.js';
 import { BunSqliteVault } from '../../packages/database-d1/src/index.js';
 import {
+  AiAnomalyClusterRequestSchema,
+  AiAnomalyClusterResponseSchema,
+  AiDaubertSynthesisRequestSchema,
+  AiDaubertSynthesisResponseSchema,
+  AiForensicCopilotRequestSchema,
+  AiForensicCopilotResponseSchema,
+  AiLatentLinksRequestSchema,
+  AiLatentLinksResponseSchema,
+  AiUnpackIocsRequestSchema,
+  AiUnpackIocsResponseSchema,
   BillingWebhookPayloadSchema,
   CangrejoEditionStatusResponseSchema,
   LicenseActivationRequestSchema,
@@ -23,6 +33,7 @@ import {
   RawTextIngestRequestSchema,
 } from '../../packages/schemas/src/index.js';
 import {
+  CloudflareWorkersAiEngine,
   ForensicDossierGenerator,
   MtgjJsonHandler,
   MtgxArchiveHandler,
@@ -1953,6 +1964,148 @@ cangrejoHonoApp.post('/api/ingest/raw-text', async (c) => {
     });
   } catch (err) {
     console.error('[Hono /api/ingest/raw-text] Raw text IOC ingestion failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+/**
+ * Gate 9: Cloudflare Workers AI & Forensic AI Endpoints (F1–F5).
+ * Hardware-agnostic (Edge Workers AI + Local CPU deterministic fallback, zero NPU requirement).
+ */
+cangrejoHonoApp.post('/api/ai/unpack-iocs', async (c) => {
+  try {
+    const rawBody = await c.req.json();
+    const parsed = AiUnpackIocsRequestSchema.parse(rawBody);
+    const result = await CloudflareWorkersAiEngine.unpackCognitiveIocs(parsed.text, {
+      cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+      cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
+    });
+    const edition = sqliteVault.consumeOsintCreditsSafe(1);
+    const validated = AiUnpackIocsResponseSchema.parse({
+      ...result,
+      editionTier: edition.editionTier,
+      creditsRemaining: edition.creditsRemaining,
+    });
+    return c.json(validated, 200);
+  } catch (err) {
+    console.error('[Hono /api/ai/unpack-iocs] Cognitive IOC unpack failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+cangrejoHonoApp.post('/api/ai/latent-links', async (c) => {
+  try {
+    const rawBody = await c.req.json();
+    const parsed = AiLatentLinksRequestSchema.parse(rawBody);
+    const result = await CloudflareWorkersAiEngine.discoverLatentLinksRrf(parsed, {
+      cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+      cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
+    });
+    const edition = sqliteVault.consumeOsintCreditsSafe(1);
+    const validated = AiLatentLinksResponseSchema.parse({
+      ...result,
+      editionTier: edition.editionTier,
+      creditsRemaining: edition.creditsRemaining,
+    });
+    return c.json(validated, 200);
+  } catch (err) {
+    console.error('[Hono /api/ai/latent-links] Latent link discovery failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+cangrejoHonoApp.post('/api/ai/anomalies', async (c) => {
+  try {
+    const rawBody = await c.req.json();
+    const parsed = AiAnomalyClusterRequestSchema.parse(rawBody);
+    const store = buildStoreFromGraphPayload(parsed);
+    const result = await CloudflareWorkersAiEngine.classifyInfrastructureAnomalies(store, {
+      cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+      cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
+    });
+    const edition = sqliteVault.consumeOsintCreditsSafe(1);
+    const validated = AiAnomalyClusterResponseSchema.parse({
+      ...result,
+      editionTier: edition.editionTier,
+      creditsRemaining: edition.creditsRemaining,
+    });
+    return c.json(validated, 200);
+  } catch (err) {
+    console.error('[Hono /api/ai/anomalies] Anomaly classification failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+cangrejoHonoApp.post('/api/ai/daubert-synthesis', async (c) => {
+  try {
+    const rawBody = await c.req.json();
+    const parsed = AiDaubertSynthesisRequestSchema.parse(rawBody);
+    const store = buildStoreFromGraphPayload(parsed);
+    const result = await CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrative(
+      store,
+      {
+        expedienteId: parsed.expedienteId,
+        title: parsed.title,
+        leadAnalyst: parsed.leadAnalyst,
+      },
+      {
+        cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+        cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
+      }
+    );
+    const edition = sqliteVault.consumeOsintCreditsSafe(2);
+    const validated = AiDaubertSynthesisResponseSchema.parse({
+      ...result,
+      editionTier: edition.editionTier,
+      creditsRemaining: edition.creditsRemaining,
+    });
+    return c.json(validated, 200);
+  } catch (err) {
+    console.error('[Hono /api/ai/daubert-synthesis] Daubert synthesis failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+cangrejoHonoApp.post('/api/ai/copilot', async (c) => {
+  try {
+    const rawBody = await c.req.json();
+    const parsed = AiForensicCopilotRequestSchema.parse(rawBody);
+    const store = buildStoreFromGraphPayload(parsed);
+    const result = await CloudflareWorkersAiEngine.runForensicCopilotTurn(
+      store,
+      {
+        prompt: parsed.prompt,
+        selectedEntityIds: parsed.selectedEntityIds,
+      },
+      {
+        cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+        cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN,
+      }
+    );
+    const edition = sqliteVault.consumeOsintCreditsSafe(1);
+    const validated = AiForensicCopilotResponseSchema.parse({
+      ...result,
+      editionTier: edition.editionTier,
+      creditsRemaining: edition.creditsRemaining,
+    });
+    return c.json(validated, 200);
+  } catch (err) {
+    console.error('[Hono /api/ai/copilot] Forensic Copilot turn failed:', err);
     return c.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
       400

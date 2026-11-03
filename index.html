@@ -158,6 +158,13 @@
             >
               🦀 <span id="lbl-edition-tier" class="tabular">COMMUNITY</span>
             </button>
+            <button
+              id="btn-ai-copilot"
+              class="btn"
+              title="Comisario IA (Cloudflare Workers AI + Vectorize RRF + Síntesis Judicial Daubert)"
+            >
+              🧠 Comisario IA
+            </button>
           </div>
 
           <!-- Dual Theme Switcher (Obsidian Dark <-> Daylight Report) -->
@@ -480,6 +487,75 @@ AS13335</textarea>
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Comisario IA — Cloudflare Workers AI & Forensic Intelligence Modal (F1-F5) -->
+      <div
+        id="ai-modal-backdrop"
+        class="modal-backdrop hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-modal-title"
+      >
+        <div class="modal-card">
+          <div class="modal-header">
+            <div class="modal-brand-row">
+              <img src="/cangrejo_logo_emblem.png" alt="Emblema Comisario IA" class="modal-emblem" />
+              <div>
+                <h2 id="ai-modal-title" class="modal-title">
+                  🧠 Comisario IA — Cloudflare Workers AI &amp; Forensics (`F1`–`F5`)
+                </h2>
+                <p class="modal-subtitle">
+                  Inferencia Serverless Edge (`Llama 3.3 70B` • `Llama 3.1 8B` • `Vectorize BGE-Large`) + Fallback CPU Universal (Cero NPU Requerida)
+                </p>
+              </div>
+            </div>
+            <button id="btn-close-ai" type="button" class="btn btn-icon" aria-label="Cerrar ventana">
+              ✕
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <div class="lore-section">
+              <h3>⚡ Ejecutar Capacidades Cognitivas sobre el Expediente Activo</h3>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px">
+                <button id="btn-ai-f1-unpack" type="button" class="btn">
+                  🔓 F1: Desofuscar IOCs (`hxxps` / `[.]`)
+                </button>
+                <button id="btn-ai-f2-latent" type="button" class="btn">
+                  🔗 F2: Vínculos Latentes (`Vectorize RRF k=60`)
+                </button>
+                <button id="btn-ai-f3-anomalies" type="button" class="btn">
+                  🚨 F3: Anomalías (`Fast-Flux` / `Peel-Chain`)
+                </button>
+                <button id="btn-ai-f4-daubert" type="button" class="btn btn-primary">
+                  ⚖️ F4: Dictamen Judicial `Daubert / FRE 702` (`Ed25519`)
+                </button>
+              </div>
+            </div>
+
+            <div class="lore-section">
+              <h3>💬 F5: Consultar al Comisario IA sobre el Grafo</h3>
+              <div style="display: flex; gap: 8px; margin-top: 8px">
+                <input
+                  id="inp-ai-copilot-prompt"
+                  type="text"
+                  class="palette-search-input"
+                  style="flex: 1"
+                  value="¿Cuál es el nodo pivote principal y qué pesquisas OSINT recomiendas ejecutar?"
+                />
+                <button id="btn-ai-f5-ask" type="button" class="btn btn-primary">
+                  Preguntar a IA
+                </button>
+              </div>
+              <pre
+                id="ai-modal-output"
+                class="console-output"
+                style="margin-top: 10px; max-height: 220px; border: 1px solid var(--border-default); border-radius: 6px"
+              >Selecciona cualquiera de las 5 funciones de IA (F1–F5) para analizar el expediente activo con trazabilidad probatoria.</pre>
             </div>
           </div>
         </div>

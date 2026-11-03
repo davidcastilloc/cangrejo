@@ -148,6 +148,14 @@ const canvasEl = document.getElementById('graph-canvas') as HTMLCanvasElement;
 const ctx = canvasEl.getContext('2d')!;
 const minimapEl = document.getElementById('minimap-canvas') as HTMLCanvasElement;
 const minimapCtx = minimapEl.getContext('2d')!;
+const categorySelect = document.getElementById('sel-palette-category') as HTMLSelectElement;
+for (const cat of registry.getCategories()) {
+  const vis = resolveCategoryVisual(cat);
+  const opt = document.createElement('option');
+  opt.value = cat;
+  opt.textContent = `[${vis.code}] ${vis.label} (${cat})`;
+  categorySelect.appendChild(opt);
+}
 
 function resizeCanvas(): void {
   const rect = canvasEl.parentElement!.getBoundingClientRect();
@@ -405,15 +413,6 @@ function loadPreset(presetId: string): void {
 // =============================================================================
 // 4. Left Sidebar: Crisp Vector SVG Entity Palette (107 Standard Entities)
 // =============================================================================
-const categorySelect = document.getElementById('sel-palette-category') as HTMLSelectElement;
-for (const cat of registry.getCategories()) {
-  const vis = resolveCategoryVisual(cat);
-  const opt = document.createElement('option');
-  opt.value = cat;
-  opt.textContent = `[${vis.code}] ${vis.label} (${cat})`;
-  categorySelect.appendChild(opt);
-}
-
 function renderPalette(): void {
   const query = (document.getElementById('inp-palette-search') as HTMLInputElement).value
     .trim()
@@ -607,7 +606,13 @@ function renderInspector(): void {
   }
 
   const spec = registry.get(entity.typeName);
+  const extMeta = resolveExtendedEntityMeta(entity.typeName);
+  const resolvedDisplayName = spec?.displayName ?? extMeta?.displayName ?? entity.typeName;
   const ancestry = registry.getInheritanceChain(entity.typeName);
+  const ancestryChips =
+    ancestry.length > 0
+      ? ancestry.map((a) => `<span class="ancestry-chip">${escapeHtml(a.id)}</span>`).join(' → ')
+      : `<span class="ancestry-chip">maltego.Unknown</span> → <span class="ancestry-chip">${escapeHtml(entity.typeName)}</span>`;
   const pos = store.layoutStore.getPosition(entity.id);
   const isPinned = store.layoutStore.isPinned(entity.id);
   const primaryValue = getPartPrimaryValue(entity);
@@ -629,13 +634,13 @@ function renderInspector(): void {
 
   container.innerHTML = `
     <div class="insp-field">
-      <label>Valor Principal (${escapeHtml(spec?.displayName ?? entity.typeName)})</label>
+      <label>Valor Principal (${escapeHtml(resolvedDisplayName)})</label>
       <input id="insp-val" type="text" value="${escapeHtml(primaryValue)}" />
     </div>
     <div class="insp-field">
-      <label>Jerarquía Ontológica (${ancestry.length} niveles)</label>
+      <label>Jerarquía Ontológica (${Math.max(1, ancestry.length)} niveles)</label>
       <div class="insp-ancestry">
-        ${ancestry.map((a) => `<span class="ancestry-chip">${escapeHtml(a.id)}</span>`).join(' → ')}
+        ${ancestryChips}
       </div>
     </div>
     <div class="insp-field">
@@ -711,6 +716,27 @@ function renderInspector(): void {
   document.getElementById('insp-run-all-btn')?.addEventListener('click', () => {
     void executeTransformOnEntity(entity, 'all');
   });
+}
+
+function resolveExtendedEntityMeta(
+  typeName: string
+): { category: string; displayName: string } | undefined {
+  switch (typeName) {
+    case 'maltego.ThreatActor':
+      return { category: 'weapons', displayName: 'Threat Actor (APT)' };
+    case 'maltego.CVE':
+      return { category: 'weapons', displayName: 'CVE Vulnerability' };
+    case 'maltego.Hash':
+      return { category: 'tracking', displayName: 'Cryptographic Hash' };
+    case 'maltego.BitcoinAddress':
+      return { category: 'events', displayName: 'Bitcoin Wallet (UTXO)' };
+    case 'maltego.BlockchainTransaction':
+      return { category: 'events', displayName: 'Blockchain Tx' };
+    case 'maltego.X509Certificate':
+      return { category: 'tracking', displayName: 'X.509 Certificate' };
+    default:
+      return undefined;
+  }
 }
 
 function escapeHtml(str: string): string {
@@ -1670,7 +1696,8 @@ function renderFrame(): void {
     }
     const phys = store.dataStore.tryGetEntity(ve.id);
     const spec = registry.get(ve.typeName);
-    const vis = resolveCategoryVisual(spec?.category ?? 'infrastructure');
+    const extMeta = resolveExtendedEntityMeta(ve.typeName);
+    const vis = resolveCategoryVisual(spec?.category ?? extMeta?.category ?? 'infrastructure');
     const catColor = isLight ? vis.colorLight : vis.colorDark;
     const isSelected = selection.isViewEntitySelected(ve.id);
     const isGoldenNode = goldenPathEntityIds.has(ve.id.toString());
@@ -1682,15 +1709,16 @@ function renderFrame(): void {
     const x0 = ve.position.x - halfW;
     const y0 = ve.position.y - halfH;
 
+    const resolvedTypeDisplay = spec?.displayName ?? extMeta?.displayName ?? ve.typeName;
     const rawTitle = ve.isCollectionNode
-      ? `${spec?.displayName ?? ve.typeName}`
+      ? `${resolvedTypeDisplay}`
       : phys
         ? getPartPrimaryValue(phys)
         : ve.id.toString();
     const displayTitle = rawTitle.length > 18 ? rawTitle.slice(0, 17) + '…' : rawTitle;
     const subLabel = ve.isCollectionNode
       ? `${ve.ruleName ?? 'Cluster'} Collection`
-      : (spec?.displayName ?? ve.typeName);
+      : resolvedTypeDisplay;
 
     const bookmarkIdx = phys?.bookmark ?? -1;
     const hasNotes = Boolean(phys?.notes.show && phys?.notes.value);
@@ -2128,7 +2156,7 @@ document.getElementById('btn-paste-iocs')?.addEventListener('click', async () =>
 
       for (const lnk of data.links!) {
         store.addLink(
-          createLink(Guid.parse(lnk.id), lnk.label, lnk.color),
+          makeSimpleLink(Guid.parse(lnk.id), lnk.label, lnk.color),
           Guid.parse(lnk.sourceId),
           Guid.parse(lnk.targetId)
         );
@@ -2188,6 +2216,176 @@ document.getElementById('btn-radar-watch')?.addEventListener('click', async () =
   }
 });
 
+// Wire Gate 9: Comisario IA — Cloudflare Workers AI & Forensics Modal (F1-F5)
+const aiModalBackdrop = document.getElementById('ai-modal-backdrop');
+const aiModalOutput = document.getElementById('ai-modal-output');
+const inpAiCopilotPrompt = document.getElementById('inp-ai-copilot-prompt') as HTMLInputElement | null;
+
+function setAiOutput(text: string): void {
+  if (aiModalOutput) aiModalOutput.textContent = text;
+  appendLog(text);
+}
+
+document.getElementById('btn-ai-copilot')?.addEventListener('click', () => {
+  aiModalBackdrop?.classList.remove('hidden');
+});
+document.getElementById('btn-close-ai')?.addEventListener('click', () => {
+  aiModalBackdrop?.classList.add('hidden');
+});
+aiModalBackdrop?.addEventListener('click', (e) => {
+  if (e.target === aiModalBackdrop) {
+    aiModalBackdrop.classList.add('hidden');
+  }
+});
+
+document.getElementById('btn-ai-f1-unpack')?.addEventListener('click', async () => {
+  const sample =
+    'Reporte CTI: Conexión detectada hacia hxxps[:]//c2-Command[.]apt29-mirror[.]org/gate y correo ops[@]shadow-apt[.]ru desde 185[.]220[.]101[.]42 explotando CVE-2024-3400.';
+  try {
+    const res = await fetch('/api/ai/unpack-iocs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: sample }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      unpackedCount: number;
+      items: Array<{ rawFragment: string; canonicalValue: string; startByteOffset: number; endByteOffset: number }>;
+      aiMeta: { modelId: string; estimatedNeurons: number };
+    };
+    if (data.ok) {
+      await syncEditionBadge();
+      const lines = data.items.map(
+        (i) => `• ${i.rawFragment} -> ${i.canonicalValue} [bytes ${i.startByteOffset}..${i.endByteOffset}]`
+      );
+      setAiOutput(
+        `[F1 Cognitive IOC Unpacker • ${data.aiMeta.modelId} (${data.aiMeta.estimatedNeurons} neuronas)]:\n${lines.join('\n')}`
+      );
+    }
+  } catch (err) {
+    setAiOutput(`Error en F1 Unpacker: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-ai-f2-latent')?.addEventListener('click', async () => {
+  try {
+    const payload = serializeCurrentStore();
+    const res = await fetch('/api/ai/latent-links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expedienteId: 'expediente-apt29',
+        ...payload,
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      vectorizeNamespace: string;
+      suggestions: Array<{
+        sourceValue: string;
+        targetValue: string;
+        rrfScore: number;
+        evidenceExplanation: string;
+      }>;
+    };
+    if (data.ok) {
+      await syncEditionBadge();
+      const lines = data.suggestions.map(
+        (s) => `• ${s.sourceValue} <-> ${s.targetValue} (RRF=${s.rrfScore}): ${s.evidenceExplanation}`
+      );
+      setAiOutput(
+        `[F2 Vectorize RRF k=60 • Namespace: ${data.vectorizeNamespace}]:\n${lines.join('\n')}`
+      );
+    }
+  } catch (err) {
+    setAiOutput(`Error en F2 Vínculos Latentes: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-ai-f3-anomalies')?.addEventListener('click', async () => {
+  try {
+    const payload = serializeCurrentStore();
+    const res = await fetch('/api/ai/anomalies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      anomalies: Array<{ patternType: string; severity: string; forensicExplanation: string }>;
+    };
+    if (data.ok) {
+      await syncEditionBadge();
+      const lines = data.anomalies.map(
+        (a) => `• [${a.severity}] ${a.patternType}: ${a.forensicExplanation}`
+      );
+      setAiOutput(`[F3 Detección de Anomalías Estructurales]:\n${lines.join('\n')}`);
+    }
+  } catch (err) {
+    setAiOutput(`Error en F3 Anomalías: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-ai-f4-daubert')?.addEventListener('click', async () => {
+  try {
+    const payload = serializeCurrentStore();
+    const res = await fetch('/api/ai/daubert-synthesis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expedienteId: 'EXP-APT29-DAUBERT',
+        title: 'Dictamen Judicial Caso Cangrejo',
+        ...payload,
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      executiveNarrative: string;
+      attestation: { canonicalSha256Hex: string; signatureHex: string };
+    };
+    if (data.ok) {
+      await syncEditionBadge();
+      setAiOutput(
+        `${data.executiveNarrative}\n\n[Firma Ed25519]: ${data.attestation.signatureHex.slice(0, 32)}… | [SHA-256]: ${data.attestation.canonicalSha256Hex.slice(0, 24)}…`
+      );
+    }
+  } catch (err) {
+    setAiOutput(`Error en F4 Síntesis Daubert: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-ai-f5-ask')?.addEventListener('click', async () => {
+  try {
+    const payload = serializeCurrentStore();
+    const prompt =
+      inpAiCopilotPrompt?.value.trim() ||
+      '¿Cuál es el nodo pivote principal y qué pesquisas recomiendas?';
+    const res = await fetch('/api/ai/copilot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        ...payload,
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      answer: string;
+      suggestedToolCalls: Array<{ toolName: string; targetValue: string; reason: string }>;
+    };
+    if (data.ok) {
+      await syncEditionBadge();
+      const tools = data.suggestedToolCalls
+        .map((t) => `  -> Tool: ${t.toolName}(${t.targetValue}) — ${t.reason}`)
+        .join('\n');
+      setAiOutput(`${data.answer}\n${tools}`);
+    }
+  } catch (err) {
+    setAiOutput(`Error en F5 Copilot: ${String(err)}`);
+  }
+});
+
+resizeCanvas();
 void syncEditionBadge();
 loadPreset('apt29');
 requestAnimationFrame(renderFrame);

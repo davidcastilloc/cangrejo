@@ -50,7 +50,7 @@ tasks:
       - "/vite.config.ts"
 
   test:
-    command: "bun test ../../tests/gate6-production-completeness.test.ts ../../tests/gate7-odoo-open-core-edition.test.ts ../../tests/gate8-commercial-osint-radar-ingest.test.ts"
+    command: "bun test ../../tests/gate6-production-completeness.test.ts ../../tests/gate7-odoo-open-core-edition.test.ts ../../tests/gate8-commercial-osint-radar-ingest.test.ts ../../tests/gate9-cloudflare-workers-ai-forensics.test.ts"
     deps:
       - "build"
       - "transforms:test"
@@ -59,3 +59,4 @@ tasks:
       - "/tests/gate6-production-completeness.test.ts"
       - "/tests/gate7-odoo-open-core-edition.test.ts"
       - "/tests/gate8-commercial-osint-radar-ingest.test.ts"
+      - "/tests/gate9-cloudflare-workers-ai-forensics.test.ts"

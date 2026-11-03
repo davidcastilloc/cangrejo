@@ -10,6 +10,20 @@ export {
 } from './MtgjSchemaValidator.js';
 
 export {
+  AiAnomalyClusterRequestSchema,
+  AiAnomalyClusterResponseSchema,
+  AiAnomalyFindingSchema,
+  AiDaubertSynthesisRequestSchema,
+  AiDaubertSynthesisResponseSchema,
+  AiExecutionMetaSchema,
+  AiForensicCopilotRequestSchema,
+  AiForensicCopilotResponseSchema,
+  AiLatentLinkSuggestionSchema,
+  AiLatentLinksRequestSchema,
+  AiLatentLinksResponseSchema,
+  AiUnpackIocsRequestSchema,
+  AiUnpackIocsResponseSchema,
+  AiUnpackedIocItemSchema,
   BillingWebhookPayloadSchema,
   CangrejoEditionStatusResponseSchema,
   CangrejoEditionTierSchema,
