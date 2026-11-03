@@ -681,4 +681,200 @@ export class CloudflareWorkersAiEngine {
       ),
     };
   }
+
+  /**
+   * Maps a CANGREJO GraphStore topology to official MITRE ATT&CK v15 Enterprise Tactics & Techniques
+   * and constructs a chronological Forensic Kill-Chain Timeline (`POST /api/analytics/mitre-attack`).
+   */
+  public static analyzeMitreAttackAndTimeline(
+    store: GraphStore,
+    config?: CloudflareWorkersAiRuntimeConfig
+  ) {
+    const analytics = analyzeExpedienteForensics(store);
+    const techniqueMap = new Map<
+      string,
+      {
+        tacticId: string;
+        tacticName: string;
+        techniqueId: string;
+        techniqueName: string;
+        killChainOrder: number;
+        severity: 'CRITICO' | 'ALTO' | 'MEDIO';
+        matchedEntityIds: string[];
+        matchedValues: string[];
+        description: string;
+      }
+    >();
+
+    const registerTechnique = (spec: {
+      tacticId: string;
+      tacticName: string;
+      techniqueId: string;
+      techniqueName: string;
+      killChainOrder: number;
+      severity: 'CRITICO' | 'ALTO' | 'MEDIO';
+      entityId: string;
+      value: string;
+      description: string;
+    }) => {
+      const existing = techniqueMap.get(spec.techniqueId);
+      if (existing) {
+        if (!existing.matchedEntityIds.includes(spec.entityId)) {
+          existing.matchedEntityIds.push(spec.entityId);
+          existing.matchedValues.push(spec.value);
+        }
+      } else {
+        techniqueMap.set(spec.techniqueId, {
+          tacticId: spec.tacticId,
+          tacticName: spec.tacticName,
+          techniqueId: spec.techniqueId,
+          techniqueName: spec.techniqueName,
+          killChainOrder: spec.killChainOrder,
+          severity: spec.severity,
+          matchedEntityIds: [spec.entityId],
+          matchedValues: [spec.value],
+          description: spec.description,
+        });
+      }
+    };
+
+    for (const ent of store.dataStore.getEntities().values()) {
+      const idStr = ent.id.toString();
+      const val = getPartPrimaryValue(ent);
+      const lower = ent.typeName.toLowerCase();
+
+      if (lower.includes('domain') || lower.includes('dns') || lower.includes('nsrecord')) {
+        registerTechnique({
+          tacticId: 'TA0042',
+          tacticName: 'Resource Development',
+          techniqueId: 'T1583.001',
+          techniqueName: 'Acquire Infrastructure: Domains',
+          killChainOrder: 1,
+          severity: 'ALTO',
+          entityId: idStr,
+          value: val,
+          description: 'Registro y operación de dominios/subdominios para infraestructura adversaria.',
+        });
+      } else if (lower.includes('ipv4') || lower.includes('ipv6') || lower.includes('netblock') || lower.includes('asnumber')) {
+        registerTechnique({
+          tacticId: 'TA0042',
+          tacticName: 'Resource Development',
+          techniqueId: 'T1583.003',
+          techniqueName: 'Acquire Infrastructure: Virtual Private Server',
+          killChainOrder: 2,
+          severity: 'ALTO',
+          entityId: idStr,
+          value: val,
+          description: 'Uso de direcciones IP, prefijos BGP y sistemas autónomos para alojar nodos de comando o relevo.',
+        });
+      } else if (lower.includes('cve') || lower.includes('vulnerability')) {
+        registerTechnique({
+          tacticId: 'TA0001',
+          tacticName: 'Initial Access',
+          techniqueId: 'T1190',
+          techniqueName: 'Exploit Public-Facing Application',
+          killChainOrder: 3,
+          severity: 'CRITICO',
+          entityId: idStr,
+          value: val,
+          description: 'Explotación de vulnerabilidades CVE identificadas en servicios expuestos.',
+        });
+      } else if (lower.includes('email')) {
+        registerTechnique({
+          tacticId: 'TA0001',
+          tacticName: 'Initial Access',
+          techniqueId: 'T1566',
+          techniqueName: 'Phishing & Spearphishing Infrastructure',
+          killChainOrder: 3,
+          severity: 'ALTO',
+          entityId: idStr,
+          value: val,
+          description: 'Buzones o identidades de correo electrónico vinculadas al vector de contacto o registro WHOIS.',
+        });
+      } else if (lower.includes('hash') || lower.includes('malware') || lower.includes('file')) {
+        registerTechnique({
+          tacticId: 'TA0002',
+          tacticName: 'Execution',
+          techniqueId: 'T1204.002',
+          techniqueName: 'User Execution: Malicious File / Payload',
+          killChainOrder: 4,
+          severity: 'CRITICO',
+          entityId: idStr,
+          value: val,
+          description: 'Artefactos binarios o hashes criptográficos SHA-256 asociados a cargas útiles maliciosas.',
+        });
+      } else if (lower.includes('url') || lower.includes('website')) {
+        registerTechnique({
+          tacticId: 'TA0011',
+          tacticName: 'Command and Control',
+          techniqueId: 'T1071.001',
+          techniqueName: 'Application Layer Protocol: Web Protocols',
+          killChainOrder: 5,
+          severity: 'CRITICO',
+          entityId: idStr,
+          value: val,
+          description: 'Endpoints HTTP/HTTPS utilizados como pasarelas de comando y control (C2) o exfiltración.',
+        });
+      } else if (lower.includes('btc') || lower.includes('eth') || lower.includes('crypto')) {
+        registerTechnique({
+          tacticId: 'TA0040',
+          tacticName: 'Impact',
+          techniqueId: 'T1657',
+          techniqueName: 'Financial Theft & On-Chain Laundering',
+          killChainOrder: 6,
+          severity: 'CRITICO',
+          entityId: idStr,
+          value: val,
+          description: 'Billeteras criptográficas utilizadas para extorsión, cobro de rescate o lavado en cadena.',
+        });
+      }
+    }
+
+    if (analytics.cycles.length > 0) {
+      const cyc = analytics.cycles[0]!;
+      registerTechnique({
+        tacticId: 'TA0011',
+        tacticName: 'Command and Control',
+        techniqueId: 'T1568.002',
+        techniqueName: 'Dynamic Resolution: Fast Flux DNS / Cyclic Routing',
+        killChainOrder: 5,
+        severity: 'CRITICO',
+        entityId: cyc.entityIds[0]?.toString() ?? '0',
+        value: cyc.cycleId,
+        description: `Se detectaron ${analytics.cycles.length} anillos cíclicos cerrados compatibles con rotación dinámica o lavado.`,
+      });
+    }
+
+    const techniques = Array.from(techniqueMap.values()).sort(
+      (a, b) => a.killChainOrder - b.killChainOrder
+    );
+
+    const timelineEvents = techniques.map((tech, idx) => ({
+      stepOrder: idx + 1,
+      phaseName: `${tech.tacticId} · ${tech.tacticName}`,
+      techniqueId: tech.techniqueId,
+      techniqueName: tech.techniqueName,
+      severity: tech.severity,
+      entityCount: tech.matchedEntityIds.length,
+      citedEntityIds: tech.matchedEntityIds,
+      sampleIndicators: tech.matchedValues.slice(0, 4),
+      summary: `${tech.description} (${tech.matchedEntityIds.length} indicadores vinculados: ${tech.matchedValues
+        .slice(0, 3)
+        .join(', ')})`,
+    }));
+
+    return {
+      ok: true,
+      frameworkVersion: 'MITRE ATT&CK Enterprise v15.1',
+      tacticCount: new Set(techniques.map((t) => t.tacticId)).size,
+      techniqueCount: techniques.length,
+      techniques,
+      timelineEvents,
+      aiMeta: CloudflareWorkersAiEngine.buildAiMeta(
+        '@cf/meta/llama-3.1-8b-instruct-fp8',
+        125,
+        config
+      ),
+    };
+  }
 }

@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.1.0] — 2026-11-03 — *"El Comisario IA & Open-Core Enterprise"*
+
+### Added
+- **Odoo-Style Open-Core + Cloud SaaS Edition Engine (`Gate 7` & `Gate 8`)**:
+  - Three-tier edition licensing (`COMMUNITY` Open-Source `Apache-2.0`, `ORO_PRO` `500 CR`, `PLATINO_ENTERPRISE` `5,000 CR`) with cryptographic `HMAC-SHA256` token verification (`CGRJ.<TIER>.<payload>.<hmacHex>`) and Stripe/LemonSqueezy billing webhook (`POST /api/billing/webhook`).
+  - White-Label Forensic Dossier generation, **Radar Cangrejo 24/7** continuous infrastructure drift detection (`POST /api/radar/watches` & `POST /api/radar/scan`), commercial OSINT connectors (`Shodan`, `VirusTotal v3`, `AbuseIPDB`) with `BYOK` + `Cloud Pool`, and **Smart IOC Paste-to-Graph** raw text ingestion (`POST /api/ingest/raw-text`).
+- **Cloudflare Workers AI Forensic Engine (`F1`–`F5`) & Universal CPU Fallback (`Gate 9` & `Gate 10`)**:
+  - `CloudflareWorkersAiEngine` supporting Cloudflare Workers AI native bindings (`env.AI`), REST API, and zero-NPU/zero-GPU universal CPU execution (`NONE_UNIVERSAL_CPU_OR_EDGE`), plus in-memory **Bóveda Cero** field sanitization.
+  - **`F1`** (`POST /api/ai/unpack-iocs`): Cognitive IOC Unpacker & Defanger (`hxxps://`, `[.]`, `[@]`) with exact UTF-8 byte offsets `[startByteOffset, endByteOffset]`.
+  - **`F2`** (`POST /api/ai/latent-links`): Latent Link Discovery via Cloudflare Vectorize (`<= 63`-byte namespace `cgrj_<32hex>`) + SQLite lexical matching fused with **Reciprocal Rank Fusion ($k=60$)**.
+  - **`F3`** (`POST /api/ai/anomalies`): Structural Campaign Anomaly Classifier (`CRYPTO_PEEL_CHAIN_LAUNDERING`, `FAST_FLUX_INFRASTRUCTURE`).
+  - **`F4`** (`POST /api/ai/daubert-synthesis` & Sección 4 in `ForensicDossierGenerator`): Court-admissible **Daubert / FRE 702** narrative synthesis with Map-Reduce PageRank context pruning (`<= 24k` tokens) and asymmetric **`Ed25519`** digital signature attestation.
+  - **`F5`** (`POST /api/ai/copilot`): Contextual Forensic Graph Copilot (*"El Comisario IA"*) with `[EntityID]` citations, tool-calling suggestions, and one-click AI-to-Graph materialization (`#btn-ai-materialize`).
+  - `wrangler.jsonc` & `apps/web/cloudflareWorker.ts` serverless edge entrypoint.
+- **Native MCP Server, Bidirectional OASIS STIX 2.1 Importer & MITRE ATT&CK v15 (`Gate 11`)**:
+  - Web-Standard **Model Context Protocol (`MCP JSON-RPC 2.0`)** server at `GET / POST /api/mcp` (`initialize`, `tools/list`, `tools/call`) exposing 6 forensic tools to external AI agents.
+  - `Stix21Exporter.importBundle` (`POST /api/import/stix21`) with cryptographic `SHA-256` `x_cangrejo_custody` verification and tamper detection.
+  - `analyzeMitreAttackAndTimeline` (`POST /api/analytics/mitre-attack`) mapping graph topologies to **MITRE ATT&CK Enterprise v15.1** tactics/techniques and ordered kill-chain chronology.
+
+---
+
 ## [1.0.0] — 2026-11-03 — *"Cangrejo de Oro"*
 
 ### Added

@@ -2453,6 +2453,38 @@ document.getElementById('btn-ai-f5-ask')?.addEventListener('click', async () => 
   }
 });
 
+document.getElementById('btn-ai-mitre')?.addEventListener('click', async () => {
+  try {
+    const payload = serializeCurrentStore();
+    const res = await fetch('/api/analytics/mitre-attack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      frameworkVersion: string;
+      timelineEvents: Array<{
+        stepOrder: number;
+        phaseName: string;
+        techniqueId: string;
+        techniqueName: string;
+        severity: string;
+        summary: string;
+      }>;
+    };
+    if (data.ok) {
+      const lines = data.timelineEvents.map(
+        (ev) =>
+          `[Fase #${ev.stepOrder} • ${ev.phaseName}] ${ev.techniqueId} (${ev.techniqueName}) [${ev.severity}]: ${ev.summary}`
+      );
+      setAiOutput(`[${data.frameworkVersion} — Línea de Tiempo Kill-Chain]:\n${lines.join('\n')}`);
+    }
+  } catch (err) {
+    setAiOutput(`Error en mapeo MITRE ATT&CK: ${String(err)}`);
+  }
+});
+
 resizeCanvas();
 void syncEditionBadge();
 loadPreset('apt29');

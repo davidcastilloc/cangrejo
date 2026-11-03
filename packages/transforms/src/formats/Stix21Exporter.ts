@@ -327,4 +327,194 @@ export class Stix21Exporter {
       },
     };
   }
+
+  /**
+   * Verifies the cryptographic SHA-256 chain-of-custody manifest (`x_cangrejo_custody`) of a STIX 2.1 Bundle.
+   */
+  public static verifyCustodyManifest(bundle: Partial<Stix21Bundle>): {
+    custodyVerified: boolean;
+    computedDigestHex: string;
+    expectedDigestHex: string | null;
+    reason: string;
+  } {
+    const objects = Array.isArray(bundle.objects) ? bundle.objects : [];
+    const canonicalEntitiesAndRels = objects.map((obj) => ({
+      id: obj.id,
+      type: obj.type,
+      value: obj.value ?? obj.name ?? null,
+      source_ref: obj.source_ref ?? null,
+      target_ref: obj.target_ref ?? null,
+      relationship_type: obj.relationship_type ?? null,
+    }));
+    const computedDigestHex = computeSha256Hex(JSON.stringify(canonicalEntitiesAndRels));
+    const expectedDigestHex =
+      bundle.x_cangrejo_custody && typeof bundle.x_cangrejo_custody.canonicalDigestHex === 'string'
+        ? bundle.x_cangrejo_custody.canonicalDigestHex
+        : null;
+
+    if (!expectedDigestHex) {
+      return {
+        custodyVerified: true,
+        computedDigestHex,
+        expectedDigestHex: null,
+        reason: 'Standard external OASIS STIX 2.1 bundle (no x_cangrejo_custody seal attached; SHA-256 computed on ingest).',
+      };
+    }
+
+    const matches = computedDigestHex.toLowerCase() === expectedDigestHex.toLowerCase();
+    return {
+      custodyVerified: matches,
+      computedDigestHex,
+      expectedDigestHex,
+      reason: matches
+        ? 'x_cangrejo_custody SHA-256 Chain-of-Custody seal verified intact.'
+        : 'TAMPER DETECTED: x_cangrejo_custody SHA-256 digest does not match STIX 2.1 objects payload.',
+    };
+  }
+
+  /**
+   * Imports an OASIS STIX 2.1 Bundle (from CANGREJO, MISP, OpenCTI, Sentinel, or CrowdStrike)
+   * into normalized CANGREJO entities and directed links while verifying `x_cangrejo_custody`.
+   */
+  public static importBundle(bundle: Partial<Stix21Bundle>) {
+    const custody = Stix21Exporter.verifyCustodyManifest(bundle);
+    const objects = Array.isArray(bundle.objects) ? bundle.objects : [];
+    const authoringIdentityId = `identity--${deterministicStixUuid('cangrejo-forensic-unit')}`;
+
+    const entityIdByStixId = new Map<string, string>();
+    const entities: Array<{
+      id: string;
+      stixId: string;
+      typeName: string;
+      value: string;
+      weight: number;
+      bookmark: number;
+      position: { x: number; y: number };
+    }> = [];
+
+    const mapStixTypeToMaltego = (obj: Stix21Object): string => {
+      if (typeof obj.x_cangrejo_type === 'string' && obj.x_cangrejo_type.trim()) {
+        return obj.x_cangrejo_type.trim();
+      }
+      switch (obj.type) {
+        case 'ipv4-addr':
+          return 'maltego.IPv4Address';
+        case 'ipv6-addr':
+          return 'maltego.IPv6Address';
+        case 'domain-name':
+          return 'maltego.Domain';
+        case 'url':
+          return 'maltego.URL';
+        case 'email-addr':
+          return 'maltego.EmailAddress';
+        case 'autonomous-system':
+          return 'maltego.ASNumber';
+        case 'vulnerability':
+          return 'maltego.CVE';
+        case 'file':
+          return 'maltego.Hash';
+        case 'threat-actor':
+        case 'intrusion-set':
+          return 'maltego.ThreatActor';
+        case 'cryptocurrency-wallet':
+          return 'maltego.BTCAddress';
+        case 'location':
+          return 'maltego.Location';
+        case 'identity':
+          return obj.identity_class === 'organization' ? 'maltego.Company' : 'maltego.Person';
+        default:
+          return 'maltego.Phrase';
+      }
+    };
+
+    const nonRelObjects = objects.filter(
+      (o) =>
+        o &&
+        typeof o.type === 'string' &&
+        o.type !== 'relationship' &&
+        o.type !== 'report' &&
+        o.id !== authoringIdentityId
+    );
+
+    nonRelObjects.forEach((obj, idx) => {
+      const id =
+        typeof obj.x_cangrejo_entity_id === 'string' && /^\d+$/.test(obj.x_cangrejo_entity_id)
+          ? obj.x_cangrejo_entity_id
+          : String(800000 + idx + 1);
+      const rawValue =
+        (typeof obj.value === 'string' && obj.value) ||
+        (typeof obj.name === 'string' && obj.name) ||
+        (typeof obj.pattern === 'string' && obj.pattern) ||
+        obj.id;
+      const typeName = mapStixTypeToMaltego(obj);
+      const weight = typeof obj.x_cangrejo_weight === 'number' ? obj.x_cangrejo_weight : 85;
+      const bookmark = typeof obj.x_cangrejo_bookmark === 'number' ? obj.x_cangrejo_bookmark : 1;
+      const angle = (idx / Math.max(1, nonRelObjects.length)) * Math.PI * 2;
+      const radius = 240;
+
+      entityIdByStixId.set(obj.id, id);
+      entities.push({
+        id,
+        stixId: obj.id,
+        typeName,
+        value: String(rawValue),
+        weight,
+        bookmark,
+        position: {
+          x: Math.round(Math.cos(angle) * radius),
+          y: Math.round(Math.sin(angle) * radius),
+        },
+      });
+    });
+
+    const links: Array<{
+      id: string;
+      stixId: string;
+      sourceId: string;
+      targetId: string;
+      label: string;
+      color: string;
+    }> = [];
+
+    let relCounter = 0;
+    for (const obj of objects) {
+      if (!obj || obj.type !== 'relationship') continue;
+      const srcRef = typeof obj.source_ref === 'string' ? obj.source_ref : '';
+      const dstRef = typeof obj.target_ref === 'string' ? obj.target_ref : '';
+      const sourceId = entityIdByStixId.get(srcRef);
+      const targetId = entityIdByStixId.get(dstRef);
+      if (!sourceId || !targetId) continue;
+
+      relCounter++;
+      const linkId =
+        typeof obj.x_cangrejo_link_id === 'string' && /^\d+$/.test(obj.x_cangrejo_link_id)
+          ? obj.x_cangrejo_link_id
+          : String(900000 + relCounter);
+      const label =
+        typeof obj.relationship_type === 'string' && obj.relationship_type.trim()
+          ? obj.relationship_type.trim()
+          : 'related-to';
+
+      links.push({
+        id: linkId,
+        stixId: obj.id,
+        sourceId,
+        targetId,
+        label,
+        color: '#38bdf8',
+      });
+    }
+
+    return {
+      bundleId: typeof bundle.id === 'string' ? bundle.id : 'bundle--imported',
+      custodyVerified: custody.custodyVerified,
+      custodyReason: custody.reason,
+      computedDigestHex: custody.computedDigestHex,
+      expectedDigestHex: custody.expectedDigestHex,
+      entityCount: entities.length,
+      linkCount: links.length,
+      entities,
+      links,
+    };
+  }
 }

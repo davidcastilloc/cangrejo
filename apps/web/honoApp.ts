@@ -2136,4 +2136,324 @@ cangrejoHonoApp.post('/api/ai/copilot', async (c) => {
   }
 });
 
+// =============================================================================
+// Gate 11: Bidirectional STIX 2.1 Importer, MITRE ATT&CK v15 & Native MCP Server
+// =============================================================================
+
+/**
+ * Bidirectional OASIS STIX 2.1 Bundle Importer (`POST /api/import/stix21`).
+ * Verifies the cryptographic SHA-256 `x_cangrejo_custody` manifest and converts STIX 2.1 objects into CANGREJO nodes/links.
+ */
+cangrejoHonoApp.post('/api/import/stix21', async (c) => {
+  try {
+    const rawBody = (await c.req.json()) as Record<string, unknown>;
+    const bundleCandidate =
+      rawBody && typeof rawBody.bundle === 'object' && rawBody.bundle !== null
+        ? (rawBody.bundle as Record<string, unknown>)
+        : rawBody;
+    const imported = Stix21Exporter.importBundle(bundleCandidate);
+    return c.json({
+      ok: true,
+      ...imported,
+    });
+  } catch (err) {
+    console.error('[Hono /api/import/stix21] STIX 2.1 import failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+/**
+ * MITRE ATT&CK v15 Enterprise Kill-Chain & Forensic Chronology Mapper (`POST /api/analytics/mitre-attack`).
+ */
+cangrejoHonoApp.post('/api/analytics/mitre-attack', async (c) => {
+  try {
+    const rawBody = (await c.req.json()) as {
+      entities?: Array<Record<string, unknown>>;
+      links?: Array<Record<string, unknown>>;
+    };
+    const store = buildStoreFromGraphPayload(rawBody);
+    const report = CloudflareWorkersAiEngine.analyzeMitreAttackAndTimeline(
+      store,
+      resolveAiRuntimeConfig(c)
+    );
+    return c.json(report, 200);
+  } catch (err) {
+    console.error('[Hono /api/analytics/mitre-attack] MITRE ATT&CK mapping failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+const CANGREJO_MCP_TOOLS_CATALOG = [
+  {
+    name: 'cangrejo_unpack_defanged_iocs',
+    description:
+      'Unpacks and normalizes obfuscated/defanged IOCs (hxxps://, [.], [@], CVEs, SHA-256, BTC wallets) from raw threat reports with exact UTF-8 byte offsets [startByteOffset, endByteOffset]. Call this when ingesting unstructured CTI advisories or incident logs; do NOT call this for structured STIX 2.1 JSON bundles.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'Raw unstructured threat report or log text containing defanged or standard IOCs.',
+        },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'cangrejo_discover_latent_links',
+    description:
+      'Discovers non-obvious latent links across graph entities using Cloudflare Vectorize semantic embeddings and SQLite lexical matching fused via Reciprocal Rank Fusion (RRF k=60). Call this to find hidden relationships between unconnected nodes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        expedienteId: { type: 'string', description: 'Unique forensic case identifier.' },
+        entities: {
+          type: 'array',
+          description: 'List of graph entities ({ id, typeName, value }).',
+          items: { type: 'object' },
+        },
+        links: {
+          type: 'array',
+          description: 'Existing directed links ({ id, sourceId, targetId, label }).',
+          items: { type: 'object' },
+        },
+      },
+      required: ['entities'],
+    },
+  },
+  {
+    name: 'cangrejo_classify_anomalies',
+    description:
+      'Detects structural topological anomalies in an OSINT/CTI graph, including Crypto Peel-Chain laundering rings (directed cycles) and Fast-Flux C2 pivot hubs (PageRank centrality).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entities: { type: 'array', items: { type: 'object' } },
+        links: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['entities'],
+    },
+  },
+  {
+    name: 'cangrejo_generate_daubert_dossier',
+    description:
+      'Synthesizes a court-admissible Daubert / FRE 702 sworn forensic narrative grounded in PageRank centrality and 64-bit [EntityID] citations, signed with an asymmetric Ed25519 digital signature.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        expedienteId: { type: 'string' },
+        title: { type: 'string' },
+        leadAnalyst: { type: 'string' },
+        entities: { type: 'array', items: { type: 'object' } },
+        links: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['entities'],
+    },
+  },
+  {
+    name: 'cangrejo_map_mitre_attack',
+    description:
+      'Maps graph entities and cyclic infrastructure to MITRE ATT&CK Enterprise v15.1 Tactics & Techniques and produces an ordered Forensic Kill-Chain Chronology.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entities: { type: 'array', items: { type: 'object' } },
+        links: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['entities'],
+    },
+  },
+  {
+    name: 'cangrejo_import_stix21_bundle',
+    description:
+      'Imports an OASIS STIX 2.1 Bundle (from MISP, OpenCTI, Sentinel, or CANGREJO) into normalized graph entities and links while verifying the cryptographic SHA-256 x_cangrejo_custody seal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bundle: {
+          type: 'object',
+          description: 'Complete OASIS STIX 2.1 JSON bundle.',
+        },
+      },
+      required: ['bundle'],
+    },
+  },
+] as const;
+
+cangrejoHonoApp.get('/api/mcp', (c) => {
+  return c.json({
+    ok: true,
+    protocol: 'Model Context Protocol (MCP)',
+    protocolVersion: '2024-11-05',
+    serverInfo: {
+      name: 'cangrejo-osint-mcp',
+      version: '1.1.0',
+      vendor: 'CANGREJO Open-Core OSINT & Forensic Link-Analysis Platform',
+    },
+    tools: CANGREJO_MCP_TOOLS_CATALOG,
+  });
+});
+
+cangrejoHonoApp.post('/api/mcp', async (c) => {
+  try {
+    const rpc = (await c.req.json()) as {
+      jsonrpc?: string;
+      id?: string | number | null;
+      method?: string;
+      params?: Record<string, unknown>;
+    };
+    const rpcId = rpc.id ?? 1;
+    const method = rpc.method ?? '';
+
+    if (method === 'initialize') {
+      return c.json({
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: {
+            tools: { listChanged: false },
+          },
+          serverInfo: {
+            name: 'cangrejo-osint-mcp',
+            version: '1.1.0',
+          },
+        },
+      });
+    }
+
+    if (method === 'tools/list') {
+      return c.json({
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: {
+          tools: CANGREJO_MCP_TOOLS_CATALOG,
+        },
+      });
+    }
+
+    if (method === 'tools/call') {
+      const toolName = String(rpc.params?.name ?? '');
+      const args = (rpc.params?.arguments ?? {}) as Record<string, unknown>;
+      const aiConfig = resolveAiRuntimeConfig(c);
+
+      let toolOutput: unknown;
+      switch (toolName) {
+        case 'cangrejo_unpack_defanged_iocs': {
+          toolOutput = await CloudflareWorkersAiEngine.unpackCognitiveIocs(
+            String(args.text ?? ''),
+            aiConfig
+          );
+          break;
+        }
+        case 'cangrejo_discover_latent_links': {
+          toolOutput = await CloudflareWorkersAiEngine.discoverLatentLinksRrf(
+            {
+              expedienteId: typeof args.expedienteId === 'string' ? args.expedienteId : undefined,
+              entities: Array.isArray(args.entities)
+                ? (args.entities as Array<{ id: string; typeName: string; value: string }>)
+                : [],
+              links: Array.isArray(args.links)
+                ? (args.links as Array<{ sourceId: string; targetId: string; label?: string }>)
+                : [],
+            },
+            aiConfig
+          );
+          break;
+        }
+        case 'cangrejo_classify_anomalies': {
+          const store = buildStoreFromGraphPayload(args);
+          toolOutput = await CloudflareWorkersAiEngine.classifyInfrastructureAnomalies(store, aiConfig);
+          break;
+        }
+        case 'cangrejo_generate_daubert_dossier': {
+          const store = buildStoreFromGraphPayload(args);
+          toolOutput = await CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrative(
+            store,
+            {
+              expedienteId: typeof args.expedienteId === 'string' ? args.expedienteId : undefined,
+              title: typeof args.title === 'string' ? args.title : undefined,
+              leadAnalyst: typeof args.leadAnalyst === 'string' ? args.leadAnalyst : undefined,
+            },
+            aiConfig
+          );
+          break;
+        }
+        case 'cangrejo_map_mitre_attack': {
+          const store = buildStoreFromGraphPayload(args);
+          toolOutput = CloudflareWorkersAiEngine.analyzeMitreAttackAndTimeline(store, aiConfig);
+          break;
+        }
+        case 'cangrejo_import_stix21_bundle': {
+          const bundleArg =
+            typeof args.bundle === 'object' && args.bundle !== null
+              ? (args.bundle as Record<string, unknown>)
+              : args;
+          toolOutput = Stix21Exporter.importBundle(bundleArg);
+          break;
+        }
+        default:
+          return c.json(
+            {
+              jsonrpc: '2.0',
+              id: rpcId,
+              error: {
+                code: -32601,
+                message: `Unknown CANGREJO MCP tool: "${toolName}"`,
+              },
+            },
+            400
+          );
+      }
+
+      return c.json({
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(toolOutput),
+            },
+          ],
+          structuredContent: toolOutput,
+          isError: false,
+        },
+      });
+    }
+
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        id: rpcId,
+        error: {
+          code: -32601,
+          message: `Unsupported MCP JSON-RPC method: "${method}"`,
+        },
+      },
+      400
+    );
+  } catch (err) {
+    console.error('[Hono /api/mcp] MCP JSON-RPC execution failed:', err);
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32603,
+          message: err instanceof Error ? err.message : String(err),
+        },
+      },
+      500
+    );
+  }
+});
+
+
 

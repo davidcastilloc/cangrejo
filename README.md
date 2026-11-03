@@ -99,9 +99,9 @@ flowchart TD
 
 ---
 
-## ⚡ Verified Performance & Security Gates (Gates 0–6)
+## ⚡ Verified Performance & Security Gates (Gates 0–11)
 
-Every change is verified against **53 deterministic automated tests (`50` TypeScript tests + `3` Rust `cargo test` tests) across 7 architectural gates**:
+Every change is verified against **70 deterministic automated tests (`67` TypeScript tests + `3` Rust `cargo test` tests) across 12 architectural gates**:
 
 | Gate Suite | Benchmark / Invariant | Verified Result |
 | :--- | :--- | :--- |
@@ -111,7 +111,12 @@ Every change is verified against **53 deterministic automated tests (`50` TypeSc
 | **Gate 3: Transforms & Vault** (`tests/gate3-transforms-formats.test.ts`) | Zero-Knowledge `AES-256-GCM` + `AES-GMAC` tamper detection, `.cgrx` PKZIP round-trip, and `OAuth 2.0 PKCE` (RFC 7636) | **6/6 PASS** |
 | **Gate 4: Stack Enhancements** (`tests/gate4-stack-enhancements.test.ts`) | Hono Web-Standard API, `BunSqliteVault` WAL persistence, CSP-safe `Zod` `.passthrough()` contracts, and `CollaborationRoomHub` | **5/5 PASS** |
 | **Gate 5: Forensic Optimizations** (`tests/gate5-forensic-optimizations.test.ts`) | Native Rust `bun:ffi` Barnes-Hut Quadtree ($O(V \log V)$, `< 15 ms`), `ForensicGraphAnalytics`, Frustum Culling, Singleflight TTL cache & OASIS STIX 2.1 export | **5/5 PASS** (+ **3/3 Rust**) |
-| **Gate 6: Production Completeness** (`tests/gate6-production-completeness.test.ts`) | Symmetric `.cgrj` Bóveda Cero decryption (`AES-GMAC`), live DNS TXT (`SPF`/`DMARC`), live collaboration deltas, HTML5 Dossier & standalone `Bun.serve` | **4/4 PASS** |
+| **Gate 6: Production Completeness** (`tests/gate6-production-completeness.test.ts`) | Symmetric `.cgrj` Bóveda Cero decryption (`AES-GMAC`), live DNS TXT (`SPF`/`DMARC`), live collaboration deltas, HTML5 Dossier & standalone `Bun.serve` | **5/5 PASS** |
+| **Gate 7: Odoo Open-Core Edition Engine** (`tests/gate7-odoo-open-core-edition.test.ts`) | `COMMUNITY` (`Apache-2.0`) vs `ORO_PRO` (`500 CR`) vs `PLATINO_ENTERPRISE` (`5,000 CR`) edition gating, OSINT credit ledger & White-Label Forensic Dossiers | **3/3 PASS** |
+| **Gate 8: Commercial Licensing, Radar 24/7 & BYOK** (`tests/gate8-commercial-osint-radar-ingest.test.ts`) | `HMAC-SHA256` signed license tokens, Stripe/LemonSqueezy billing webhook, `Radar Cangrejo 24/7` drift monitor, `Shodan`/`VT`/`AbuseIPDB` BYOK & Smart IOC Ingestor | **4/4 PASS** |
+| **Gate 9: Cloudflare Workers AI Forensics (`F1`–`F5`)** (`tests/gate9-cloudflare-workers-ai-forensics.test.ts`) | Cognitive IOC Unpacker (`UTF-8` byte offsets), `Vectorize` + SQLite `RRF k=60` latent links, Peel-Chain/Fast-Flux anomalies, `Daubert / FRE 702` + `Ed25519` & Copilot | **4/4 PASS** |
+| **Gate 10: Cloudflare Edge, Daubert Dossier & AI Materialization** (`tests/gate10-cloudflare-edge-dossier-daubert.test.ts`) | `wrangler.jsonc` + `cloudflareWorker.ts` (`env.AI`), Sección 4 (`Daubert / Ed25519`) inside HTML5 Dossier & one-click AI-to-Graph materialization | **2/2 PASS** |
+| **Gate 11: Native MCP Server, STIX 2.1 Import & MITRE ATT&CK** (`tests/gate11-mcp-stix-import-mitre.test.ts`) | Web-Standard `MCP JSON-RPC 2.0` server (`/api/mcp`), bidirectional OASIS STIX 2.1 import with `SHA-256` tamper detection & MITRE ATT&CK v15 kill-chain timeline | **3/3 PASS** |
 
 ---
 
