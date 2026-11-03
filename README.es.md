@@ -61,6 +61,11 @@ Para dotar al proyecto de una identidad propia e inconfundible dentro del ecosis
   <img src="./docs/screenshots/cangrejo_studio_daylight_report.png" alt="Modo Daylight Report (Claro WCAG 2.1 AAA)" width="49%" />
 </p>
 
+<p align="center">
+  <img src="./docs/screenshots/cangrejo_studio_ai_forensics.png" alt="Comisario IA — Cloudflare Workers AI Forensics (F1-F5) y Dictamen Judicial Daubert Ed25519" width="100%" />
+  <em><strong>Comisario IA (Cloudflare Workers AI Edge + CPU Universal)</strong> — Desofuscador Cognitivo de IOCs (<code>F1</code>), Vínculos Latentes <code>Vectorize RRF k=60</code> (<code>F2</code>), Anomalías Estructurales (<code>F3</code>), Dictamen Judicial <code>Daubert / FRE 702</code> con firma <code>Ed25519</code> (<code>F4</code>) y Mapeo MITRE ATT&amp;CK v15.</em>
+</p>
+
 ---
 
 ## 🚀 Inicio Rápido (Impulsado por **Bun 1.4**, **Rust**, **Cloudflare Workers AI** y **moon 2.6**)

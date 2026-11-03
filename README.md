@@ -47,6 +47,11 @@ To honor investigators who untangle the most enigmatic, seemingly impossible cas
   <img src="./docs/screenshots/cangrejo_studio_daylight_report.png" alt="Cangrejo Daylight Forensic Report Mode (WCAG 2.1 AAA)" width="49%" />
 </p>
 
+<p align="center">
+  <img src="./docs/screenshots/cangrejo_studio_ai_forensics.png" alt="Comisario IA — Cloudflare Workers AI Forensics (F1-F5) & Daubert Ed25519 Synthesis" width="100%" />
+  <em><strong>Comisario IA (Cloudflare Workers AI Edge &amp; CPU Fallback)</strong> — Cognitive IOC Unpacker (<code>F1</code>), Vectorize <code>RRF k=60</code> Latent Links (<code>F2</code>), Structural Anomaly Classifier (<code>F3</code>), Court-Admissible <code>Daubert / FRE 702</code> Narrative with <code>Ed25519</code> Digital Signature (<code>F4</code>), and MITRE ATT&amp;CK v15 Kill-Chain Mapper.</em>
+</p>
+
 ---
 
 ## 🏗️ System Architecture & Monorepo Packages
