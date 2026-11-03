@@ -1,13 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import cloudflareWorker, { type CangrejoCloudflareEnv } from '../apps/web/cloudflareWorker.js';
 import { cangrejoHonoApp } from '../apps/web/honoApp.js';
 import { CloudflareWorkersAiEngine } from '../packages/transforms/src/index.js';
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
 describe('Gate 10: Cloudflare Workers Edge Entrypoint, Daubert/Ed25519 HTML5 Dossier & AI Materialization', () => {
   it('1. validates wrangler.jsonc best-practices bindings and routes /api/ai/* through env.AI binding in cloudflareWorker.ts', async () => {
-    const wranglerPath = path.resolve(process.cwd(), 'wrangler.jsonc');
+    const wranglerPath = path.resolve(REPO_ROOT, 'wrangler.jsonc');
     expect(fs.existsSync(wranglerPath)).toBe(true);
     const wranglerRaw = fs.readFileSync(wranglerPath, 'utf8');
     expect(wranglerRaw).toContain('"nodejs_compat"');
@@ -132,9 +135,9 @@ describe('Gate 10: Cloudflare Workers Edge Entrypoint, Daubert/Ed25519 HTML5 Dos
     );
 
     // Verify UI materialization wiring in index.html & apps/web/main.ts
-    const indexHtml = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
+    const indexHtml = fs.readFileSync(path.resolve(REPO_ROOT, 'index.html'), 'utf8');
     expect(indexHtml).toContain('id="btn-ai-materialize"');
-    const mainTs = fs.readFileSync(path.resolve(process.cwd(), 'apps/web/main.ts'), 'utf8');
+    const mainTs = fs.readFileSync(path.resolve(REPO_ROOT, 'apps/web/main.ts'), 'utf8');
     expect(mainTs).toContain("document.getElementById('btn-ai-materialize')");
   });
 });

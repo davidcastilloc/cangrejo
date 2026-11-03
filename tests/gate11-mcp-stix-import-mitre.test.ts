@@ -189,7 +189,8 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     });
     expect(invokedModels).toContain('@cf/meta/llama-3.1-8b-instruct-fp8');
 
-    const indexHtml = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
+    const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+    const indexHtml = fs.readFileSync(path.resolve(repoRoot, 'index.html'), 'utf8');
     expect(indexHtml).toContain('id="btn-import-stix21"');
     expect(indexHtml).toContain('id="btn-ai-run-tools"');
 
