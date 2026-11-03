@@ -1,8 +1,49 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { D1SchemaRunner } from './D1SchemaRunner.js';
 
 const require = createRequire(import.meta.url);
+const DEFAULT_LICENSE_HMAC_SECRET =
+  process.env.CANGREJO_LICENSE_SECRET ?? 'cangrejo-oro-hmac-sha256-master-secret-2026';
+
+export interface SignedLicenseClaims {
+  tier: CangrejoEditionTier;
+  organizationName: string;
+  badgeTitle: string;
+  credits: number;
+  issuedAt: number;
+  expiresAt: number;
+}
+
+export interface RadarWatchRecord {
+  id: string;
+  targetValue: string;
+  entityType: string;
+  expedienteId: string;
+  baselineIndicators: string[];
+  baselineDigestHex: string;
+  lastCheckedAt: number;
+  driftCount: number;
+}
+
+export interface RadarDriftAlertRecord {
+  id: string;
+  watchId: string;
+  targetValue: string;
+  severity: 'CRITICO' | 'ALTO' | 'INFO';
+  addedIndicators: string[];
+  removedIndicators: string[];
+  baselineDigestHex: string;
+  currentDigestHex: string;
+  detectedAt: number;
+}
+
+export interface ProviderKeySummary {
+  provider: string;
+  maskedKey: string;
+  updatedAt: number;
+}
 
 export interface ExpedienteRecord {
   id: string;
@@ -175,6 +216,35 @@ export class BunSqliteVault {
         badge_title TEXT NOT NULL DEFAULT 'CANGREJO COMMUNITY EDITION',
         watermark_enabled INTEGER NOT NULL DEFAULT 1,
         updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS cangrejo_provider_keys (
+        provider TEXT PRIMARY KEY,
+        api_key TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS cangrejo_radar_watches (
+        id TEXT PRIMARY KEY,
+        target_value TEXT NOT NULL,
+        entity_type TEXT NOT NULL DEFAULT 'maltego.Domain',
+        expediente_id TEXT NOT NULL DEFAULT 'expediente-apt29',
+        baseline_json TEXT NOT NULL,
+        baseline_digest_hex TEXT NOT NULL,
+        drift_count INTEGER NOT NULL DEFAULT 0,
+        last_checked_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS cangrejo_radar_alerts (
+        id TEXT PRIMARY KEY,
+        watch_id TEXT NOT NULL,
+        target_value TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        added_json TEXT NOT NULL,
+        removed_json TEXT NOT NULL,
+        baseline_digest_hex TEXT NOT NULL,
+        current_digest_hex TEXT NOT NULL,
+        detected_at INTEGER NOT NULL
       );
     `);
   }
@@ -498,14 +568,88 @@ export class BunSqliteVault {
   }
 
   /**
+   * Issues an HMAC-SHA256 cryptographically signed commercial license token:
+   * `CGRJ.<TIER>.<base64urlClaims>.<hmacHex>`
+   */
+  public static issueSignedLicenseToken(params: {
+    tier: CangrejoEditionTier;
+    organizationName: string;
+    badgeTitle?: string;
+    credits?: number;
+    ttlMs?: number;
+    secret?: string;
+  }): string {
+    const secret = params.secret ?? DEFAULT_LICENSE_HMAC_SECRET;
+    const now = Date.now();
+    const defaultCredits =
+      params.tier === 'PLATINO_ENTERPRISE' ? 5_000 : params.tier === 'ORO_PRO' ? 500 : 0;
+    const claims: SignedLicenseClaims = {
+      tier: params.tier,
+      organizationName: params.organizationName.trim(),
+      badgeTitle:
+        params.badgeTitle?.trim() ||
+        (params.tier === 'PLATINO_ENTERPRISE'
+          ? 'EXPEDIENTE PERICIAL CERTIFICADO — PLATINO ENTERPRISE'
+          : 'EXPEDIENTE PERICIAL — CANGREJO DE ORO PRO'),
+      credits: params.credits ?? defaultCredits,
+      issuedAt: now,
+      expiresAt: now + (params.ttlMs ?? 365 * 24 * 60 * 60 * 1000),
+    };
+    const payloadB64 = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
+    const signingInput = `CGRJ.${params.tier}.${payloadB64}`;
+    const hmacHex = crypto.createHmac('sha256', secret).update(signingInput).digest('hex');
+    return `${signingInput}.${hmacHex}`;
+  }
+
+  /**
+   * Verifies an HMAC-SHA256 signed license token (`CGRJ.<TIER>.<base64urlClaims>.<hmacHex>`)
+   * using constant-time comparison (`crypto.timingSafeEqual`).
+   */
+  public static verifySignedLicenseToken(
+    token: string,
+    secret = DEFAULT_LICENSE_HMAC_SECRET
+  ): { valid: boolean; reason?: string; claims?: SignedLicenseClaims } {
+    const parts = token.trim().split('.');
+    if (parts.length !== 4 || parts[0] !== 'CGRJ') {
+      return { valid: false, reason: 'Not a 4-part CGRJ signed token.' };
+    }
+    const [, tierPart, payloadB64, signatureHex] = parts;
+    const signingInput = `CGRJ.${tierPart}.${payloadB64}`;
+    const expectedHex = crypto.createHmac('sha256', secret).update(signingInput).digest('hex');
+
+    const sigBuf = Buffer.from(signatureHex, 'utf8');
+    const expBuf = Buffer.from(expectedHex, 'utf8');
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return {
+        valid: false,
+        reason: 'HMAC-SHA256 license signature verification failed (tampered token).',
+      };
+    }
+
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(payloadB64, 'base64url').toString('utf8')
+      ) as SignedLicenseClaims;
+      if (typeof decoded.expiresAt === 'number' && decoded.expiresAt < Date.now()) {
+        return { valid: false, reason: 'Signed license token has expired.' };
+      }
+      return { valid: true, claims: decoded };
+    } catch {
+      return { valid: false, reason: 'Malformed signed license claims payload.' };
+    }
+  }
+
+  /**
    * Polymorphically activates a Pro/Enterprise license key or updates White-Label branding.
-   * Supports either a raw license key string (`"CGRJ-PLATINO-2026"`) or a configuration object.
+   * Strictly verifies HMAC-SHA256 signatures when given a `CGRJ.<TIER>.<payload>.<sig>` token,
+   * while supporting local demo activation keys (`CGRJ-PLATINO-...`, `CGRJ-ORO-...`).
    */
   public activateLicenseOrUpdateEdition(rawInput: unknown): CangrejoEditionState {
     let rawKey = '';
     let requestedTier: CangrejoEditionTier | null = null;
     let orgName: string | undefined;
     let badgeTitle: string | undefined;
+    let signedCreditsOverride: number | undefined;
 
     if (typeof rawInput === 'string') {
       rawKey = rawInput.trim();
@@ -527,6 +671,18 @@ export class BunSqliteVault {
       }
     }
 
+    // If the key is formatted as a 4-segment cryptographic token (CGRJ.<TIER>.<payload>.<sig>), verify HMAC
+    if (rawKey.startsWith('CGRJ.')) {
+      const verified = BunSqliteVault.verifySignedLicenseToken(rawKey);
+      if (!verified.valid || !verified.claims) {
+        throw new Error(verified.reason ?? 'Invalid signed CGRJ license token.');
+      }
+      requestedTier = verified.claims.tier;
+      orgName = orgName ?? verified.claims.organizationName;
+      badgeTitle = badgeTitle ?? verified.claims.badgeTitle;
+      signedCreditsOverride = verified.claims.credits;
+    }
+
     const upperKey = rawKey.toUpperCase();
     let targetTier: CangrejoEditionTier = requestedTier ?? 'COMMUNITY';
     if (!requestedTier) {
@@ -540,7 +696,8 @@ export class BunSqliteVault {
     }
 
     const creditsTotal =
-      targetTier === 'PLATINO_ENTERPRISE' ? 5_000 : targetTier === 'ORO_PRO' ? 500 : 0;
+      signedCreditsOverride ??
+      (targetTier === 'PLATINO_ENTERPRISE' ? 5_000 : targetTier === 'ORO_PRO' ? 500 : 0);
     const creditsRemaining = creditsTotal;
     const watermarkEnabled = targetTier === 'COMMUNITY' ? 1 : 0;
     const maskedKey =
@@ -614,6 +771,312 @@ export class BunSqliteVault {
       console.error('[BunSqliteVault] Secondary credit deduction failed gracefully:', err);
     }
     return this.getEditionState();
+  }
+
+  /**
+   * Stores a BYOK (Bring Your Own Key) OSINT provider API key in SQLite (`shodan`, `virustotal`, `abuseipdb`, etc.).
+   */
+  public setProviderApiKey(provider: string, apiKey: string): ProviderKeySummary {
+    const cleanProvider = provider.trim().toLowerCase();
+    const cleanKey = apiKey.trim();
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT INTO cangrejo_provider_keys (provider, api_key, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(provider) DO UPDATE SET
+        api_key = excluded.api_key,
+        updated_at = excluded.updated_at
+    `);
+    stmt.run(cleanProvider, cleanKey, now);
+
+    const maskedKey =
+      cleanKey.length >= 8
+        ? `${cleanKey.slice(0, 4)}••••${cleanKey.slice(-4)}`
+        : `${cleanKey.slice(0, 2)}••••`;
+
+    return {
+      provider: cleanProvider,
+      maskedKey,
+      updatedAt: now,
+    };
+  }
+
+  public getProviderApiKey(provider: string): string | null {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT api_key FROM cangrejo_provider_keys WHERE provider = ?
+      `);
+      const row = stmt.get(provider.trim().toLowerCase()) as { api_key: string } | undefined;
+      return row?.api_key ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  public listConfiguredProviders(): ProviderKeySummary[] {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT provider, api_key, updated_at
+        FROM cangrejo_provider_keys
+        ORDER BY provider ASC
+      `);
+      const rows = stmt.all() as Array<{ provider: string; api_key: string; updated_at: number }>;
+      return rows.map((r) => ({
+        provider: r.provider,
+        maskedKey:
+          r.api_key.length >= 8
+            ? `${r.api_key.slice(0, 4)}••••${r.api_key.slice(-4)}`
+            : `${r.api_key.slice(0, 2)}••••`,
+        updatedAt: r.updated_at,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private static computeIndicatorSetDigest(indicators: string[]): {
+    normalized: string[];
+    digestHex: string;
+  } {
+    const normalized = Array.from(
+      new Set(indicators.map((item) => item.trim().toLowerCase()).filter(Boolean))
+    ).sort();
+    const digestHex = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(normalized))
+      .digest('hex');
+    return { normalized, digestHex };
+  }
+
+  /**
+   * Registers or updates a 24/7 Radar Cangrejo continuous infrastructure watch.
+   */
+  public upsertRadarWatch(params: {
+    id?: string;
+    targetValue: string;
+    entityType?: string;
+    expedienteId?: string;
+    baselineIndicators: string[];
+  }): RadarWatchRecord {
+    const id =
+      params.id?.trim() ||
+      `watch-${params.targetValue.trim().toLowerCase().replace(/[^a-z0-9.-]/g, '-')}`;
+    const targetValue = params.targetValue.trim();
+    const entityType = params.entityType?.trim() || 'maltego.Domain';
+    const expedienteId = params.expedienteId?.trim() || 'expediente-apt29';
+    const { normalized, digestHex } = BunSqliteVault.computeIndicatorSetDigest(
+      params.baselineIndicators
+    );
+    const now = Date.now();
+
+    const stmt = this.db.prepare(`
+      INSERT INTO cangrejo_radar_watches (
+        id, target_value, entity_type, expediente_id, baseline_json, baseline_digest_hex, drift_count, last_checked_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        target_value = excluded.target_value,
+        entity_type = excluded.entity_type,
+        expediente_id = excluded.expediente_id,
+        baseline_json = excluded.baseline_json,
+        baseline_digest_hex = excluded.baseline_digest_hex,
+        last_checked_at = excluded.last_checked_at
+    `);
+    stmt.run(
+      id,
+      targetValue,
+      entityType,
+      expedienteId,
+      JSON.stringify(normalized),
+      digestHex,
+      now
+    );
+
+    return {
+      id,
+      targetValue,
+      entityType,
+      expedienteId,
+      baselineIndicators: normalized,
+      baselineDigestHex: digestHex,
+      lastCheckedAt: now,
+      driftCount: 0,
+    };
+  }
+
+  public listRadarWatches(): RadarWatchRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT id, target_value, entity_type, expediente_id, baseline_json, baseline_digest_hex, drift_count, last_checked_at
+      FROM cangrejo_radar_watches
+      ORDER BY last_checked_at DESC
+    `);
+    const rows = stmt.all() as Array<{
+      id: string;
+      target_value: string;
+      entity_type: string;
+      expediente_id: string;
+      baseline_json: string;
+      baseline_digest_hex: string;
+      drift_count: number;
+      last_checked_at: number;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      targetValue: r.target_value,
+      entityType: r.entity_type,
+      expedienteId: r.expediente_id,
+      baselineIndicators: JSON.parse(r.baseline_json) as string[],
+      baselineDigestHex: r.baseline_digest_hex,
+      driftCount: r.drift_count,
+      lastCheckedAt: r.last_checked_at,
+    }));
+  }
+
+  /**
+   * Evaluates a watched indicator against newly observed DNS/CT/IP records and records a forensic drift alert if infrastructure changed.
+   */
+  public evaluateRadarDrift(params: {
+    watchId: string;
+    observedIndicators: string[];
+  }): {
+    driftDetected: boolean;
+    watch: RadarWatchRecord;
+    alert: RadarDriftAlertRecord | null;
+  } {
+    const watchStmt = this.db.prepare(`
+      SELECT id, target_value, entity_type, expediente_id, baseline_json, baseline_digest_hex, drift_count, last_checked_at
+      FROM cangrejo_radar_watches
+      WHERE id = ?
+    `);
+    const row = watchStmt.get(params.watchId) as
+      | {
+          id: string;
+          target_value: string;
+          entity_type: string;
+          expediente_id: string;
+          baseline_json: string;
+          baseline_digest_hex: string;
+          drift_count: number;
+          last_checked_at: number;
+        }
+      | undefined;
+
+    if (!row) {
+      throw new Error(`Radar watch "${params.watchId}" not found.`);
+    }
+
+    const baselineSet = new Set<string>(JSON.parse(row.baseline_json) as string[]);
+    const { normalized: currentNormalized, digestHex: currentDigestHex } =
+      BunSqliteVault.computeIndicatorSetDigest(params.observedIndicators);
+    const currentSet = new Set<string>(currentNormalized);
+
+    const addedIndicators = currentNormalized.filter((item) => !baselineSet.has(item));
+    const removedIndicators = Array.from(baselineSet).filter((item) => !currentSet.has(item));
+    const driftDetected =
+      currentDigestHex !== row.baseline_digest_hex &&
+      (addedIndicators.length > 0 || removedIndicators.length > 0);
+    const now = Date.now();
+    const nextDriftCount = driftDetected ? row.drift_count + 1 : row.drift_count;
+
+    const updateStmt = this.db.prepare(`
+      UPDATE cangrejo_radar_watches
+      SET drift_count = ?, last_checked_at = ?
+      WHERE id = ?
+    `);
+    updateStmt.run(nextDriftCount, now, row.id);
+
+    const updatedWatch: RadarWatchRecord = {
+      id: row.id,
+      targetValue: row.target_value,
+      entityType: row.entity_type,
+      expedienteId: row.expediente_id,
+      baselineIndicators: Array.from(baselineSet),
+      baselineDigestHex: row.baseline_digest_hex,
+      driftCount: nextDriftCount,
+      lastCheckedAt: now,
+    };
+
+    if (!driftDetected) {
+      return {
+        driftDetected: false,
+        watch: updatedWatch,
+        alert: null,
+      };
+    }
+
+    const severity: 'CRITICO' | 'ALTO' | 'INFO' =
+      addedIndicators.length > 0 && removedIndicators.length > 0
+        ? 'CRITICO'
+        : addedIndicators.length > 0
+          ? 'ALTO'
+          : 'INFO';
+
+    const alert: RadarDriftAlertRecord = {
+      id: `alert-${now}-${Math.random().toString(36).slice(2, 7)}`,
+      watchId: row.id,
+      targetValue: row.target_value,
+      severity,
+      addedIndicators,
+      removedIndicators,
+      baselineDigestHex: row.baseline_digest_hex,
+      currentDigestHex,
+      detectedAt: now,
+    };
+
+    const insertAlertStmt = this.db.prepare(`
+      INSERT INTO cangrejo_radar_alerts (
+        id, watch_id, target_value, severity, added_json, removed_json, baseline_digest_hex, current_digest_hex, detected_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertAlertStmt.run(
+      alert.id,
+      alert.watchId,
+      alert.targetValue,
+      alert.severity,
+      JSON.stringify(alert.addedIndicators),
+      JSON.stringify(alert.removedIndicators),
+      alert.baselineDigestHex,
+      alert.currentDigestHex,
+      alert.detectedAt
+    );
+
+    return {
+      driftDetected: true,
+      watch: updatedWatch,
+      alert,
+    };
+  }
+
+  public listRadarAlerts(limit = 25): RadarDriftAlertRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT id, watch_id, target_value, severity, added_json, removed_json, baseline_digest_hex, current_digest_hex, detected_at
+      FROM cangrejo_radar_alerts
+      ORDER BY detected_at DESC
+      LIMIT ?
+    `);
+    const rows = stmt.all(limit) as Array<{
+      id: string;
+      watch_id: string;
+      target_value: string;
+      severity: 'CRITICO' | 'ALTO' | 'INFO';
+      added_json: string;
+      removed_json: string;
+      baseline_digest_hex: string;
+      current_digest_hex: string;
+      detected_at: number;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      watchId: r.watch_id,
+      targetValue: r.target_value,
+      severity: r.severity,
+      addedIndicators: JSON.parse(r.added_json) as string[],
+      removedIndicators: JSON.parse(r.removed_json) as string[],
+      baselineDigestHex: r.baseline_digest_hex,
+      currentDigestHex: r.current_digest_hex,
+      detectedAt: r.detected_at,
+    }));
   }
 
   public close(): void {

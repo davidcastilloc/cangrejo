@@ -208,3 +208,54 @@ export const LicenseActivationRequestSchema = z
     badgeTitle: z.string().optional(),
   })
   .passthrough();
+
+/**
+ * Gate 8 Commercial Schemas:
+ * 1. HMAC-SHA256 Signed License Issuance & Billing Webhooks (Stripe / LemonSqueezy)
+ * 2. Radar Cangrejo 24/7 Continuous Infrastructure Drift Detection
+ * 3. BYOK / Cloud Pool Commercial OSINT Provider Keys (Shodan, VirusTotal, AbuseIPDB)
+ * 4. Smart IOC Paste-to-Graph Raw Text Ingestion
+ * All object schemas strictly enforce `.passthrough()`.
+ */
+export const BillingWebhookPayloadSchema = z
+  .object({
+    provider: z.enum(['stripe', 'lemonsqueezy', 'manual']).optional(),
+    eventType: z.string().optional(),
+    type: z.string().optional(),
+    meta: z.record(z.string(), z.unknown()).optional(),
+    data: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough();
+
+export const ProviderKeyUpdateSchema = z
+  .object({
+    provider: z.enum(['shodan', 'virustotal', 'abuseipdb', 'securitytrails', 'censys']),
+    apiKey: z.string().min(4),
+  })
+  .passthrough();
+
+export const RadarWatchRequestSchema = z
+  .object({
+    id: z.string().optional(),
+    targetValue: z.string().min(1),
+    entityType: z.string().default('maltego.Domain'),
+    expedienteId: z.string().optional(),
+    baselineIndicators: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
+export const RadarScanRequestSchema = z
+  .object({
+    watchId: z.string().min(1),
+    observedIndicators: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
+export const RawTextIngestRequestSchema = z
+  .object({
+    text: z.string().min(1),
+    incidentTitle: z.string().optional(),
+    centerX: z.number().optional(),
+    centerY: z.number().optional(),
+  })
+  .passthrough();

@@ -10,6 +10,7 @@ export {
 } from './MtgjSchemaValidator.js';
 
 export {
+  BillingWebhookPayloadSchema,
   CangrejoEditionStatusResponseSchema,
   CangrejoEditionTierSchema,
   CangrejoEntitlementsSchema,
@@ -21,6 +22,10 @@ export {
   LicenseActivationRequestSchema,
   PesquisaEntityItemSchema,
   PesquisaRunResponseSchema,
+  ProviderKeyUpdateSchema,
+  RadarScanRequestSchema,
+  RadarWatchRequestSchema,
+  RawTextIngestRequestSchema,
   WhiteLabelBrandingSchema,
   validateCgrjWithZod,
 } from './ZodContracts.js';

@@ -2055,6 +2055,139 @@ document.getElementById('btn-reset-community')?.addEventListener('click', () => 
   void activateEditionTier('COMMUNITY', 'COMMUNITY');
 });
 
+// Wire Smart IOC Paste-to-Graph (`#btn-paste-iocs`)
+document.getElementById('btn-paste-iocs')?.addEventListener('click', async () => {
+  const defaultBulletin =
+    'INCIDENTE CANGREJO: Tráfico C2 hacia apt29-stealth-relay.org (185.220.101.42) bajo AS42610 explotando CVE-2024-3400. Hash payload: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855. Contacto rescate: ops@dark-syndicate.io y wallet BTC 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
+  const rawText = window.prompt(
+    'Pega cualquier boletín CTI, correo sospechoso o log de firewall para extraer automáticamente todos los IOCs al grafo:',
+    defaultBulletin
+  );
+  if (!rawText || !rawText.trim()) return;
+
+  try {
+    const res = await fetch('/api/ingest/raw-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: rawText,
+        incidentTitle: 'Boletín Ingestado (Paste-to-Graph)',
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      extractedCount?: number;
+      incidentRoot?: {
+        id: string;
+        typeName: string;
+        value: string;
+        weight: number;
+        position: { x: number; y: number; z: number };
+      };
+      entities?: Array<{
+        id: string;
+        typeName: string;
+        value: string;
+        weight: number;
+        position: { x: number; y: number; z: number };
+      }>;
+      links?: Array<{
+        id: string;
+        sourceId: string;
+        targetId: string;
+        label: string;
+        color: string;
+      }>;
+    };
+    if (!data.ok || !data.incidentRoot || !data.entities || !data.links) {
+      appendLog(`Error en ingesta de IOCs: ${data.error ?? 'Respuesta inválida'}`);
+      return;
+    }
+
+    store.runInBatch(() => {
+      const rootEnt = registry.createEntity(
+        data.incidentRoot!.typeName,
+        data.incidentRoot!.value,
+        {
+          id: Guid.parse(data.incidentRoot!.id),
+          weight: data.incidentRoot!.weight,
+          bookmark: 0,
+        }
+      );
+      store.addEntity(rootEnt, data.incidentRoot!.position, false);
+
+      for (const item of data.entities!) {
+        const ent = registry.createEntity(item.typeName, item.value, {
+          id: Guid.parse(item.id),
+          weight: item.weight,
+          bookmark: 1,
+        });
+        store.addEntity(ent, item.position, false);
+      }
+
+      for (const lnk of data.links!) {
+        store.addLink(
+          createLink(Guid.parse(lnk.id), lnk.label, lnk.color),
+          Guid.parse(lnk.sourceId),
+          Guid.parse(lnk.targetId)
+        );
+      }
+    });
+
+    syncSceneAndUi(false);
+    appendLog(
+      `Ingesta Paste-to-Graph completada: ${data.extractedCount} IOCs únicos extraídos y enlazados al nodo raíz.`
+    );
+  } catch (err) {
+    appendLog(`Error en ingesta Paste-to-Graph: ${String(err)}`);
+  }
+});
+
+// Wire Radar Cangrejo 24/7 Continuous Drift Monitor (`#btn-radar-watch`)
+document.getElementById('btn-radar-watch')?.addEventListener('click', async () => {
+  const selectedIds = Array.from(selection.getModelSelectedEntities());
+  const firstSelected = selectedIds[0] ? store.dataStore.tryGetEntity(selectedIds[0]) : undefined;
+  const targetValue = firstSelected ? getPartPrimaryValue(firstSelected) : 'apt29-c2-mirror.org';
+  const entityType = firstSelected?.typeName ?? 'maltego.Domain';
+
+  try {
+    const watchRes = await fetch('/api/radar/watches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetValue, entityType }),
+    });
+    const watchData = (await watchRes.json()) as {
+      ok: boolean;
+      error?: string;
+      watch?: { id: string; targetValue: string; baselineDigestHex: string };
+    };
+    if (!watchData.ok || !watchData.watch) {
+      appendLog(`Error registrando Radar 24/7: ${watchData.error}`);
+      return;
+    }
+
+    const scanRes = await fetch('/api/radar/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ watchId: watchData.watch.id }),
+    });
+    const scanData = (await scanRes.json()) as {
+      ok: boolean;
+      driftDetected?: boolean;
+      alert?: { severity: string; addedIndicators: string[] } | null;
+    };
+
+    appendLog(
+      `Radar Cangrejo 24/7 activo sobre "${watchData.watch.targetValue}" • Baseline SHA-256: ${watchData.watch.baselineDigestHex.slice(0, 16)}… • Deriva detectada: ${
+        scanData.driftDetected ? `SÍ (${scanData.alert?.severity})` : 'SIN CAMBIOS (Estable)'
+      }`
+    );
+  } catch (err) {
+    appendLog(`Error ejecutando Radar 24/7: ${String(err)}`);
+  }
+});
+
 void syncEditionBadge();
 loadPreset('apt29');
 requestAnimationFrame(renderFrame);

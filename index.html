@@ -126,6 +126,12 @@
             <button id="btn-export-dossier" class="btn" title="Exportar Dossier Pericial Imprimible HTML5/PDF (Caso Cangrejo)">
               📄 Dossier
             </button>
+            <button id="btn-paste-iocs" class="btn" title="Ingesta Masiva: Pegar Reporte o Logs Crudos y Extraer IOCs al Grafo">
+              📋 Pegar IOCs
+            </button>
+            <button id="btn-radar-watch" class="btn" title="Radar Cangrejo 24/7: Monitorear Deriva de Infraestructura (DNS/CT)">
+              📡 Radar 24/7
+            </button>
             <button id="btn-vault-save" class="btn" title="Persistir Expediente activo en la Bóveda SQLite (bun:sqlite)">
               💾 SQLite
             </button>
@@ -268,6 +274,15 @@ AS13335</textarea>
             </button>
             <button data-transform="crypto-trace" class="ctx-item" role="menuitem">
               <span class="ctx-code">UTXO</span> Crypto Hop &amp; On-Chain Tx
+            </button>
+            <button data-transform="shodan-host-intel" class="ctx-item" role="menuitem">
+              <span class="ctx-code">SHODAN</span> Host Ports, Banners &amp; JARM [BYOK/Cloud]
+            </button>
+            <button data-transform="virustotal-domain-ip" class="ctx-item" role="menuitem">
+              <span class="ctx-code">VT v3</span> Multi-Engine CTI Verdict [BYOK/Cloud]
+            </button>
+            <button data-transform="abuseipdb-reputation" class="ctx-item" role="menuitem">
+              <span class="ctx-code">ABUSE</span> AbuseIPDB Confidence Score [BYOK/Cloud]
             </button>
             <div class="ctx-divider"></div>
             <button data-transform="all" class="ctx-item ctx-item-highlight" role="menuitem">

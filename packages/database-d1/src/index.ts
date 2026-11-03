@@ -10,4 +10,8 @@ export {
   type CangrejoEditionTier,
   type ExpedienteRecord,
   type PesquisaAuditEntry,
+  type ProviderKeySummary,
+  type RadarDriftAlertRecord,
+  type RadarWatchRecord,
+  type SignedLicenseClaims,
 } from './BunSqliteVault.js';
