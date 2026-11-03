@@ -145,6 +145,13 @@
             <span id="collab-presence-badge" class="btn" title="Sala Colaborativa en Vivo (expediente-apt29)">
               👥 <span id="lbl-collab-count" class="tabular">2</span> en sala
             </span>
+            <button
+              id="btn-edition-tier"
+              class="btn"
+              title="Edición Open-Core / Activar Licencia Enterprise & Cloud (Modelo Odoo)"
+            >
+              🦀 <span id="lbl-edition-tier" class="tabular">COMMUNITY</span>
+            </button>
           </div>
 
           <!-- Dual Theme Switcher (Obsidian Dark <-> Daylight Report) -->
@@ -374,6 +381,89 @@ AS13335</textarea>
                 <div><kbd>Clic Derecho</kbd> Ejecutar Pesquisa OSINT en vivo</div>
                 <div><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> Deshacer / Rehacer atómico</div>
                 <div><kbd>Supr</kbd> Eliminación en cascada de entidad y aristas</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Odoo-Style Open-Core Edition & Enterprise Cloud Hub Modal -->
+      <div
+        id="edition-modal-backdrop"
+        class="modal-backdrop hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edition-modal-title"
+      >
+        <div class="modal-card">
+          <div class="modal-header">
+            <div class="modal-brand-row">
+              <img src="/cangrejo_logo_emblem.png" alt="Emblema Cangrejo" class="modal-emblem" />
+              <div>
+                <h2 id="edition-modal-title" class="modal-title">
+                  CANGREJO — Arquitectura Open-Core (Community &amp; Enterprise Cloud)
+                </h2>
+                <p id="lbl-edition-subtitle" class="modal-subtitle">
+                  Edición Activa: Cangrejo Community Edition (Open-Core Apache-2.0)
+                </p>
+              </div>
+            </div>
+            <button id="btn-close-edition" type="button" class="btn btn-icon" aria-label="Cerrar ventana">
+              ✕
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <div class="lore-section">
+              <h3>🏆 Comparativa de Ediciones (Modelo Open-Core + Cloud Intelligence)</h3>
+              <div class="tier-grid">
+                <div class="tier-card tier-bronce">
+                  <strong>Community Edition (Gratis / Repo GitHub)</strong>
+                  <span>Motor local 60 FPS • Pesquisas públicas (DNS, crt.sh, RDAP) • Dossier con sello Community</span>
+                </div>
+                <div class="tier-card tier-oro">
+                  <strong>Cangrejo de Oro Pro (500 Créditos OSINT)</strong>
+                  <span>Pool Cloud de APIs OSINT cacheadas • Dossier Pericial en Marca Blanca • 25,000 entidades</span>
+                </div>
+                <div class="tier-card tier-platino">
+                  <strong>Cangrejo de Platino Enterprise (5,000 Créditos)</strong>
+                  <span>Salas Colaborativas Multi-Analista en Vivo • Radar Continuo 24/7 • 100,000+ entidades</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="lore-section">
+              <h3>🔑 Activación de Licencia Enterprise &amp; Marca Blanca (Dossiers Periciales)</h3>
+              <div style="display: grid; gap: 10px; margin-top: 8px">
+                <label style="font-size: 12px; display: grid; gap: 4px">
+                  <span>Organización / Firma Forense (Marca Blanca para Dossiers HTML5/PDF):</span>
+                  <input
+                    id="inp-edition-org"
+                    type="text"
+                    class="palette-search-input"
+                    value="Unidad Especial de Inteligencia Forense & CTI (Enterprise)"
+                  />
+                </label>
+                <label style="font-size: 12px; display: grid; gap: 4px">
+                  <span>Clave de Licencia (`CGRJ-ORO-...` o `CGRJ-PLATINO-...`):</span>
+                  <input
+                    id="inp-edition-key"
+                    type="text"
+                    class="palette-search-input"
+                    value="CGRJ-PLATINO-2026-ENTERPRISE"
+                  />
+                </label>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px">
+                  <button id="btn-activate-platino" type="button" class="btn btn-primary">
+                    🏆 Activar Platino Enterprise (5,000 CR)
+                  </button>
+                  <button id="btn-activate-oro" type="button" class="btn">
+                    🥇 Activar Oro Pro (500 CR)
+                  </button>
+                  <button id="btn-reset-community" type="button" class="btn">
+                    🦀 Volver a Community (Open-Source)
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -15,12 +15,19 @@ export interface ForensicDossierOptions {
   sourceId?: EntityID;
   targetId?: EntityID;
   timestampIso?: string;
+  editionTier?: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+  organizationName?: string;
+  badgeTitle?: string;
+  watermarkEnabled?: boolean;
 }
 
 export interface GeneratedForensicDossier {
   expedienteId: string;
   title: string;
   caseTier: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
+  editionTier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+  organizationName: string;
+  watermarkEnabled: boolean;
   sha256CustodyDigest: string;
   stixBundleId: string;
   generatedAt: string;
@@ -51,6 +58,19 @@ export class ForensicDossierGenerator {
     const title = options?.expedienteTitle ?? 'Expediente Pericial de Inteligencia OSINT — CANGREJO';
     const caseTier = options?.caseTier ?? 'ORO';
     const leadAnalyst = options?.leadAnalyst ?? 'Comisario L. Yerena (Unidad CANGREJO)';
+    const editionTier = options?.editionTier ?? 'COMMUNITY';
+    const organizationName =
+      options?.organizationName ??
+      'CANGREJO — Unidad de Criminalística Digital & OSINT (Herencia Cangrejo de Oro)';
+    const badgeTitle =
+      options?.badgeTitle ??
+      (editionTier === 'COMMUNITY'
+        ? 'CANGREJO COMMUNITY EDITION'
+        : `RANGO ${caseTier} · ${editionTier}`);
+    const watermarkEnabled = options?.watermarkEnabled ?? editionTier === 'COMMUNITY';
+    const communityWatermarkBannerHtml = watermarkEnabled
+      ? `<div class="community-watermark">Generado con <strong>CANGREJO Community Edition (Open-Core Apache-2.0)</strong> — Actualice a <em>Cangrejo de Oro / Platino Enterprise</em> para Dossiers Periciales en Marca Blanca.</div>`
+      : '';
 
     const analytics = analyzeExpedienteForensics(store, {
       sourceId: options?.sourceId,
@@ -233,6 +253,16 @@ export class ForensicDossierGenerator {
       border-radius: 6px;
       font-size: 12px;
     }
+    .community-watermark {
+      margin-top: 18px;
+      padding: 10px 14px;
+      background: #fffbeb;
+      border: 1px dashed #f59e0b;
+      border-radius: 6px;
+      font-size: 11.5px;
+      color: #92400e;
+      text-align: center;
+    }
     @media print {
       body { padding: 0; }
       .dossier-container { border: none; padding: 0; }
@@ -243,7 +273,7 @@ export class ForensicDossierGenerator {
   <article class="dossier-container">
     <header class="dossier-header">
       <div>
-        <div class="brand-kicker">CANGREJO — Unidad de Criminalística Digital &amp; OSINT (Herencia Cangrejo de Oro)</div>
+        <div class="brand-kicker">${escapeHtml(organizationName)}</div>
         <h1>${escapeHtml(title)}</h1>
         <div class="meta-line">
           Expediente: <strong class="mono">${escapeHtml(expedienteId)}</strong> &bull;
@@ -252,7 +282,7 @@ export class ForensicDossierGenerator {
         </div>
       </div>
       <div>
-        <span class="tier-badge tier-${caseTier.toLowerCase()}">RANGO ${caseTier}</span>
+        <span class="tier-badge tier-${caseTier.toLowerCase()}">${escapeHtml(badgeTitle)}</span>
       </div>
     </header>
 
@@ -308,10 +338,12 @@ export class ForensicDossierGenerator {
 
     <section class="custody-box">
       <strong>Certificado de Cadena de Custodia Criptográfica (OASIS STIX 2.1 + FIPS 180-4 SHA-256)</strong><br />
+      <span>Organización Emisora: <strong>${escapeHtml(organizationName)}</strong></span><br />
       <span>Bundle ID: <code class="mono">${escapeHtml(stixBundle.id)}</code></span><br />
       <span>SHA-256 Digest Canónico: <code class="mono">${escapeHtml(sha256CustodyDigest)}</code></span><br />
       <span>Objetos STIX 2.1 Exportados: <code class="mono">${stixBundle.objects.length}</code></span>
     </section>
+    ${communityWatermarkBannerHtml}
   </article>
 </body>
 </html>`;
@@ -320,6 +352,9 @@ export class ForensicDossierGenerator {
       expedienteId,
       title,
       caseTier,
+      editionTier,
+      organizationName,
+      watermarkEnabled,
       sha256CustodyDigest,
       stixBundleId: stixBundle.id,
       generatedAt,

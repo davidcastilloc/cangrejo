@@ -157,3 +157,54 @@ export function validateCgrjWithZod(document: unknown): ValidationOutcome & { da
     errors,
   };
 }
+
+/**
+ * Odoo-Style Open-Core Edition & Entitlements Contracts (`COMMUNITY` vs `ORO_PRO` vs `PLATINO_ENTERPRISE`).
+ * Every object schema strictly enforces `.passthrough()` to preserve additive metadata.
+ */
+export const CangrejoEditionTierSchema = z.enum([
+  'COMMUNITY',
+  'ORO_PRO',
+  'PLATINO_ENTERPRISE',
+]);
+
+export const WhiteLabelBrandingSchema = z
+  .object({
+    organizationName: z.string().min(1),
+    badgeTitle: z.string().min(1),
+    watermarkEnabled: z.boolean(),
+  })
+  .passthrough();
+
+export const CangrejoEntitlementsSchema = z
+  .object({
+    oneClickCloudOsint: z.boolean(),
+    whiteLabelDossier: z.boolean(),
+    multiAnalystCollab: z.boolean(),
+    continuousRadar24x7: z.boolean(),
+    maxEntitiesPerExpediente: z.number().int().min(1),
+  })
+  .passthrough();
+
+export const CangrejoEditionStatusResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    editionTier: CangrejoEditionTierSchema,
+    editionLabel: z.string(),
+    licenseKeyMasked: z.string().nullable(),
+    creditsRemaining: z.number().int().min(0),
+    creditsTotal: z.number().int().min(0),
+    whiteLabel: WhiteLabelBrandingSchema,
+    entitlements: CangrejoEntitlementsSchema,
+    updatedAt: z.number(),
+  })
+  .passthrough();
+
+export const LicenseActivationRequestSchema = z
+  .object({
+    licenseKey: z.string().optional(),
+    tier: CangrejoEditionTierSchema.optional(),
+    organizationName: z.string().optional(),
+    badgeTitle: z.string().optional(),
+  })
+  .passthrough();

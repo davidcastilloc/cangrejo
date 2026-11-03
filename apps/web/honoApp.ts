@@ -12,6 +12,8 @@ import {
 } from '../../packages/core/src/index.js';
 import { BunSqliteVault } from '../../packages/database-d1/src/index.js';
 import {
+  CangrejoEditionStatusResponseSchema,
+  LicenseActivationRequestSchema,
   MtgjSchemaValidator,
   PesquisaRunResponseSchema,
 } from '../../packages/schemas/src/index.js';
@@ -962,9 +964,16 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       inFlightPesquisas.delete(cacheKey);
     }
 
+    const updatedEdition = sqliteVault.consumeOsintCreditsSafe(1);
+    const enrichedPayload = {
+      ...finalPayload,
+      editionTier: updatedEdition.editionTier,
+      creditsRemaining: updatedEdition.creditsRemaining,
+    };
+
     c.header('X-Cangrejo-Cache', 'MISS');
     // Validate with .passthrough() Zod schema so zero fields are pruned
-    const validated = PesquisaRunResponseSchema.parse(finalPayload);
+    const validated = PesquisaRunResponseSchema.parse(enrichedPayload);
     return c.json(validated, 200);
   } catch (err) {
     console.error('[Hono /api/transforms/run] Transform execution failed:', err);
@@ -1405,6 +1414,7 @@ cangrejoHonoApp.post('/api/export/dossier-html', async (c) => {
           ? allIds[allIds.length - 1]
           : allIds[0];
 
+    const editionState = sqliteVault.getEditionState();
     const dossier = ForensicDossierGenerator.generateFromStore(store, {
       expedienteId: typeof body.expedienteId === 'string' ? body.expedienteId : undefined,
       expedienteTitle,
@@ -1413,6 +1423,19 @@ cangrejoHonoApp.post('/api/export/dossier-html', async (c) => {
       sourceId,
       targetId,
       timestampIso: typeof body.timestampIso === 'string' ? body.timestampIso : undefined,
+      editionTier: editionState.editionTier,
+      organizationName:
+        typeof body.organizationName === 'string' && body.organizationName.trim()
+          ? body.organizationName.trim()
+          : editionState.whiteLabel.organizationName,
+      badgeTitle:
+        typeof body.badgeTitle === 'string' && body.badgeTitle.trim()
+          ? body.badgeTitle.trim()
+          : editionState.whiteLabel.badgeTitle,
+      watermarkEnabled:
+        typeof body.watermarkEnabled === 'boolean'
+          ? body.watermarkEnabled
+          : editionState.whiteLabel.watermarkEnabled,
     });
 
     return c.json({
@@ -1424,6 +1447,41 @@ cangrejoHonoApp.post('/api/export/dossier-html', async (c) => {
     return c.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
       500
+    );
+  }
+});
+
+/**
+ * Odoo-Style Open-Core Edition & Cloud License Endpoints (`GET /api/edition/status` & `POST /api/edition/activate`).
+ */
+cangrejoHonoApp.get('/api/edition/status', (c) => {
+  const state = sqliteVault.getEditionState();
+  const validated = CangrejoEditionStatusResponseSchema.parse({
+    ok: true,
+    ...state,
+  });
+  return c.json(validated, 200);
+});
+
+cangrejoHonoApp.post('/api/edition/activate', async (c) => {
+  try {
+    const rawBody = await c.req.json();
+    const parsedReq =
+      typeof rawBody === 'object' && rawBody !== null
+        ? LicenseActivationRequestSchema.safeParse(rawBody)
+        : null;
+    const activationInput = parsedReq && parsedReq.success ? parsedReq.data : rawBody;
+    const updatedState = sqliteVault.activateLicenseOrUpdateEdition(activationInput);
+    const validated = CangrejoEditionStatusResponseSchema.parse({
+      ok: true,
+      ...updatedState,
+    });
+    return c.json(validated, 200);
+  } catch (err) {
+    console.error('[Hono /api/edition/activate] License activation failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
     );
   }
 });

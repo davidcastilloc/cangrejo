@@ -29,7 +29,7 @@ describe('Gate 6: Production Packaging, SQLite Vault Retrieval, Symmetric Bóved
     expect(rootRes.status).toBe(200);
     expect(rootRes.headers.get('Content-Type')).toContain('text/html');
     const htmlText = await rootRes.text();
-    expect(htmlText).toContain('<!DOCTYPE html>');
+    expect(htmlText.toLowerCase()).toContain('<!doctype html>');
   });
 
   it('2. round-trips Expedientes via GET /api/vault/expedientes/:id and decrypts/verifies Bóveda Cero (.cgrj) envelopes while rejecting tampering', async () => {

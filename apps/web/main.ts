@@ -1959,5 +1959,102 @@ loreModalBackdrop?.addEventListener('click', (e) => {
   }
 });
 
+// Wire Odoo-Style Open-Core Edition & Enterprise Cloud Modal
+const editionModalBackdrop = document.getElementById('edition-modal-backdrop');
+const lblEditionTier = document.getElementById('lbl-edition-tier');
+const lblEditionSubtitle = document.getElementById('lbl-edition-subtitle');
+const inpEditionOrg = document.getElementById('inp-edition-org') as HTMLInputElement | null;
+const inpEditionKey = document.getElementById('inp-edition-key') as HTMLInputElement | null;
+
+async function syncEditionBadge(): Promise<void> {
+  try {
+    const res = await fetch('/api/edition/status');
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      ok: boolean;
+      editionTier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+      editionLabel: string;
+      creditsRemaining: number;
+      whiteLabel?: { organizationName: string };
+    };
+    if (!data.ok) return;
+    if (lblEditionTier) {
+      lblEditionTier.textContent =
+        data.editionTier === 'PLATINO_ENTERPRISE'
+          ? `PLATINO • ${data.creditsRemaining} CR`
+          : data.editionTier === 'ORO_PRO'
+            ? `ORO PRO • ${data.creditsRemaining} CR`
+            : 'COMMUNITY';
+    }
+    if (lblEditionSubtitle) {
+      lblEditionSubtitle.textContent = `Edición Activa: ${data.editionLabel} (${data.creditsRemaining} créditos OSINT disponibles)`;
+    }
+    if (inpEditionOrg && data.whiteLabel?.organizationName) {
+      inpEditionOrg.value = data.whiteLabel.organizationName;
+    }
+  } catch {
+    // Non-fatal UI enrichment
+  }
+}
+
+async function activateEditionTier(
+  tier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE',
+  defaultKey: string
+): Promise<void> {
+  try {
+    const licenseKey = inpEditionKey?.value.trim() || defaultKey;
+    const organizationName = inpEditionOrg?.value.trim();
+    const res = await fetch('/api/edition/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tier,
+        licenseKey,
+        organizationName,
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      editionLabel?: string;
+      creditsRemaining?: number;
+      whiteLabel?: { organizationName: string; watermarkEnabled: boolean };
+    };
+    if (data.ok) {
+      await syncEditionBadge();
+      appendLog(
+        `Edición actualizada: ${data.editionLabel} • Créditos OSINT: ${data.creditsRemaining} • Marca Blanca: ${
+          data.whiteLabel?.watermarkEnabled ? 'Desactivada (Sello Community)' : data.whiteLabel?.organizationName
+        }`
+      );
+      editionModalBackdrop?.classList.add('hidden');
+    }
+  } catch (err) {
+    appendLog(`Error actualizando licencia de edición: ${String(err)}`);
+  }
+}
+
+document.getElementById('btn-edition-tier')?.addEventListener('click', () => {
+  void syncEditionBadge();
+  editionModalBackdrop?.classList.remove('hidden');
+});
+document.getElementById('btn-close-edition')?.addEventListener('click', () => {
+  editionModalBackdrop?.classList.add('hidden');
+});
+editionModalBackdrop?.addEventListener('click', (e) => {
+  if (e.target === editionModalBackdrop) {
+    editionModalBackdrop.classList.add('hidden');
+  }
+});
+document.getElementById('btn-activate-platino')?.addEventListener('click', () => {
+  void activateEditionTier('PLATINO_ENTERPRISE', 'CGRJ-PLATINO-2026-ENTERPRISE');
+});
+document.getElementById('btn-activate-oro')?.addEventListener('click', () => {
+  void activateEditionTier('ORO_PRO', 'CGRJ-ORO-2026-PRO');
+});
+document.getElementById('btn-reset-community')?.addEventListener('click', () => {
+  void activateEditionTier('COMMUNITY', 'COMMUNITY');
+});
+
+void syncEditionBadge();
 loadPreset('apt29');
 requestAnimationFrame(renderFrame);

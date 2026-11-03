@@ -23,6 +23,29 @@ export interface PesquisaAuditEntry {
   createdAt: number;
 }
 
+export type CangrejoEditionTier = 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+
+export interface CangrejoEditionState {
+  editionTier: CangrejoEditionTier;
+  editionLabel: string;
+  licenseKeyMasked: string | null;
+  creditsRemaining: number;
+  creditsTotal: number;
+  whiteLabel: {
+    organizationName: string;
+    badgeTitle: string;
+    watermarkEnabled: boolean;
+  };
+  entitlements: {
+    oneClickCloudOsint: boolean;
+    whiteLabelDossier: boolean;
+    multiAnalystCollab: boolean;
+    continuousRadar24x7: boolean;
+    maxEntitiesPerExpediente: number;
+  };
+  updatedAt: number;
+}
+
 interface SqliteStatementLike {
   run(...params: unknown[]): unknown;
   get(...params: unknown[]): unknown;
@@ -140,6 +163,18 @@ export class BunSqliteVault {
         response_json TEXT NOT NULL,
         expires_at INTEGER NOT NULL,
         created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS cangrejo_edition_state (
+        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+        edition_tier TEXT NOT NULL DEFAULT 'COMMUNITY',
+        license_key_masked TEXT,
+        credits_remaining INTEGER NOT NULL DEFAULT 0,
+        credits_total INTEGER NOT NULL DEFAULT 0,
+        organization_name TEXT NOT NULL DEFAULT 'CANGREJO — Unidad de Criminalística Digital & OSINT',
+        badge_title TEXT NOT NULL DEFAULT 'CANGREJO COMMUNITY EDITION',
+        watermark_enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL
       );
     `);
   }
@@ -362,6 +397,223 @@ export class BunSqliteVault {
       console.error('[BunSqliteVault] Secondary cache persistence failed gracefully:', err);
       return false;
     }
+  }
+
+  private static computeEntitlementsForTier(tier: CangrejoEditionTier): CangrejoEditionState['entitlements'] {
+    if (tier === 'PLATINO_ENTERPRISE') {
+      return {
+        oneClickCloudOsint: true,
+        whiteLabelDossier: true,
+        multiAnalystCollab: true,
+        continuousRadar24x7: true,
+        maxEntitiesPerExpediente: 100_000,
+      };
+    }
+    if (tier === 'ORO_PRO') {
+      return {
+        oneClickCloudOsint: true,
+        whiteLabelDossier: true,
+        multiAnalystCollab: false,
+        continuousRadar24x7: false,
+        maxEntitiesPerExpediente: 25_000,
+      };
+    }
+    return {
+      oneClickCloudOsint: false,
+      whiteLabelDossier: false,
+      multiAnalystCollab: false,
+      continuousRadar24x7: false,
+      maxEntitiesPerExpediente: 500,
+    };
+  }
+
+  private static computeEditionLabel(tier: CangrejoEditionTier): string {
+    if (tier === 'PLATINO_ENTERPRISE') return 'Cangrejo de Platino — Enterprise & Cloud';
+    if (tier === 'ORO_PRO') return 'Cangrejo de Oro — Investigator Pro';
+    return 'Cangrejo Community Edition (Open-Core Apache-2.0)';
+  }
+
+  /**
+   * Retrieves the current Odoo-style Open-Core Edition state (`COMMUNITY` vs `ORO_PRO` vs `PLATINO_ENTERPRISE`).
+   */
+  public getEditionState(): CangrejoEditionState {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT edition_tier, license_key_masked, credits_remaining, credits_total,
+               organization_name, badge_title, watermark_enabled, updated_at
+        FROM cangrejo_edition_state
+        WHERE singleton_id = 1
+      `);
+      const row = stmt.get() as
+        | {
+            edition_tier: string;
+            license_key_masked: string | null;
+            credits_remaining: number;
+            credits_total: number;
+            organization_name: string;
+            badge_title: string;
+            watermark_enabled: number;
+            updated_at: number;
+          }
+        | undefined;
+
+      if (row) {
+        const tier: CangrejoEditionTier =
+          row.edition_tier === 'PLATINO_ENTERPRISE' || row.edition_tier === 'ORO_PRO'
+            ? row.edition_tier
+            : 'COMMUNITY';
+        return {
+          editionTier: tier,
+          editionLabel: BunSqliteVault.computeEditionLabel(tier),
+          licenseKeyMasked: row.license_key_masked ?? null,
+          creditsRemaining: row.credits_remaining,
+          creditsTotal: row.credits_total,
+          whiteLabel: {
+            organizationName: row.organization_name,
+            badgeTitle: row.badge_title,
+            watermarkEnabled: row.watermark_enabled !== 0,
+          },
+          entitlements: BunSqliteVault.computeEntitlementsForTier(tier),
+          updatedAt: row.updated_at,
+        };
+      }
+    } catch {
+      // Fallback to default COMMUNITY state
+    }
+
+    return {
+      editionTier: 'COMMUNITY',
+      editionLabel: BunSqliteVault.computeEditionLabel('COMMUNITY'),
+      licenseKeyMasked: null,
+      creditsRemaining: 0,
+      creditsTotal: 0,
+      whiteLabel: {
+        organizationName: 'CANGREJO — Unidad de Criminalística Digital & OSINT',
+        badgeTitle: 'CANGREJO COMMUNITY EDITION',
+        watermarkEnabled: true,
+      },
+      entitlements: BunSqliteVault.computeEntitlementsForTier('COMMUNITY'),
+      updatedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Polymorphically activates a Pro/Enterprise license key or updates White-Label branding.
+   * Supports either a raw license key string (`"CGRJ-PLATINO-2026"`) or a configuration object.
+   */
+  public activateLicenseOrUpdateEdition(rawInput: unknown): CangrejoEditionState {
+    let rawKey = '';
+    let requestedTier: CangrejoEditionTier | null = null;
+    let orgName: string | undefined;
+    let badgeTitle: string | undefined;
+
+    if (typeof rawInput === 'string') {
+      rawKey = rawInput.trim();
+    } else if (typeof rawInput === 'object' && rawInput !== null) {
+      const rec = rawInput as Record<string, unknown>;
+      if (typeof rec.licenseKey === 'string') rawKey = rec.licenseKey.trim();
+      if (
+        rec.tier === 'COMMUNITY' ||
+        rec.tier === 'ORO_PRO' ||
+        rec.tier === 'PLATINO_ENTERPRISE'
+      ) {
+        requestedTier = rec.tier;
+      }
+      if (typeof rec.organizationName === 'string' && rec.organizationName.trim().length > 0) {
+        orgName = rec.organizationName.trim();
+      }
+      if (typeof rec.badgeTitle === 'string' && rec.badgeTitle.trim().length > 0) {
+        badgeTitle = rec.badgeTitle.trim();
+      }
+    }
+
+    const upperKey = rawKey.toUpperCase();
+    let targetTier: CangrejoEditionTier = requestedTier ?? 'COMMUNITY';
+    if (!requestedTier) {
+      if (upperKey.startsWith('CGRJ-PLATINO') || upperKey.includes('ENTERPRISE')) {
+        targetTier = 'PLATINO_ENTERPRISE';
+      } else if (upperKey.startsWith('CGRJ-ORO') || upperKey.includes('PRO')) {
+        targetTier = 'ORO_PRO';
+      } else {
+        targetTier = 'COMMUNITY';
+      }
+    }
+
+    const creditsTotal =
+      targetTier === 'PLATINO_ENTERPRISE' ? 5_000 : targetTier === 'ORO_PRO' ? 500 : 0;
+    const creditsRemaining = creditsTotal;
+    const watermarkEnabled = targetTier === 'COMMUNITY' ? 1 : 0;
+    const maskedKey =
+      targetTier === 'COMMUNITY'
+        ? null
+        : rawKey.length >= 8
+          ? `${rawKey.slice(0, 12)}••••${rawKey.slice(-4)}`
+          : `CGRJ-${targetTier}-ACTIVE`;
+
+    const finalOrgName =
+      orgName ??
+      (targetTier === 'COMMUNITY'
+        ? 'CANGREJO — Unidad de Criminalística Digital & OSINT'
+        : 'Unidad Especial de Inteligencia Forense & CTI (Enterprise)');
+    const finalBadgeTitle =
+      badgeTitle ??
+      (targetTier === 'PLATINO_ENTERPRISE'
+        ? 'EXPEDIENTE PERICIAL CERTIFICADO — PLATINO ENTERPRISE'
+        : targetTier === 'ORO_PRO'
+          ? 'EXPEDIENTE PERICIAL — CANGREJO DE ORO PRO'
+          : 'CANGREJO COMMUNITY EDITION');
+
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT INTO cangrejo_edition_state (
+        singleton_id, edition_tier, license_key_masked, credits_remaining, credits_total,
+        organization_name, badge_title, watermark_enabled, updated_at
+      )
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(singleton_id) DO UPDATE SET
+        edition_tier = excluded.edition_tier,
+        license_key_masked = excluded.license_key_masked,
+        credits_remaining = excluded.credits_remaining,
+        credits_total = excluded.credits_total,
+        organization_name = excluded.organization_name,
+        badge_title = excluded.badge_title,
+        watermark_enabled = excluded.watermark_enabled,
+        updated_at = excluded.updated_at
+    `);
+    stmt.run(
+      targetTier,
+      maskedKey,
+      creditsRemaining,
+      creditsTotal,
+      finalOrgName,
+      finalBadgeTitle,
+      watermarkEnabled,
+      now
+    );
+
+    return this.getEditionState();
+  }
+
+  /**
+   * Consumes OSINT Cloud credits when operating in `ORO_PRO` or `PLATINO_ENTERPRISE` mode.
+   * Never throws or blocks transform execution if SQLite is busy.
+   */
+  public consumeOsintCreditsSafe(cost = 1): CangrejoEditionState {
+    try {
+      const current = this.getEditionState();
+      if (current.editionTier !== 'COMMUNITY' && current.creditsRemaining > 0) {
+        const nextCredits = Math.max(0, current.creditsRemaining - Math.max(1, cost));
+        const stmt = this.db.prepare(`
+          UPDATE cangrejo_edition_state
+          SET credits_remaining = ?, updated_at = ?
+          WHERE singleton_id = 1
+        `);
+        stmt.run(nextCredits, Date.now());
+      }
+    } catch (err) {
+      console.error('[BunSqliteVault] Secondary credit deduction failed gracefully:', err);
+    }
+    return this.getEditionState();
   }
 
   public close(): void {

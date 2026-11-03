@@ -50,10 +50,11 @@ tasks:
       - "/vite.config.ts"
 
   test:
-    command: "bun test ../../tests/gate6-production-completeness.test.ts"
+    command: "bun test ../../tests/gate6-production-completeness.test.ts ../../tests/gate7-odoo-open-core-edition.test.ts"
     deps:
       - "build"
       - "transforms:test"
     inputs:
       - "**/*"
       - "/tests/gate6-production-completeness.test.ts"
+      - "/tests/gate7-odoo-open-core-edition.test.ts"

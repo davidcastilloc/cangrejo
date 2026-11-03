@@ -6,6 +6,8 @@ export {
 
 export {
   BunSqliteVault,
+  type CangrejoEditionState,
+  type CangrejoEditionTier,
   type ExpedienteRecord,
   type PesquisaAuditEntry,
 } from './BunSqliteVault.js';
