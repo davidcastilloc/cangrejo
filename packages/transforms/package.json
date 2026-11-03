@@ -1,0 +1,13 @@
+{
+  "name": "@cangrejo/transforms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@cangrejo/core": "workspace:*",
+    "@cangrejo/schemas": "workspace:*",
+    "@cangrejo/platform-bridge": "workspace:*"
+  }
+}

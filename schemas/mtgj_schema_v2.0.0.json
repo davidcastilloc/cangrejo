@@ -1,0 +1,667 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://maltego.paterva.com/schemas/mtgj/v2.0.0/mtgj_schema.json",
+  "title": "Maltego Graph JSON (.mtgj) Schema v2.0.0",
+  "description": "Canonical clean-room JSON Schema for Maltego Graph JSON (.mtgj) v2.0.0 interchange format, representing graph data, topology, 2D/3D geometry, virtual collections, provenance, attachments, and cloud encryption metadata.",
+  "type": "object",
+  "required": [
+    "id",
+    "schemaVersion",
+    "entities",
+    "links"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the graph instance (UUID v4 or 64-bit hex/decimal string).",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[a-zA-Z0-9_\\-]+)$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable display name of the graph tab or investigation (e.g. 'Graph1').",
+      "default": "Graph1"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "description": "Format specification version. Must be '2.0.0' for modern streaming format.",
+      "enum": ["2.0.0"]
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Investigation-level metadata, provenance, and custom configuration.",
+      "properties": {
+        "author": {
+          "type": "string",
+          "description": "Investigator username, email, or system identity."
+        },
+        "created": {
+          "type": "integer",
+          "description": "Epoch timestamp in milliseconds representing graph creation time."
+        },
+        "modified": {
+          "type": "integer",
+          "description": "Epoch timestamp in milliseconds representing last modification time."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed investigation scope, summary, or case notes."
+        },
+        "bookmarkLabels": {
+          "type": "object",
+          "description": "Custom analyst labels assigned to the 24 bookmark color indices (0 through 23).",
+          "propertyNames": {
+            "pattern": "^([0-9]|1[0-9]|2[0-3])$"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "description": "Arbitrary classification tags or investigation categories.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "viewSettings": {
+          "type": "object",
+          "description": "Active UI visualization mode and viewport state.",
+          "properties": {
+            "activeLayout": {
+              "type": "string",
+              "enum": ["hierarchical", "circular", "organic", "block", "interactive", "ball", "none"]
+            },
+            "zoom": {
+              "type": "number",
+              "default": 1.0
+            },
+            "pan": {
+              "type": "object",
+              "properties": {
+                "x": { "type": "number", "default": 0.0 },
+                "y": { "type": "number", "default": 0.0 }
+              },
+              "required": ["x", "y"]
+            },
+            "collectionNodesEnabled": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "entities": {
+      "type": "array",
+      "description": "List of domain intelligence entities in the graph.",
+      "items": {
+        "$ref": "#/definitions/Entity"
+      }
+    },
+    "links": {
+      "type": "array",
+      "description": "List of directed or undirected relationships connecting entities.",
+      "items": {
+        "$ref": "#/definitions/Link"
+      }
+    },
+    "collections": {
+      "type": "array",
+      "description": "Optional serialized state of virtual collection nodes (when stored as structured JSON rather than binary collection-nodes.data).",
+      "items": {
+        "$ref": "#/definitions/CollectionNode"
+      }
+    },
+    "encryption": {
+      "description": "Optional Cloud E2E encryption envelope. Null when graph is stored in plaintext.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/definitions/EncryptionMetadata" }
+      ]
+    }
+  },
+  "definitions": {
+    "Entity": {
+      "type": "object",
+      "description": "Domain intelligence node with typed properties, layout coordinates, and presentation metadata.",
+      "required": [
+        "id",
+        "type",
+        "weight",
+        "props"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "64-bit non-zero unique entity identifier (prefixed string, hex, or decimal string)."
+        },
+        "type": {
+          "type": "string",
+          "description": "Canonical Maltego entity type identifier (e.g. 'maltego.Domain', 'maltego.IPv4Address', 'custom.ThreatActor').",
+          "pattern": "^[a-zA-Z0-9_\\-]+(\\.[a-zA-Z0-9_\\-]+)+$"
+        },
+        "weight": {
+          "type": "integer",
+          "description": "Analytical centrality weight (PageRank factor, positive integer >= 1).",
+          "minimum": 1,
+          "default": 100
+        },
+        "position": {
+          "$ref": "#/definitions/Point3D"
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Whether the entity's position is locked against automatic layout recalculations and excluded from collection grouping.",
+          "default": false
+        },
+        "bookmark": {
+          "type": "integer",
+          "description": "Analyst color classification index (-1 for unbookmarked, 0 to 23 for colored bookmarks).",
+          "minimum": -1,
+          "maximum": 23,
+          "default": -1
+        },
+        "notes": {
+          "type": "object",
+          "description": "Analyst sticky note attached to the entity.",
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "Markdown or plain text content of the note."
+            },
+            "show": {
+              "type": "boolean",
+              "description": "Whether the note is expanded and visible directly on the canvas.",
+              "default": false
+            }
+          },
+          "required": ["value"]
+        },
+        "displayInfo": {
+          "type": "array",
+          "description": "Rich detail blocks attached by transforms (HTML or plain text).",
+          "items": {
+            "$ref": "#/definitions/DisplayInformationItem"
+          }
+        },
+        "overlays": {
+          "type": "array",
+          "description": "Visual decoration overlays rendered on the perimeter of the entity icon.",
+          "items": {
+            "$ref": "#/definitions/Overlay"
+          }
+        },
+        "props": {
+          "type": "array",
+          "description": "Typed property bag containing analytical attributes of the entity.",
+          "items": {
+            "$ref": "#/definitions/Property"
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "description": "References to binary artifacts stored in Files/Attachments/.",
+          "items": {
+            "$ref": "#/definitions/AttachmentReference"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Link": {
+      "type": "object",
+      "description": "Directed relationship between two entities in the graph.",
+      "required": [
+        "id",
+        "type",
+        "source",
+        "target"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "64-bit non-zero unique link identifier."
+        },
+        "type": {
+          "type": "string",
+          "description": "Link type identifier (e.g. 'maltego.link.transform-link', 'maltego.link.manual').",
+          "default": "maltego.link.transform-link"
+        },
+        "source": {
+          "type": "string",
+          "description": "Source Entity ID."
+        },
+        "target": {
+          "type": "string",
+          "description": "Target Entity ID."
+        },
+        "reversed": {
+          "type": "boolean",
+          "description": "Visual arrow reversal flag. Does not mutate the underlying directed pair (source, target).",
+          "default": false
+        },
+        "weight": {
+          "type": "integer",
+          "description": "Link weight or multi-edge consolidation count.",
+          "minimum": 1,
+          "default": 1
+        },
+        "path": {
+          "type": "array",
+          "description": "List of intermediate bend points defining the polyline path of the link.",
+          "items": {
+            "$ref": "#/definitions/Point2D"
+          }
+        },
+        "props": {
+          "type": "array",
+          "description": "Styling and analytical attributes of the link (label, style, color, thickness).",
+          "items": {
+            "$ref": "#/definitions/Property"
+          }
+        },
+        "displayInfo": {
+          "type": "array",
+          "description": "Detail blocks attached to the link.",
+          "items": {
+            "$ref": "#/definitions/DisplayInformationItem"
+          }
+        },
+        "bookmark": {
+          "type": "integer",
+          "description": "Analyst color classification index (-1 to 23).",
+          "minimum": -1,
+          "maximum": 23,
+          "default": -1
+        },
+        "notes": {
+          "type": "object",
+          "properties": {
+            "value": { "type": "string" },
+            "show": { "type": "boolean", "default": false }
+          },
+          "required": ["value"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Property": {
+      "type": "object",
+      "description": "Single typed key-value pair within an entity or link property bag.",
+      "required": [
+        "name",
+        "type",
+        "displayName",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Internal canonical property key (alphanumeric with dots, e.g. 'domain-name', 'maltego.link.color')."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User-facing localized label for the property."
+        },
+        "type": {
+          "type": "string",
+          "description": "Data type descriptor.",
+          "enum": [
+            "string",
+            "int",
+            "float",
+            "double",
+            "bool",
+            "boolean",
+            "datetime",
+            "date",
+            "bytes",
+            "url",
+            "color",
+            "string[]"
+          ]
+        },
+        "value": {
+          "description": "Serialized value matching the declared property type.",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "boolean" },
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "null" }
+          ]
+        },
+        "special": {
+          "type": "array",
+          "description": "Functional role annotations for this property.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "VALUE",
+              "DISPLAY_VALUE",
+              "IMAGE_URL",
+              "LABEL",
+              "STYLE",
+              "COLOR",
+              "THICKNESS",
+              "SHOW_LABEL"
+            ]
+          },
+          "default": []
+        },
+        "matchingRule": {
+          "type": "string",
+          "description": "Identity comparison rule when reconciling incoming transform outputs.",
+          "enum": ["STRICT", "LOOSE", "NONE", "strict", "loose", "none"],
+          "default": "STRICT"
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "Whether the property is hidden from default UI property sheets.",
+          "default": false
+        },
+        "readonly": {
+          "type": "boolean",
+          "description": "Whether the property cannot be edited by the analyst.",
+          "default": false
+        },
+        "nullable": {
+          "type": "boolean",
+          "description": "Whether the property permits null values.",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "DisplayInformationItem": {
+      "type": "object",
+      "description": "Provenance detail item or analytical report section.",
+      "required": [
+        "title",
+        "content"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Header title of the detail block (e.g. 'WHOIS Information', 'GeoIP Lookup')."
+        },
+        "content": {
+          "type": "string",
+          "description": "Body content formatted as plain text or HTML fragment."
+        },
+        "type": {
+          "type": "string",
+          "description": "MIME type of the content.",
+          "enum": ["text/plain", "text/html"],
+          "default": "text/plain"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Overlay": {
+      "type": "object",
+      "description": "Icon decoration indicating flags, statuses, or derived attributes.",
+      "required": [
+        "propertyName",
+        "position",
+        "type"
+      ],
+      "properties": {
+        "propertyName": {
+          "type": "string",
+          "description": "Name of the entity property whose value supplies the overlay content."
+        },
+        "position": {
+          "type": "string",
+          "description": "Cardinal compass position around the entity icon.",
+          "enum": ["NW", "N", "NE", "W", "C", "E", "SW", "S", "SE"]
+        },
+        "type": {
+          "type": "string",
+          "description": "Rendering mode of the overlay decoration.",
+          "enum": ["text", "image", "color", "colour"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AttachmentReference": {
+      "type": "object",
+      "description": "Metadata pointing to an attachment payload in Files/Attachments/<sha256>.",
+      "required": [
+        "id",
+        "name",
+        "mimeType",
+        "sha256",
+        "sizeBytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this attachment reference."
+        },
+        "name": {
+          "type": "string",
+          "description": "Original file name with extension (e.g. 'malware_sample.bin', 'report.pdf')."
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "Standard IANA media type."
+        },
+        "sha256": {
+          "type": "string",
+          "description": "Hexadecimal SHA-256 digest of the attachment content (case-insensitive).",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "description": "File payload size in bytes.",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "CollectionNode": {
+      "type": "object",
+      "description": "Virtual aggregation projection node representing a cluster of collapsed entities.",
+      "required": [
+        "id",
+        "type",
+        "rule",
+        "underlyingEntityIds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Synthetic 64-bit ViewEntity identifier."
+        },
+        "type": {
+          "type": "string",
+          "description": "Homogeneous entity type of all grouped entities (e.g. 'maltego.IPv4Address')."
+        },
+        "rule": {
+          "type": "string",
+          "description": "Clustering heuristic strategy that generated this collection.",
+          "enum": ["STANDALONE", "NEIGHBOUR", "CHAINING", "MANUAL"]
+        },
+        "pinned": {
+          "type": "boolean",
+          "default": false
+        },
+        "position": {
+          "$ref": "#/definitions/Point2D"
+        },
+        "underlyingEntityIds": {
+          "type": "array",
+          "description": "List of physical Entity IDs contained in this collection.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "viewLinks": {
+          "type": "array",
+          "description": "Virtual proxy links routing through this collection node.",
+          "items": {
+            "$ref": "#/definitions/ViewLink"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ViewLink": {
+      "type": "object",
+      "description": "Synthetic proxy edge routing between a CollectionNode and external neighbor.",
+      "required": [
+        "id",
+        "source",
+        "target",
+        "underlyingLinkIds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Virtual Link ID."
+        },
+        "source": {
+          "type": "string",
+          "description": "Source ViewEntity ID."
+        },
+        "target": {
+          "type": "string",
+          "description": "Target ViewEntity ID."
+        },
+        "underlyingLinkIds": {
+          "type": "array",
+          "description": "Physical Link IDs aggregated into this single proxy edge.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Point2D"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Point2D": {
+      "type": "object",
+      "description": "2D floating point Cartesian coordinate.",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "Point3D": {
+      "type": "object",
+      "description": "3D floating point coordinate (z is optional for 2.5D/3D visualizations).",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number", "default": 0.0 }
+      },
+      "additionalProperties": false
+    },
+    "EncryptionMetadata": {
+      "type": "object",
+      "description": "Hybrid zero-knowledge cloud encryption envelope (RSA-OAEP-256 + AES-GCM-256 + GMAC).",
+      "required": [
+        "algorithm",
+        "keyWrap",
+        "salt",
+        "iterations",
+        "iv",
+        "tag",
+        "gmac",
+        "encryptedFields"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": ["AES-GCM-256"]
+        },
+        "keyWrap": {
+          "type": "string",
+          "enum": ["RSA-OAEP-256", "ECDH-ES+A256KW"]
+        },
+        "salt": {
+          "type": "string",
+          "description": "Base64 encoded 16-byte random salt for PBKDF2 key derivation.",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "iterations": {
+          "type": "integer",
+          "description": "PBKDF2 iteration count.",
+          "minimum": 100000
+        },
+        "iv": {
+          "type": "string",
+          "description": "Base64 encoded 12-byte initialization vector for AES-GCM.",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Base64 encoded 16-byte authentication tag for AES-GCM.",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "gmac": {
+          "type": "string",
+          "description": "Base64 encoded AES-GMAC signature verifying structural graph topology integrity.",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "encryptedFields": {
+          "type": "array",
+          "description": "JSON Pointers identifying which payload fields have been ciphertext encrypted.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ContainerProperties": {
+      "type": "object",
+      "description": "ZIP root manifest 'properties.json' specifying multi-graph container metadata.",
+      "required": [
+        "schemaVersion",
+        "mtgjVersion",
+        "graphCount",
+        "defaultGraph",
+        "created",
+        "modified"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "enum": ["2.0.0"]
+        },
+        "mtgjVersion": {
+          "type": "string",
+          "default": "1.0.0"
+        },
+        "graphCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaultGraph": {
+          "type": "string",
+          "default": "Graph1"
+        },
+        "created": {
+          "type": "integer"
+        },
+        "modified": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

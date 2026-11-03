@@ -1,0 +1,25 @@
+name: ✨ New Pesquisa Transform or Feature Request
+description: Propose a new OSINT Pesquisa transform, entity ontology type, or graph analysis feature.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      options:
+        - "New Pesquisa OSINT Transform (DNS, CTI, Blockchain, RDAP, Shodan, etc.)"
+        - "New Entity Ontology Type (107+ Catalog)"
+        - "Graph Layout / Clustering Algorithm"
+        - "UI/UX & WCAG AAA Accessibility Enhancement"
+        - "Bóveda Cero / Export Format Interoperability"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Investigative Use Case ("What Caso Cangrejo does this help untangle?")
+      placeholder: Describe the OSINT or forensic investigation workflow this feature enables...
+    validations:
+      required: true

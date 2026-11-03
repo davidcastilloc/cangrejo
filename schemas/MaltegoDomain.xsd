@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <xsd:element name="MaltegoMessage">
+        <xsd:complexType>
+            <xsd:choice>
+                <xsd:element name="MaltegoTransformDiscoveryMessage" type="MaltegoTransformDiscoveryMessage" />
+                <xsd:element name="MaltegoTransformListMessage" type="MaltegoTransformListMessage" />
+                <xsd:element name="MaltegoTransformRequestMessage" type="MaltegoTransformRequestMessage" />
+                <xsd:element name="MaltegoTransformResponseMessage" type="MaltegoTransformResponseMessage" />
+                <xsd:element name="MaltegoTransformExceptionMessage" type="MaltegoTransformExceptionMessage" />
+            </xsd:choice>
+        </xsd:complexType>
+    </xsd:element>
+
+    <xsd:complexType name="MaltegoTransformDiscoveryMessage">
+        <xsd:all>
+            <xsd:element name="OtherSeedServers" type="OtherSeedServers" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="TransformApplications" type="TransformApplications" maxOccurs="1" minOccurs="1" />
+        </xsd:all>
+        <xsd:attribute name="source" type="xsd:string" default="Unknown" />
+    </xsd:complexType>
+
+    <xsd:complexType name="MaltegoTransformListMessage">
+        <xsd:all>
+            <xsd:element name="Transforms" type="Transforms" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="Authenticators" type="Authenticators" maxOccurs="1" minOccurs="0" />
+        </xsd:all>
+    </xsd:complexType>
+
+    <xsd:complexType name="MaltegoTransformRequestMessage">
+        <xsd:all>
+            <xsd:element name="Entities" type="Entities" minOccurs="1" maxOccurs="1" />
+            <xsd:element name="TransformFields" type="TransformFields" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="Limits" type="Limits" minOccurs="0" maxOccurs="1" />
+        </xsd:all>
+    </xsd:complexType>
+
+    <xsd:complexType name="MaltegoTransformResponseMessage">
+        <xsd:all>
+            <xsd:element name="Entities" type="Entities" minOccurs="1" maxOccurs="1" />
+            <xsd:element name="UIMessages" type="UIMessages" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="AdditionalInfo" type="AdditionalInfo" maxOccurs="1" minOccurs="0" />
+        </xsd:all>
+    </xsd:complexType>
+
+    <xsd:complexType name="MaltegoTransformExceptionMessage">
+        <xsd:all>
+            <xsd:element name="Exceptions" type="Exceptions" maxOccurs="1" minOccurs="0" />
+        </xsd:all>
+    </xsd:complexType>
+
+    <xsd:complexType name="TransformFields">
+        <xsd:sequence>
+            <xsd:element name="Field" maxOccurs="unbounded" minOccurs="1">
+                <xsd:complexType mixed="true">
+                    <xsd:attribute name="Name" type="xsd:string" />
+                </xsd:complexType>
+            </xsd:element>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="Limits">
+        <xsd:attribute name="SoftLimit" type="xsd:int" default="0" />
+        <xsd:attribute name="HardLimit" type="xsd:int" default="0" />
+    </xsd:complexType>
+
+    <xsd:complexType name="UIMessages">
+        <xsd:sequence>
+            <xsd:element name="UIMessage" type="UIMessage" maxOccurs="unbounded" minOccurs="0" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="UIMessage" mixed="true">
+        <xsd:attribute name="MessageType" type="xsd:string" use="required" />
+    </xsd:complexType>
+
+    <xsd:complexType name="AdditionalInfo">
+        <xsd:all>
+            <xsd:element name="Buttons" minOccurs="0">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="Button" type="AdditionalInfoButton" maxOccurs="unbounded" minOccurs="0" />
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+        </xsd:all>
+    </xsd:complexType>
+
+    <xsd:complexType name="AdditionalInfoButton">
+        <xsd:attribute name="id" type="xsd:string" use="required" />
+        <xsd:attribute name="text" type="xsd:string" use="required" />
+        <xsd:attribute name="url" type="xsd:string" use="optional" />
+    </xsd:complexType>
+
+    <xsd:complexType name="Exceptions">
+        <xsd:sequence>
+            <xsd:element name="Exception" type="Exception" maxOccurs="unbounded" minOccurs="1" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="Exception" mixed="true">
+        <xsd:attribute name="code" type="xsd:int" />
+    </xsd:complexType>
+
+    <xsd:complexType name="OtherSeedServers">
+        <xsd:sequence>
+            <xsd:element name="OtherSeedServer" type="OtherSeedServer" maxOccurs="unbounded" minOccurs="0" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="OtherSeedServer">
+        <xsd:attribute name="URL" type="xsd:anyURI" use="required" />
+    </xsd:complexType>
+
+    <xsd:complexType name="TransformApplications">
+        <xsd:sequence>
+            <xsd:element name="TransformApplication" type="TransformApplication" maxOccurs="unbounded" minOccurs="1" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="TransformApplication">
+        <xsd:attribute name="URL" type="xsd:string" use="required" />
+        <xsd:attribute name="V3URL" type="xsd:string" use="optional" />
+        <xsd:attribute name="name" type="xsd:string" default="Unknown" />
+        <xsd:attribute name="disclaimer" type="xsd:string" />
+        <xsd:attribute name="requireAPIKey" type="xsd:boolean" default="false" />
+        <xsd:attribute name="overwriteConfig" type="xsd:boolean" default="false" />
+        <xsd:attribute name="registrationURL" type="xsd:anyURI" use="optional" />
+        <xsd:attribute name="version" type="xsd:string" use="optional" />
+    </xsd:complexType>
+
+    <xsd:complexType name="Authenticators">
+        <xsd:sequence>
+            <xsd:element name="OAuthAuthenticators" type="OAuthAuthenticators" maxOccurs="1" minOccurs="0" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="OAuthAuthenticators">
+        <xsd:sequence>
+            <xsd:element name="OAuthAuthenticator" type="OAuthAuthenticator" maxOccurs="unbounded" minOccurs="0" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="OAuthAuthenticator">
+        <xsd:all>
+            <xsd:element name="AccessTokenEndpoint" type="xsd:string" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="AccessTokenInput" type="xsd:string" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="AccessTokenPublicKey" type="xsd:string" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="AppKey" type="xsd:string" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="AppSecret" type="xsd:string" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="AuthorizationUrl" type="xsd:string" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="CallbackPort" type="xsd:int" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="Description" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="Icon" type="xsd:string" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="OAuthVersion" type="xsd:string" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="RefreshTokenEndpoint" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="RequestTokenEndpoint" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="RequestTypeForAccessToken" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="RequestTypeForAuthorizationUrl" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="RequestTypeForRequestToken" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="UseSSLHost" type="xsd:boolean" default="false" />
+            <xsd:element name="UseClientAuthorizationHeader" type="xsd:boolean" default="false" />
+        </xsd:all>
+        <xsd:attribute name="Name" type="xsd:string" />
+        <xsd:attribute name="DisplayName" type="xsd:string" />
+    </xsd:complexType>
+
+    <xsd:complexType name="Transforms">
+        <xsd:sequence>
+            <xsd:element name="Transform" type="Transform" maxOccurs="unbounded" minOccurs="1" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="Transform">
+        <xsd:all>
+            <xsd:element name="OutputEntities" type="OutputEntities" maxOccurs="1" minOccurs="1" />
+            <xsd:element name="UIInputRequirements" type="UIInputRequirements" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="InputEntity" type="xsd:string" maxOccurs="1" minOccurs="1" />
+        </xsd:all>
+        <xsd:attribute name="TransformName" type="xsd:string" use="required" />
+        <xsd:attribute name="UIDisplayName" type="xsd:string" use="required" />
+        <xsd:attribute name="Description" type="xsd:string" use="optional" />
+        <xsd:attribute name="Author" type="xsd:string" use="required" />
+        <xsd:attribute name="Owner" type="xsd:string" use="optional" />
+        <xsd:attribute name="Disclaimer" type="xsd:string" use="optional" />
+        <xsd:attribute name="LocationRelevance" type="xsd:string" use="optional" />
+        <xsd:attribute name="Version" type="xsd:string" use="required" />
+        <xsd:attribute name="MaxEntityInputCount" type="xsd:int" use="optional" />
+        <xsd:attribute name="MaxEntityOutputCount" type="xsd:int" use="optional" />
+        <xsd:attribute name="Authenticator" type="xsd:string" use="optional" />
+    </xsd:complexType>
+
+    <xsd:complexType name="OutputEntities">
+        <xsd:sequence>
+            <xsd:element name="OutputEntity" type="xsd:string" maxOccurs="unbounded" minOccurs="1" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="UIInputRequirements">
+        <xsd:sequence>
+            <xsd:element name="Input" maxOccurs="unbounded" minOccurs="1">
+                <xsd:complexType>
+                    <xsd:attribute name="Display" type="xsd:string" use="required" />
+                    <xsd:attribute name="Type" type="xsd:string" use="required" />
+                    <xsd:attribute name="Name" type="xsd:string" use="required" />
+                    <xsd:attribute name="Optional" type="xsd:boolean" default="false" />
+                    <xsd:attribute name="Popup" type="xsd:boolean" default="false" />
+                    <xsd:attribute name="DefaultValue" type="xsd:string" use="optional" />
+                    <xsd:attribute name="Auth" type="xsd:boolean" default="false" />
+                </xsd:complexType>
+            </xsd:element>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="Entities">
+        <xsd:sequence>
+            <xsd:element name="Entity" type="Entity" minOccurs="0" maxOccurs="unbounded" />
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="Entity">
+        <xsd:all>
+            <xsd:element name="Value" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="IconURL" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="Weight" type="xsd:string" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="AdditionalFields" type="AdditionalFields" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="DisplayInformation" type="DisplayInformation" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="Genealogy" type="Genealogy" maxOccurs="1" minOccurs="0" />
+            <xsd:element name="Overlays" type="Overlays" maxOccurs="1" minOccurs="0"/>
+        </xsd:all>
+
+        <xsd:attribute name="Type" type="xsd:string" use="required" />
+        <xsd:attribute name="Bookmark" type="xsd:string" use="optional" />
+    </xsd:complexType>
+
+    <xsd:complexType name="AdditionalFields">
+        <xsd:sequence>
+            <xsd:element name="Field" maxOccurs="unbounded" minOccurs="1">
+                <xsd:complexType mixed="true">
+                    <xsd:attribute name="Name" type="xsd:string" use="required" />
+                    <xsd:attribute name="DisplayName" type="xsd:string" use="optional" />
+                    <xsd:attribute name="MatchingRule" type="xsd:string" use="optional" />
+                </xsd:complexType>
+            </xsd:element>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="DisplayInformation">
+        <xsd:choice>
+            <xsd:element name="Label" type="DisplayField" maxOccurs="unbounded" minOccurs="1" />
+            <xsd:element name="Field" type="DisplayField" maxOccurs="unbounded" minOccurs="1" />
+        </xsd:choice>
+    </xsd:complexType>
+
+    <xsd:complexType name="DisplayField" mixed="true">
+        <xsd:attribute name="Name" type="xsd:string" />
+        <xsd:attribute name="Type" type="xsd:string" />
+    </xsd:complexType>
+
+    <xsd:complexType name="Genealogy">
+        <xsd:sequence>
+            <xsd:element name="Type" maxOccurs="unbounded" minOccurs="1">
+                <xsd:complexType mixed="true">
+                    <xsd:attribute name="Name" type="xsd:string" use="required" />
+                    <xsd:attribute name="DisplayName" type="xsd:string" use="optional" />
+                    <xsd:attribute name="OldName" type="xsd:string" use="optional" />
+                </xsd:complexType>
+            </xsd:element>
+        </xsd:sequence>
+    </xsd:complexType>
+    
+    <xsd:complexType name="Overlays">
+        <xsd:sequence>
+            <xsd:element name="Overlay" type="Overlay" maxOccurs="unbounded" minOccurs="1"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="Overlay">
+        <xsd:annotation>
+            <xsd:documentation>Decorates an Entity with Image/Color and Text.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:attribute name="propertyName" type="xsd:string">
+            <xsd:annotation>
+                <xsd:documentation>References the property's name within the Entity to derive its value.
+                </xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attribute name="position" type="OverlayPosition" >
+            <xsd:annotation>
+                <xsd:documentation>The location to render the Overlay.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attribute name="type" type="OverlayType">
+            <xsd:annotation>
+                <xsd:documentation>The decoration type of the Overlay.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+    </xsd:complexType>
+
+    <xsd:simpleType name="OverlayPosition">
+        <xsd:restriction base="xsd:string">
+            <xsd:enumeration value="NW" >
+                <xsd:annotation>
+                    <xsd:documentation>North West</xsd:documentation>
+                </xsd:annotation>
+            </xsd:enumeration>
+            <xsd:enumeration value="N" >
+                <xsd:annotation>
+                    <xsd:documentation>North</xsd:documentation>
+                </xsd:annotation>
+            </xsd:enumeration>
+            <xsd:enumeration value="NE" >
+                <xsd:annotation>
+                    <xsd:documentation>North East</xsd:documentation>
+                </xsd:annotation></xsd:enumeration>
+            <xsd:enumeration value="W" >
+                <xsd:annotation>
+                    <xsd:documentation>West</xsd:documentation>
+                </xsd:annotation>
+            </xsd:enumeration>
+            <xsd:enumeration value="C" >
+                <xsd:annotation>
+                    <xsd:documentation>Center</xsd:documentation>
+                </xsd:annotation>
+            </xsd:enumeration>
+            <xsd:enumeration value="E" >
+                <xsd:annotation>
+                    <xsd:documentation>East</xsd:documentation>
+                </xsd:annotation>
+            </xsd:enumeration>
+            <xsd:enumeration value="SW" >
+                <xsd:annotation>
+                    <xsd:documentation>South West</xsd:documentation>
+                </xsd:annotation>
+            </xsd:enumeration>
+            <xsd:enumeration value="S" >
+                <xsd:annotation>
+                    <xsd:documentation>South</xsd:documentation>
+                </xsd:annotation>
+            </xsd:enumeration>
+            <xsd:enumeration value="SE" >
+                <xsd:annotation>
+                    <xsd:documentation>South East</xsd:documentation>
+                </xsd:annotation>
+            </xsd:enumeration>
+        </xsd:restriction>
+    </xsd:simpleType>
+    
+    <xsd:simpleType name="OverlayType">
+        <xsd:restriction base="xsd:string">
+            <xsd:enumeration value="text" />
+            <xsd:enumeration value="image" />
+            <xsd:enumeration value="color" />
+            <xsd:enumeration value="colour" />
+        </xsd:restriction>
+    </xsd:simpleType>
+</xsd:schema>

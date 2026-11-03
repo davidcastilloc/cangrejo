@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CANGREJO — Open-Source OSINT &amp; Forensic Link-Analysis Platform</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0F17' stroke='%23F59E0B' stroke-width='2'/%3E%3Cpath d='M16 9c-3.5 0-6 2.2-6 5s2.5 5 6 5 6-2.2 6-5-2.5-5-6-5zm-7 1l-3-3m17 3l3-3M8 15H4m24 0h-4M9 19l-3 3m17-3l3 3' stroke='%23FBBF24' stroke-width='2.2' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='16' cy='14' r='2.2' fill='%2322D3EE'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/apps/web/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Unified 52px Single-Line Investigator Ribbon -->
+      <header class="ribbon" role="banner" aria-label="Barra de control principal Cangrejo OSINT">
+        <div class="ribbon-left">
+          <button
+            id="btn-brand-lore"
+            type="button"
+            class="brand brand-btn"
+            title="Abrir Manifiesto: El Cangrejo de Oro (Criminalística Venezolana 1971) y Atajos"
+          >
+            <div class="brand-logo" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <ellipse cx="12" cy="12.5" rx="5.5" ry="4.2" fill="rgba(245, 158, 11, 0.22)" />
+                <circle cx="12" cy="12.5" r="1.6" fill="#22D3EE" stroke="none" />
+                <path d="M6.5 9.5L4 6.5L6 4.5" />
+                <path d="M17.5 9.5L20 6.5L18 4.5" />
+                <path d="M6.2 12.5H2.5" />
+                <path d="M17.8 12.5H21.5" />
+                <path d="M6.8 15.5L3.5 18" />
+                <path d="M17.2 15.5L20.5 18" />
+                <path d="M8.5 16.5L6.5 20" />
+                <path d="M15.5 16.5L17.5 20" />
+              </svg>
+            </div>
+            <span class="brand-title">CANGREJO</span>
+            <span class="brand-badge">ORO v1.0</span>
+          </button>
+
+          <div class="ribbon-divider"></div>
+
+          <div class="case-selector-group">
+            <label for="preset-select" class="sr-only">Seleccionar expediente</label>
+            <select id="preset-select" class="ribbon-select" aria-label="Expediente de investigación">
+              <option value="apt29">Caso Cangrejo #01: APT29 / Midnight Blizzard Infrastructure</option>
+              <option value="cloudflare">Caso Cangrejo #02: Superficie DNS en Vivo (cloudflare.com / github.com)</option>
+              <option value="crypto">Caso Cangrejo #03: Ransomware BTC Treasury &amp; Mixer Trace</option>
+              <option value="stress250">Caso Cangrejo #04: Benchmark 250 Nodos (Barnes-Hut + Collection Nodes)</option>
+            </select>
+            <button id="btn-load-preset" class="btn btn-subtle" title="Cargar expediente seleccionado">
+              Cargar Expediente
+            </button>
+          </div>
+        </div>
+
+        <div class="ribbon-center">
+          <!-- Segmented Layout Controls -->
+          <div class="segmented-group" role="group" aria-label="Algoritmo de Layout">
+            <button data-layout="organic" class="seg-btn btn-layout active" title="ForceAtlas2 Barnes-Hut Quadtree O(V log V)">
+              Orgánico
+            </button>
+            <button data-layout="hierarchical" class="seg-btn btn-layout" title="Jerárquico Sugiyama DAG">
+              Jerárquico
+            </button>
+            <button data-layout="circular" class="seg-btn btn-layout" title="Anillo Circular">
+              Circular
+            </button>
+            <button data-layout="block" class="seg-btn btn-layout" title="Cuadrícula en Bloques">
+              Bloques
+            </button>
+          </div>
+
+          <!-- Segmented Cursor Tools -->
+          <div class="segmented-group" role="group" aria-label="Herramienta de Cursor">
+            <button data-tool="pointer" class="seg-btn btn-tool active" title="Puntero / Mover nodos">
+              Puntero
+            </button>
+            <button data-tool="marquee" class="seg-btn btn-tool" title="Selección por Caja (Marquee)">
+              Caja
+            </button>
+            <button data-tool="lasso" class="seg-btn btn-tool" title="Selección por Lazo Poligonal">
+              Lazo
+            </button>
+            <button data-tool="link" class="seg-btn btn-tool" title="Enlazar dos entidades">
+              Enlazar
+            </button>
+          </div>
+
+          <!-- Compact Collection Nodes Pill -->
+          <div class="collection-pill" title="Agrupación automática de nodos hoja en Collection Nodes">
+            <label class="collection-toggle-label" for="chk-collect">
+              <input id="chk-collect" type="checkbox" checked />
+              <span>Collections (<strong id="lbl-collect-min">4</strong>)</span>
+            </label>
+            <input
+              id="rng-collect-min"
+              type="range"
+              min="2"
+              max="15"
+              value="4"
+              aria-label="Umbral mínimo de entidades por Collection Node"
+            />
+          </div>
+        </div>
+
+        <div class="ribbon-right">
+          <div class="btn-group">
+            <button id="btn-undo" class="btn btn-icon" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">
+              ↶ <span id="cnt-undo" class="tabular">0</span>
+            </button>
+            <button id="btn-redo" class="btn btn-icon" title="Rehacer (Ctrl+Y)" aria-label="Rehacer">
+              ↷ <span id="cnt-redo" class="tabular">0</span>
+            </button>
+          </div>
+
+          <div class="btn-group">
+            <button id="btn-export-mtgx" class="btn" title="Exportar Expediente .cgrx (Archivo Forense PKZIP + GraphML)">
+              .cgrx ↓
+            </button>
+            <label class="btn" title="Importar Expediente .cgrx / .mtgx" tabindex="0">
+              .cgrx ↑
+              <input id="inp-import-mtgx" type="file" accept=".cgrx,.mtgx,.zip" style="display: none" />
+            </label>
+            <button id="btn-encrypt-mtgj" class="btn" title="Bóveda Cero: Cifrado Selectivo Zero-Knowledge AES-256-GCM + AES-GMAC">
+              Bóveda Cero .cgrj
+            </button>
+          </div>
+
+          <!-- Dual Theme Switcher (Obsidian Dark <-> Daylight Report) -->
+          <button
+            id="btn-theme-toggle"
+            class="btn btn-theme"
+            title="Alternar tema: Obsidian Studio (Oscuro) / Daylight Report (Claro WCAG AAA)"
+            aria-label="Alternar tema claro u oscuro"
+          >
+            <span id="lbl-theme-mode">☀ Daylight</span>
+          </button>
+
+          <!-- Single Primary Cobalt CTA (Taste Color Consistency Lock) -->
+          <button
+            id="btn-primary-run-transforms"
+            class="btn btn-primary"
+            title="Ejecutar Pesquisa OSINT en vivo sobre la entidad seleccionada"
+          >
+            Ejecutar Pesquisa OSINT
+          </button>
+        </div>
+      </header>
+
+      <!-- Main 3-Column Workstation -->
+      <main class="workstation">
+        <!-- Left Docked 320px Tool Drawer: Entity Catalog + IOC Regex Extraction Tray -->
+        <aside class="sidebar-left" aria-label="Catálogo de Entidades y Extracción Regex">
+          <div class="panel-header">
+            <span>ENTITY CATALOG (<span id="lbl-entity-catalog-count" class="tabular">107</span>)</span>
+            <span class="kbd-hint">Ctrl+K</span>
+          </div>
+
+          <div class="palette-controls">
+            <input
+              id="inp-palette-search"
+              type="text"
+              placeholder="Buscar entidad (DNS, IPv4, BTC, CVE...)"
+              aria-label="Buscar entidad en el catálogo"
+            />
+            <select id="sel-palette-category" aria-label="Filtrar por categoría de entidad">
+              <option value="ALL">Todas las Categorías (12)</option>
+            </select>
+          </div>
+
+          <div id="palette-list" class="palette-list" role="list"></div>
+
+          <!-- IOC Regex Extraction Tray (12 + Extended OSINT Converters) -->
+          <div class="smart-paste-box">
+            <div class="panel-header">
+              <span>IOC REGEX EXTRACTION TRAY</span>
+              <span class="meta-tag">17 Rules</span>
+            </div>
+            <textarea
+              id="txt-smart-paste"
+              rows="4"
+              aria-label="Pegar indicadores OSINT para detección automática"
+              placeholder="Pega IPs, dominios, URLs, emails, CVEs, hashes SHA-256, direcciones BTC o ASNs..."
+            >104.21.16.1
+api.cloudflare.com
+security@cloudflare.com
+CVE-2024-21412
+bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh
+AS13335</textarea>
+            <button id="btn-smart-paste" class="btn btn-primary btn-block">
+              Detectar y Crear Entidades
+            </button>
+          </div>
+        </aside>
+
+        <!-- Center Interactive Graph Scenegraph Stage -->
+        <section class="canvas-stage" aria-label="Lienzo interactivo de grafos OSINT">
+          <!-- Top-Right Minimal Integrated Canvas HUD -->
+          <div class="canvas-hud-top">
+            <button id="btn-fit" class="hud-pill-btn" title="Centrar y encuadrar grafo">
+              ⊡ Fit View
+            </button>
+            <button id="btn-clear" class="hud-pill-btn" title="Limpiar lienzo">
+              ✕ Clear
+            </button>
+            <span class="hud-pill-stat tabular">Zoom: <strong id="hud-zoom">1.00x</strong></span>
+          </div>
+
+          <canvas id="graph-canvas"></canvas>
+
+          <!-- Bottom-Right Overview Radar Minimap -->
+          <div class="minimap-container" title="Mapa de navegación general (Radar Overview)">
+            <div class="minimap-header">OVERVIEW RADAR</div>
+            <canvas id="minimap-canvas" width="180" height="116"></canvas>
+          </div>
+
+          <!-- Frosted-Glass Context Transform Runner -->
+          <div id="context-menu" class="context-menu hidden" role="menu">
+            <div class="context-menu-header" id="ctx-entity-title">Entidad</div>
+            <button data-transform="dns-to-ip" class="ctx-item" role="menuitem">
+              <span class="ctx-code">DNS A</span> To IPv4 Address [Live DNS]
+            </button>
+            <button data-transform="dns-to-mx" class="ctx-item" role="menuitem">
+              <span class="ctx-code">DNS MX</span> To Mail Servers [Live DNS]
+            </button>
+            <button data-transform="dns-to-ns" class="ctx-item" role="menuitem">
+              <span class="ctx-code">DNS NS</span> To Name Servers [Live DNS]
+            </button>
+            <button data-transform="ct-subdomains" class="ctx-item" role="menuitem">
+              <span class="ctx-code">CT SAN</span> Subdomains &amp; X.509 Certificate
+            </button>
+            <button data-transform="ip-to-asn" class="ctx-item" role="menuitem">
+              <span class="ctx-code">BGP</span> To Netblock, ASN, Port &amp; GeoIP
+            </button>
+            <button data-transform="threat-intel" class="ctx-item" role="menuitem">
+              <span class="ctx-code">CTI</span> Threat Actor, CVE &amp; SHA-256
+            </button>
+            <button data-transform="whois-identity" class="ctx-item" role="menuitem">
+              <span class="ctx-code">RDAP</span> WHOIS Registrant, Email &amp; Phone
+            </button>
+            <button data-transform="crypto-trace" class="ctx-item" role="menuitem">
+              <span class="ctx-code">UTXO</span> Crypto Hop &amp; On-Chain Tx
+            </button>
+            <div class="ctx-divider"></div>
+            <button data-transform="all" class="ctx-item ctx-item-highlight" role="menuitem">
+              Run All OSINT Transforms
+            </button>
+            <div class="ctx-divider"></div>
+            <button id="ctx-pin-toggle" class="ctx-item" role="menuitem">
+              Toggle Position Pin Lock
+            </button>
+            <button id="ctx-delete-entity" class="ctx-item ctx-item-danger" role="menuitem">
+              Delete Entity (Cascade)
+            </button>
+          </div>
+
+          <!-- Disciplined 26px Bottom Telemetry Strip (Tabular Numerics) -->
+          <footer class="canvas-hud" aria-label="Telemetría del grafo en tiempo real">
+            <div class="hud-stat">Entities: <strong id="hud-entities">0</strong></div>
+            <span class="hud-sep">•</span>
+            <div class="hud-stat">Links: <strong id="hud-links">0</strong></div>
+            <span class="hud-sep">•</span>
+            <div class="hud-stat">Visible ViewEntities: <strong id="hud-view-entities">0</strong></div>
+            <span class="hud-sep">•</span>
+            <div class="hud-stat">Collections: <strong id="hud-collections">0</strong></div>
+            <span class="hud-sep">•</span>
+            <div class="hud-stat">Selected: <strong id="hud-selected">0</strong></div>
+            <span class="hud-sep">•</span>
+            <div class="hud-stat">Draw Calls: <strong id="hud-draw-calls">4</strong></div>
+            <span class="hud-sep">•</span>
+            <div class="hud-stat">Layout: <strong id="hud-layout-ms">0.0 ms</strong></div>
+          </footer>
+        </section>
+
+        <!-- Right Docked 340px Inspector & Syntax-Highlighted Protocol Console -->
+        <aside class="sidebar-right" aria-label="Inspector de Entidad y Consola de Protocolo">
+          <div class="panel-header">
+            <span>ENTITY INSPECTOR &amp; ONTOLOGY</span>
+            <span id="insp-latency-badge" class="latency-badge">0.70 ms</span>
+          </div>
+
+          <div id="inspector-content" class="inspector-content">
+            <div class="inspector-empty">
+              Selecciona cualquier nodo del grafo para inspeccionar o editar sus propiedades dinámicas, peso, color de marcador, notas y jerarquía ontológica.
+            </div>
+          </div>
+
+          <div class="protocol-console">
+            <div class="panel-header">
+              <span>PESQUISA TELEMETRY &amp; PROTOCOL</span>
+              <div class="console-tabs" role="tablist">
+                <button data-tab="log" class="tab-btn active" role="tab">Bitácora</button>
+                <button data-tab="xml" class="tab-btn" role="tab">XML v2</button>
+                <button data-tab="json" class="tab-btn" role="tab">JSON v3 / .cgrj</button>
+              </div>
+            </div>
+            <pre id="console-output" class="console-output">CANGREJO v1.0 listo. Haz clic derecho sobre cualquier nodo del expediente o pulsa "Ejecutar Pesquisa OSINT" para iniciar el análisis de vínculos en vivo.</pre>
+          </div>
+        </aside>
+      </main>
+
+      <!-- Interactive Cangrejo de Oro Heritage & Architecture Modal -->
+      <div id="lore-modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="lore-modal-title">
+        <div class="modal-card">
+          <div class="modal-header">
+            <div class="modal-brand-row">
+              <img src="/cangrejo_logo_emblem.png" alt="Emblema Cangrejo de Oro" class="modal-emblem" />
+              <div>
+                <h2 id="lore-modal-title" class="modal-title">CANGREJO — El Cangrejo de Oro</h2>
+                <p class="modal-subtitle">Open-Source OSINT, Threat Intelligence &amp; Forensic Link-Analysis Platform (Apache-2.0)</p>
+              </div>
+            </div>
+            <button id="btn-close-lore" type="button" class="btn btn-icon" aria-label="Cerrar ventana">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="lore-section">
+              <h3>🇻🇪 Origen Venezolano: ¿Qué es un «Caso Cangrejo»?</h3>
+              <p>
+                Desde <strong>1971–1972</strong> en la criminalística científica venezolana (antigua <em>PTJ</em>, hoy <em>CICPC</em>), se denomina
+                <strong>«Caso Cangrejo»</strong> a toda investigación de altísima complejidad cuyas pistas, actores y estructuras fachada parecen caminar
+                hacia los lados y hacia atrás en una red laberíntica. Para premiar a los investigadores que logran desentrañar estos casos mediante el rigor
+                científico y el análisis de vínculos, se instituyó el legendario <strong>Premio Cangrejo de Oro</strong>.
+              </p>
+            </div>
+
+            <div class="lore-section">
+              <h3>🏆 Clasificación Forense de Hallazgos (Los Cuatro Cangrejos)</h3>
+              <div class="tier-grid">
+                <div class="tier-card tier-platino">
+                  <strong>Cangrejo de Platino</strong>
+                  <span>Joya de la Corona / Servidor C2 Maestro / Atribución Primaria</span>
+                </div>
+                <div class="tier-card tier-oro">
+                  <strong>Cangrejo de Oro</strong>
+                  <span>Eslabón Pivote Crítico que conecta clústeres aislados</span>
+                </div>
+                <div class="tier-card tier-plata">
+                  <strong>Cangrejo de Plata</strong>
+                  <span>Evidencia Secundaria Corroborada (DNS pasivo, RDAP, UTXO)</span>
+                </div>
+                <div class="tier-card tier-bronce">
+                  <strong>Cangrejo de Bronce</strong>
+                  <span>Rastro Inicial / Indicador extraído por Regex o Subdominios</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="lore-section">
+              <h3>⚡ Arquitectura `@cangrejo/*` &amp; Atajos de Teclado</h3>
+              <div class="shortcut-grid">
+                <div><kbd>Ctrl+K</kbd> Buscar en catálogo de 107 entidades</div>
+                <div><kbd>Clic Derecho</kbd> Ejecutar Pesquisa OSINT en vivo</div>
+                <div><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> Deshacer / Rehacer atómico</div>
+                <div><kbd>Supr</kbd> Eliminación en cascada de entidad y aristas</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/apps/web/main.ts"></script>
+  </body>
+</html>

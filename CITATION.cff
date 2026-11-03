@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+title: "CANGREJO: High-Performance Open-Source OSINT & Forensic Link-Analysis Graph Platform"
+message: "If you use CANGREJO in your cyber threat intelligence, OSINT, or digital forensics research, please cite it using the metadata below."
+type: software
+version: 1.0.0
+date-released: "2026-11-03"
+license: Apache-2.0
+keywords:
+  - osint
+  - threat-intelligence
+  - link-analysis
+  - digital-forensics
+  - graph-visualization
+  - webgpu
+  - zero-knowledge-encryption
+  - cangrejo-de-oro
+abstract: >-
+  Cangrejo is a high-performance open-source OSINT, Cyber Threat Intelligence (CTI),
+  and forensic link-analysis graph platform inspired by Venezuela's historic
+  "Cangrejo de Oro" scientific criminalistics heritage. It features a tripartite
+  CSR graph store, 60 FPS instanced WebGPU rendering, a 3-tier layout pipeline,
+  live Pesquisa OSINT transforms, and Bóveda Cero selective Zero-Knowledge
+  encryption (AES-256-GCM + AES-GMAC).
+authors:
+  - name: "Proyecto Cangrejo Contributors"

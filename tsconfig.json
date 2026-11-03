@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@cangrejo/core": ["./packages/core/src/index.ts"],
+      "@cangrejo/core/*": ["./packages/core/src/*"],
+      "@cangrejo/schemas": ["./packages/schemas/src/index.ts"],
+      "@cangrejo/platform-bridge": ["./packages/platform-bridge/src/index.ts"],
+      "@cangrejo/database-d1": ["./packages/database-d1/src/index.ts"],
+      "@cangrejo/renderer": ["./packages/renderer/src/index.ts"],
+      "@cangrejo/renderer/*": ["./packages/renderer/src/*"],
+      "@cangrejo/transforms": ["./packages/transforms/src/index.ts"],
+      "@cangrejo/transforms/*": ["./packages/transforms/src/*"],
+      "@cangrejo/design-tokens": ["./packages/design-tokens/src/index.ts"]
+    }
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "apps/web/**/*.ts",
+    "vite.config.ts",
+    "tests/**/*.ts"
+  ]
+}

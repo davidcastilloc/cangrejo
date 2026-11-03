@@ -1,0 +1,35 @@
+name: 🦀 Bug Report (Reporte de Fallo)
+description: Report a defect in the Cangrejo graph engine, WebGPU renderer, or Pesquisa transforms.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected Package (@cangrejo/*)
+      options:
+        - "@cangrejo/core (Tripartite GraphStore / Ontology / Merger)"
+        - "@cangrejo/renderer (WebGPU / Canvas / 3-Tier Layout)"
+        - "@cangrejo/transforms (Pesquisa OSINT / .cgrx / Bóveda Cero)"
+        - "@cangrejo/design-tokens (OKLCH Themes / Accessibility)"
+        - "apps/web (Workstation UI / Command Ribbon)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Concrete Problem & Steps to Reproduce
+      placeholder: |
+        1. Load Caso Cangrejo #01 (APT29)...
+        2. Run Pesquisa Transform...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Forensic / Graph Behavior
+    validations:
+      required: true

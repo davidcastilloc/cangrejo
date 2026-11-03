@@ -1,0 +1,47 @@
+name: CANGREJO CI — Typecheck & Architectural Gates (0-3)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (@cangrejo/* on Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22.x, 24.x]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Strict TypeScript Typecheck
+        run: npm run typecheck
+
+      - name: Run Gate 0 — Foundations & Schema Validator
+        run: npm run test:gate0
+
+      - name: Run Gate 1 — Expediente Graph Engine & 10k Merger Benchmark
+        run: npm run test:gate1
+
+      - name: Run Gate 2 — Catatumbo WebGPU Renderer & 100k Node S4 Benchmark
+        run: npm run test:gate2
+
+      - name: Run Gate 3 — Pesquisa Transforms & Bóveda Cero Encryption
+        run: npm run test:gate3

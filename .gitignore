@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build & TypeScript Cache
+dist/
+build/
+out/
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+.cache/
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# OS & Editor Artifacts
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# Local Workflow & Private Scratch (Never Tracked)
+.specify/
+specs/
+.agents/
+.sisyphus/
+.antigravitycli/
+scratch/
+
+# Logs & Coverage
+logs/
+*.log
+npm-debug.log*
+coverage/
+.vitest/
