@@ -310,5 +310,28 @@ describe('Gate 9: Cloudflare Workers AI & Forensic AI Engine (F1–F5, Vectorize
     expect(sseBody).toContain('"type":"delta"');
     expect(sseBody).toContain('"type":"done"');
     expect(sseBody).toContain('data: [DONE]');
+
+    // 5. Verify F7 Multimodal Forensic Visual Evidence Ingestor (/api/ai/vision-ingest)
+    const visionRes = await cangrejoHonoApp.request('/api/ai/vision-ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: 'evidencia-ransomware.png',
+        imageBase64: Buffer.from('PNG-FORENSIC-SAMPLE').toString('base64'),
+        evidenceCaption:
+          'Captura de pantalla C2: hxxps[:]//vision-node[.]apt29[.]org/gate y 185[.]220[.]101[.]77.',
+      }),
+    });
+    expect(visionRes.status).toBe(200);
+    const visionJson = (await visionRes.json()) as {
+      ok: boolean;
+      evidenceSha256Hex: string;
+      unpackedCount: number;
+      aiMeta: { modelId: string };
+    };
+    expect(visionJson.ok).toBe(true);
+    expect(visionJson.evidenceSha256Hex).toMatch(/^[0-9a-f]{64}$/);
+    expect(visionJson.unpackedCount).toBeGreaterThanOrEqual(2);
+    expect(visionJson.aiMeta.modelId).toBe('@cf/meta/llama-3.2-11b-vision-instruct');
   });
 });

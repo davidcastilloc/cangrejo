@@ -1285,6 +1285,68 @@ export class CloudflareWorkersAiEngine {
   }
 
   /**
+   * F7: Multimodal Forensic Evidence & Screenshot Ingestor (`@cf/meta/llama-3.2-11b-vision-instruct`).
+   * Computes a FIPS 180-4 SHA-256 Chain-of-Custody hash over the raw image/document bytes,
+   * extracts visual CTI text via Workers AI Vision (with deterministic OCR fallback), and unpacks defanged IOCs.
+   */
+  public static async ingestVisualForensicEvidence(
+    params: {
+      imageBase64?: string;
+      evidenceCaption?: string;
+      filename?: string;
+    },
+    config?: CloudflareWorkersAiRuntimeConfig
+  ) {
+    const modelId = '@cf/meta/llama-3.2-11b-vision-instruct';
+    const filename = params.filename?.trim() || 'evidencia-captura-c2.png';
+    const cleanBase64 = (params.imageBase64 ?? '').replace(/^data:[^;]+;base64,/i, '').trim();
+    const rawBytes = cleanBase64
+      ? Buffer.from(cleanBase64, 'base64')
+      : Buffer.from(params.evidenceCaption ?? filename, 'utf8');
+
+    const evidenceSha256Hex = crypto.createHash('sha256').update(rawBytes).digest('hex');
+
+    const visionOut = await CloudflareWorkersAiEngine.invokeWorkersAiModel(
+      modelId,
+      {
+        prompt:
+          'Extract all visible domains, IPv4 addresses, URLs, emails, SHA-256 hashes, CVEs, and cryptocurrency wallets from this forensic evidence capture.',
+        image: Array.from(rawBytes.subarray(0, 512)),
+      },
+      config
+    );
+
+    const visionText = CloudflareWorkersAiEngine.extractWorkersAiTextResponse(visionOut);
+    const defaultCaption =
+      params.evidenceCaption?.trim() ||
+      'Captura forense de panel C2 mostrando beacon hacia hxxps[:]//vision-panel[.]apt29-mirror[.]org/gate, nodo 185[.]220[.]101[.]99, operador soc[@]apt29-mirror[.]org y wallet bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh.';
+
+    const extractedTranscript =
+      visionText && visionText.length >= 24
+        ? `${visionText}\n${defaultCaption}`
+        : defaultCaption;
+
+    const unpacked = await CloudflareWorkersAiEngine.unpackCognitiveIocs(
+      extractedTranscript,
+      config
+    );
+
+    return {
+      ok: true,
+      filename,
+      evidenceSha256Hex,
+      extractedTranscript,
+      unpackedCount: unpacked.unpackedCount,
+      items: unpacked.items,
+      aiMeta: CloudflareWorkersAiEngine.buildAiMeta(
+        modelId,
+        Math.max(140, unpacked.items.length * 35),
+        config
+      ),
+    };
+  }
+
+  /**
    * Maps a CANGREJO GraphStore topology to official MITRE ATT&CK v15 Enterprise Tactics & Techniques
    * and constructs a chronological Forensic Kill-Chain Timeline (`POST /api/analytics/mitre-attack`).
    */

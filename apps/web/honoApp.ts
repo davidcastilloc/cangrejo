@@ -27,6 +27,8 @@ import {
   AiLatentLinksResponseSchema,
   AiUnpackIocsRequestSchema,
   AiUnpackIocsResponseSchema,
+  AiVisionIngestRequestSchema,
+  AiVisionIngestResponseSchema,
   BillingWebhookPayloadSchema,
   CangrejoEditionStatusResponseSchema,
   LicenseActivationRequestSchema,
@@ -304,6 +306,12 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
         post: {
           summary:
             'F6: Autonomous Multi-Hop OSINT Investigator guided by PageRank & Llama 3.3 70B',
+        },
+      },
+      '/api/ai/vision-ingest': {
+        post: {
+          summary:
+            'F7: Multimodal Forensic Visual Evidence & Screenshot Ingestor (Llama 3.2 11B Vision + SHA-256 Custody)',
         },
       },
       '/api/mcp': {
@@ -2333,6 +2341,30 @@ cangrejoHonoApp.post('/api/ai/auto-investigate', async (c) => {
     return c.json(validated, 200);
   } catch (err) {
     console.error('[Hono /api/ai/auto-investigate] Autonomous investigation failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+cangrejoHonoApp.post('/api/ai/vision-ingest', async (c) => {
+  try {
+    const rawBody = (await c.req.json()) as Record<string, unknown>;
+    const parsed = AiVisionIngestRequestSchema.parse(rawBody);
+    const result = await CloudflareWorkersAiEngine.ingestVisualForensicEvidence(
+      parsed,
+      resolveAiRuntimeConfig(c)
+    );
+    const edition = sqliteVault.consumeOsintCreditsSafe(2);
+    const validated = AiVisionIngestResponseSchema.parse({
+      ...result,
+      editionTier: edition.editionTier,
+      creditsRemaining: edition.creditsRemaining,
+    });
+    return c.json(validated, 200);
+  } catch (err) {
+    console.error('[Hono /api/ai/vision-ingest] Multimodal vision ingest failed:', err);
     return c.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
       400

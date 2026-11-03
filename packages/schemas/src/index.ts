@@ -27,6 +27,8 @@ export {
   AiUnpackIocsRequestSchema,
   AiUnpackIocsResponseSchema,
   AiUnpackedIocItemSchema,
+  AiVisionIngestRequestSchema,
+  AiVisionIngestResponseSchema,
   BillingWebhookPayloadSchema,
   CangrejoEditionStatusResponseSchema,
   CangrejoEditionTierSchema,

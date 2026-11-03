@@ -2539,6 +2539,47 @@ document.getElementById('btn-ai-f6-autoinvestigate')?.addEventListener('click', 
   }
 });
 
+document.getElementById('btn-ai-f7-vision')?.addEventListener('click', async () => {
+  try {
+    setAiOutput('[F7 Ingesta Visual Multimodal • Llama 3.2 11B Vision]: Procesando evidencia y calculando custodia SHA-256…');
+    const res = await fetch('/api/ai/vision-ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: 'captura-panel-c2-apt29.png',
+        evidenceCaption:
+          'Evidencia visual: consola C2 apuntando a hxxps[:]//vision-c2[.]apt29-mirror[.]org/admin, IP 185[.]220[.]101[.]99 y correo operador[@]shadow-apt[.]ru.',
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      filename: string;
+      evidenceSha256Hex: string;
+      unpackedCount: number;
+      items: Array<{
+        rawFragment: string;
+        canonicalValue: string;
+        typeName: string;
+        startByteOffset: number;
+        endByteOffset: number;
+      }>;
+      aiMeta: { modelId: string; estimatedNeurons: number };
+    };
+    if (data.ok) {
+      lastAiUnpackedItems = data.items;
+      await syncEditionBadge();
+      const lines = data.items.map(
+        (i) => `  • [${i.typeName}] ${i.rawFragment} -> ${i.canonicalValue}`
+      );
+      setAiOutput(
+        `[F7 Ingesta Multimodal • ${data.aiMeta.modelId} (${data.aiMeta.estimatedNeurons} neuronas)]\nArchivo: ${data.filename} | Custodia SHA-256: ${data.evidenceSha256Hex.slice(0, 24)}…\nIOCs extraídos (${data.unpackedCount}) — haz clic en "✨ Materializar Hallazgos IA" para inyectarlos al grafo:\n${lines.join('\n')}`
+      );
+    }
+  } catch (err) {
+    setAiOutput(`Error en F7 Ingesta Visual: ${String(err)}`);
+  }
+});
+
 let lastCopilotToolCalls: Array<{
   toolName: string;
   transformId: string;

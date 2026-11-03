@@ -466,3 +466,23 @@ export const AiAutoInvestigateResponseSchema = z
     aiMeta: AiExecutionMetaSchema,
   })
   .passthrough();
+
+export const AiVisionIngestRequestSchema = z
+  .object({
+    imageBase64: z.string().optional(),
+    evidenceCaption: z.string().optional(),
+    filename: z.string().optional(),
+  })
+  .passthrough();
+
+export const AiVisionIngestResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    filename: z.string(),
+    evidenceSha256Hex: z.string(),
+    extractedTranscript: z.string(),
+    unpackedCount: z.number().int().min(0),
+    items: z.array(AiUnpackedIocItemSchema),
+    aiMeta: AiExecutionMetaSchema,
+  })
+  .passthrough();
