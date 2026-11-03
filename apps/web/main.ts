@@ -2399,13 +2399,52 @@ document.getElementById('btn-ai-f4-daubert')?.addEventListener('click', async ()
     const payload = serializeCurrentStore();
     const res = await fetch('/api/ai/daubert-synthesis', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
       body: JSON.stringify({
         expedienteId: 'EXP-APT29-DAUBERT',
         title: 'Dictamen Judicial Caso Cangrejo',
+        stream: true,
         ...payload,
       }),
     });
+
+    if (res.headers.get('content-type')?.includes('text/event-stream') && res.body) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let streamedText = '';
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
+        for (const ev of events) {
+          const line = ev.trim();
+          if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+          const jsonStr = line.slice(6);
+          const parsedEv = JSON.parse(jsonStr) as {
+            type: 'delta' | 'done';
+            text?: string;
+            attestation?: { canonicalSha256Hex: string; signatureHex: string };
+          };
+          if (parsedEv.type === 'delta' && parsedEv.text) {
+            streamedText += parsedEv.text;
+            setAiOutput(streamedText);
+          } else if (parsedEv.type === 'done' && parsedEv.attestation) {
+            await syncEditionBadge();
+            setAiOutput(
+              `${streamedText}\n\n[Firma Ed25519]: ${parsedEv.attestation.signatureHex.slice(0, 32)}… | [SHA-256]: ${parsedEv.attestation.canonicalSha256Hex.slice(0, 24)}…`
+            );
+          }
+        }
+      }
+      return;
+    }
+
     const data = (await res.json()) as {
       ok: boolean;
       executiveNarrative: string;
@@ -2419,6 +2458,84 @@ document.getElementById('btn-ai-f4-daubert')?.addEventListener('click', async ()
     }
   } catch (err) {
     setAiOutput(`Error en F4 Síntesis Daubert: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-ai-f6-autoinvestigate')?.addEventListener('click', async () => {
+  try {
+    setAiOutput('[F6 Pesquisa Autónoma Multi-Salto]: Planificando saltos sobre eslabones PageRank…');
+    const payload = serializeCurrentStore();
+    const res = await fetch('/api/ai/auto-investigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        maxHops: 2,
+        maxTargetsPerHop: 2,
+        ...payload,
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      hopsExecuted: number;
+      executedSteps: Array<{
+        hop: number;
+        sourceValue: string;
+        transformId: string;
+        discoveredCount: number;
+        rationale: string;
+      }>;
+      discoveredEntities: Array<{
+        id: string;
+        typeName: string;
+        value: string;
+        weight?: number;
+        bookmark?: number;
+        position?: { x: number; y: number; z: number };
+      }>;
+      discoveredLinks: Array<{
+        id: string;
+        sourceId: string;
+        targetId: string;
+        label: string;
+        color?: string;
+      }>;
+      summary: string;
+    };
+    if (data.ok) {
+      store.runInBatch(() => {
+        for (const entData of data.discoveredEntities) {
+          const entId = Guid.parse(entData.id);
+          if (!store.dataStore.hasEntity(entId)) {
+            const ent = registry.createEntity(entData.typeName, entData.value, {
+              id: entId,
+              weight: entData.weight ?? 90,
+              bookmark: entData.bookmark ?? 3,
+            });
+            store.addEntity(ent, entData.position ?? { x: 120, y: 120, z: 0 }, false);
+          }
+        }
+        for (const lnk of data.discoveredLinks) {
+          const srcId = Guid.parse(lnk.sourceId);
+          const dstId = Guid.parse(lnk.targetId);
+          if (store.dataStore.hasEntity(srcId) && store.dataStore.hasEntity(dstId)) {
+            store.addLink(
+              makeSimpleLink(Guid.parse(lnk.id), lnk.label, lnk.color ?? '#22D3EE'),
+              srcId,
+              dstId
+            );
+          }
+        }
+      });
+      syncSceneAndUi(false);
+      await syncEditionBadge();
+      const stepLines = data.executedSteps.map(
+        (s) =>
+          `  • [Salto #${s.hop}] ${s.sourceValue} -> ${s.transformId} (+${s.discoveredCount} IOCs): ${s.rationale}`
+      );
+      setAiOutput(`${data.summary}\n${stepLines.join('\n')}`);
+    }
+  } catch (err) {
+    setAiOutput(`Error en F6 Pesquisa Autónoma: ${String(err)}`);
   }
 });
 
@@ -2437,12 +2554,57 @@ document.getElementById('btn-ai-f5-ask')?.addEventListener('click', async () => 
       '¿Cuál es el nodo pivote principal y qué pesquisas recomiendas?';
     const res = await fetch('/api/ai/copilot', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
       body: JSON.stringify({
         prompt,
+        stream: true,
         ...payload,
       }),
     });
+
+    if (res.headers.get('content-type')?.includes('text/event-stream') && res.body) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let streamedText = '';
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
+        for (const ev of events) {
+          const line = ev.trim();
+          if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+          const parsedEv = JSON.parse(line.slice(6)) as {
+            type: 'delta' | 'done';
+            text?: string;
+            suggestedToolCalls?: Array<{
+              toolName: string;
+              transformId: string;
+              targetValue: string;
+              reason: string;
+            }>;
+          };
+          if (parsedEv.type === 'delta' && parsedEv.text) {
+            streamedText += parsedEv.text;
+            setAiOutput(streamedText);
+          } else if (parsedEv.type === 'done') {
+            lastCopilotToolCalls = parsedEv.suggestedToolCalls ?? [];
+            await syncEditionBadge();
+            const tools = lastCopilotToolCalls
+              .map((t) => `  -> Tool: ${t.toolName}(${t.targetValue}) — ${t.reason}`)
+              .join('\n');
+            setAiOutput(`${streamedText}\n${tools}`);
+          }
+        }
+      }
+      return;
+    }
+
     const data = (await res.json()) as {
       ok: boolean;
       answer: string;

@@ -431,3 +431,38 @@ export const AiForensicCopilotResponseSchema = z
     aiMeta: AiExecutionMetaSchema,
   })
   .passthrough();
+
+export const AiAutoInvestigateRequestSchema = z
+  .object({
+    expedienteId: z.string().optional(),
+    maxHops: z.number().int().min(1).max(3).optional(),
+    maxTargetsPerHop: z.number().int().min(1).max(5).optional(),
+    entities: z.array(z.record(z.string(), z.unknown())),
+    links: z.array(z.record(z.string(), z.unknown())).optional(),
+  })
+  .passthrough();
+
+export const AiAutoInvestigateStepSchema = z
+  .object({
+    hop: z.number().int().min(1),
+    sourceEntityId: z.string(),
+    sourceValue: z.string(),
+    sourceTypeName: z.string(),
+    transformId: z.string(),
+    discoveredCount: z.number().int().min(0),
+    rationale: z.string(),
+  })
+  .passthrough();
+
+export const AiAutoInvestigateResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    hopsExecuted: z.number().int().min(1),
+    executedSteps: z.array(AiAutoInvestigateStepSchema),
+    discoveredEntities: z.array(z.record(z.string(), z.unknown())),
+    discoveredLinks: z.array(z.record(z.string(), z.unknown())),
+    anomalies: z.array(AiAnomalyFindingSchema),
+    summary: z.string(),
+    aiMeta: AiExecutionMetaSchema,
+  })
+  .passthrough();

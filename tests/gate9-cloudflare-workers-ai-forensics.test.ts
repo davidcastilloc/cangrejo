@@ -188,4 +188,127 @@ describe('Gate 9: Cloudflare Workers AI & Forensic AI Engine (F1–F5, Vectorize
     expect(copilotJson.answer).toContain('Comisario IA');
     expect(copilotJson.suggestedToolCalls.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('5. F6 (/api/ai/auto-investigate), 1024-d BGE-Large Vectorize query, Llama 3.3 70B Ed25519 re-signing & SSE streaming', async () => {
+    // 1. Verify 1024-d BGE-Large embeddings + Vectorize upsert/query integration
+    const upsertedLengths: number[] = [];
+    let queryCalled = false;
+    const rrfResult = await CloudflareWorkersAiEngine.discoverLatentLinksRrf(
+      {
+        expedienteId: 'exp-1024-bge',
+        entities: [
+          { id: '1', typeName: 'maltego.Domain', value: 'alpha.apt29.org' },
+          { id: '2', typeName: 'maltego.Domain', value: 'beta.apt29.org' },
+        ],
+      },
+      {
+        aiBinding: {
+          run: async () => ({
+            data: [new Array(1024).fill(0.03125), new Array(1024).fill(0.03125)],
+          }),
+        },
+        vectorizeBinding: {
+          upsert: async (vecs) => {
+            for (const v of vecs) upsertedLengths.push(v.values.length);
+            return { count: vecs.length };
+          },
+          query: async () => {
+            queryCalled = true;
+            return {
+              matches: [{ id: '2', score: 0.99, metadata: { entityId: '2' } }],
+            };
+          },
+        },
+      }
+    );
+    expect(upsertedLengths).toEqual([1024, 1024]);
+    expect(queryCalled).toBe(true);
+    expect(rrfResult.suggestions[0]?.vectorCosineSimilarity).toBeGreaterThanOrEqual(0.99);
+
+    // 2. Verify F4 Daubert narrative incorporates real Llama 3.3 70B output and re-signs Ed25519
+    const llmDaubertRes = await cangrejoHonoApp.request(
+      '/api/ai/daubert-synthesis',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expedienteId: 'EXP-LLAMA70B',
+          title: 'Caso Cangrejo Llama 70B',
+          entities: [{ id: '701', typeName: 'maltego.Domain', value: 'c2.apt29.org' }],
+          links: [],
+        }),
+      },
+      {
+        AI: {
+          run: async () => ({
+            response:
+              'Dictamen pericial Llama 3.3 70B verificando el indicador primario [701] (c2.apt29.org) bajo estándar Daubert.',
+          }),
+        },
+      }
+    );
+    expect(llmDaubertRes.status).toBe(200);
+    const llmDaubertJson = (await llmDaubertRes.json()) as {
+      executiveNarrative: string;
+      attestation: {
+        canonicalSha256Hex: string;
+        signatureHex: string;
+        publicKeyPem: string;
+      };
+    };
+    expect(llmDaubertJson.executiveNarrative).toContain(
+      'SÍNTESIS COGNITIVA LLAMA 3.3 70B (CLOUDFLARE WORKERS AI EDGE)'
+    );
+    expect(
+      CloudflareWorkersAiEngine.verifyDaubertAttestation(llmDaubertJson.attestation)
+    ).toBe(true);
+
+    // 3. Verify F6 Autonomous Multi-Hop Investigator (/api/ai/auto-investigate)
+    const autoRes = await cangrejoHonoApp.request('/api/ai/auto-investigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        maxHops: 2,
+        maxTargetsPerHop: 2,
+        entities: [
+          { id: '901', typeName: 'maltego.Domain', value: 'pivot.apt29.org', weight: 100 },
+        ],
+        links: [],
+      }),
+    });
+    expect(autoRes.status).toBe(200);
+    const autoJson = (await autoRes.json()) as {
+      ok: boolean;
+      hopsExecuted: number;
+      executedSteps: Array<{ hop: number; transformId: string; discoveredCount: number }>;
+      discoveredEntities: Array<{ id: string; typeName: string; value: string }>;
+      discoveredLinks: Array<{ id: string; sourceId: string; targetId: string }>;
+    };
+    expect(autoJson.ok).toBe(true);
+    expect(autoJson.hopsExecuted).toBe(2);
+    expect(autoJson.executedSteps.length).toBeGreaterThanOrEqual(2);
+    expect(autoJson.discoveredEntities.length).toBeGreaterThanOrEqual(2);
+    expect(autoJson.discoveredLinks.length).toBeGreaterThanOrEqual(2);
+
+    // 4. Verify SSE streaming (text/event-stream) on /api/ai/copilot
+    const sseRes = await cangrejoHonoApp.request('/api/ai/copilot', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        prompt: 'Analiza el pivote en modo streaming SSE',
+        stream: true,
+        entities: [{ id: '901', typeName: 'maltego.Domain', value: 'pivot.apt29.org' }],
+        links: [],
+      }),
+    });
+    expect(sseRes.status).toBe(200);
+    expect(sseRes.headers.get('content-type')).toContain('text/event-stream');
+    const sseBody = await sseRes.text();
+    expect(sseBody).toContain('"type":"delta"');
+    expect(sseBody).toContain('"type":"done"');
+    expect(sseBody).toContain('data: [DONE]');
+  });
 });

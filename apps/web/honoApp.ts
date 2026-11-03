@@ -17,6 +17,8 @@ import {
 import {
   AiAnomalyClusterRequestSchema,
   AiAnomalyClusterResponseSchema,
+  AiAutoInvestigateRequestSchema,
+  AiAutoInvestigateResponseSchema,
   AiDaubertSynthesisRequestSchema,
   AiDaubertSynthesisResponseSchema,
   AiForensicCopilotRequestSchema,
@@ -296,7 +298,13 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
         post: { summary: 'F4: Court-Admissible Daubert / FRE 702 Narrative + Ed25519 Signature' },
       },
       '/api/ai/copilot': {
-        post: { summary: 'F5: Contextual Forensic Graph Copilot ("El Comisario IA") with Tool-Calling' },
+        post: { summary: 'F5: Contextual Forensic Graph Copilot ("El Comisario IA") with Tool-Calling & SSE' },
+      },
+      '/api/ai/auto-investigate': {
+        post: {
+          summary:
+            'F6: Autonomous Multi-Hop OSINT Investigator guided by PageRank & Llama 3.3 70B',
+        },
       },
       '/api/mcp': {
         get: { summary: 'Model Context Protocol (MCP) server capabilities & tool catalog' },
@@ -2192,7 +2200,7 @@ cangrejoHonoApp.post('/api/ai/anomalies', async (c) => {
 
 cangrejoHonoApp.post('/api/ai/daubert-synthesis', async (c) => {
   try {
-    const rawBody = await c.req.json();
+    const rawBody = (await c.req.json()) as Record<string, unknown>;
     const parsed = AiDaubertSynthesisRequestSchema.parse(rawBody);
     const store = buildStoreFromGraphPayload(parsed);
     const result = await CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrative(
@@ -2210,6 +2218,24 @@ cangrejoHonoApp.post('/api/ai/daubert-synthesis', async (c) => {
       editionTier: edition.editionTier,
       creditsRemaining: edition.creditsRemaining,
     });
+    const wantsStream =
+      rawBody.stream === true ||
+      (c.req.header('accept') ?? '').toLowerCase().includes('text/event-stream');
+    if (wantsStream) {
+      const sseStream = CloudflareWorkersAiEngine.createSseStreamFromText(
+        validated.executiveNarrative,
+        validated
+      );
+      return new Response(sseStream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+          'X-Cangrejo-Engine': 'Cangrejo-Oro-v1.0',
+        },
+      });
+    }
     return c.json(validated, 200);
   } catch (err) {
     console.error('[Hono /api/ai/daubert-synthesis] Daubert synthesis failed:', err);
@@ -2222,7 +2248,7 @@ cangrejoHonoApp.post('/api/ai/daubert-synthesis', async (c) => {
 
 cangrejoHonoApp.post('/api/ai/copilot', async (c) => {
   try {
-    const rawBody = await c.req.json();
+    const rawBody = (await c.req.json()) as Record<string, unknown>;
     const parsed = AiForensicCopilotRequestSchema.parse(rawBody);
     const store = buildStoreFromGraphPayload(parsed);
     const result = await CloudflareWorkersAiEngine.runForensicCopilotTurn(
@@ -2239,9 +2265,74 @@ cangrejoHonoApp.post('/api/ai/copilot', async (c) => {
       editionTier: edition.editionTier,
       creditsRemaining: edition.creditsRemaining,
     });
+    const wantsStream =
+      rawBody.stream === true ||
+      (c.req.header('accept') ?? '').toLowerCase().includes('text/event-stream');
+    if (wantsStream) {
+      const sseStream = CloudflareWorkersAiEngine.createSseStreamFromText(
+        validated.answer,
+        validated
+      );
+      return new Response(sseStream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+          'X-Cangrejo-Engine': 'Cangrejo-Oro-v1.0',
+        },
+      });
+    }
     return c.json(validated, 200);
   } catch (err) {
     console.error('[Hono /api/ai/copilot] Forensic Copilot turn failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+cangrejoHonoApp.post('/api/ai/auto-investigate', async (c) => {
+  try {
+    const rawBody = (await c.req.json()) as Record<string, unknown>;
+    const parsed = AiAutoInvestigateRequestSchema.parse(rawBody);
+    const store = buildStoreFromGraphPayload(parsed);
+    const result = await CloudflareWorkersAiEngine.executeAutonomousInvestigation(
+      store,
+      {
+        maxHops: parsed.maxHops,
+        maxTargetsPerHop: parsed.maxTargetsPerHop,
+      },
+      resolveAiRuntimeConfig(c)
+    );
+    const edition = sqliteVault.consumeOsintCreditsSafe(2);
+    const validated = AiAutoInvestigateResponseSchema.parse({
+      ...result,
+      editionTier: edition.editionTier,
+      creditsRemaining: edition.creditsRemaining,
+    });
+    const wantsStream =
+      rawBody.stream === true ||
+      (c.req.header('accept') ?? '').toLowerCase().includes('text/event-stream');
+    if (wantsStream) {
+      const sseStream = CloudflareWorkersAiEngine.createSseStreamFromText(
+        validated.summary,
+        validated
+      );
+      return new Response(sseStream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+          'X-Cangrejo-Engine': 'Cangrejo-Oro-v1.0',
+        },
+      });
+    }
+    return c.json(validated, 200);
+  } catch (err) {
+    console.error('[Hono /api/ai/auto-investigate] Autonomous investigation failed:', err);
     return c.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
       400
@@ -2397,6 +2488,21 @@ const CANGREJO_MCP_TOOLS_CATALOG = [
       required: ['bundle'],
     },
   },
+  {
+    name: 'cangrejo_ai_auto_investigate',
+    description:
+      'Executes an autonomous multi-hop OSINT investigation (1..3 hops) over the highest PageRank pivot entities in the graph, expanding DNS/CT/BGP/UTXO/CTI indicators and classifying anomalies.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxHops: { type: 'number', description: 'Number of autonomous OSINT hops (1..3).' },
+        maxTargetsPerHop: { type: 'number', description: 'Max pivot nodes expanded per hop (1..5).' },
+        entities: { type: 'array', items: { type: 'object' } },
+        links: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['entities'],
+    },
+  },
 ] as const;
 
 cangrejoHonoApp.get('/api/mcp', (c) => {
@@ -2509,6 +2615,18 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
               ? (args.bundle as Record<string, unknown>)
               : args;
           toolOutput = Stix21Exporter.importBundle(bundleArg);
+          break;
+        }
+        case 'cangrejo_ai_auto_investigate': {
+          const store = buildStoreFromGraphPayload(args);
+          toolOutput = await CloudflareWorkersAiEngine.executeAutonomousInvestigation(
+            store,
+            {
+              maxHops: typeof args.maxHops === 'number' ? args.maxHops : 2,
+              maxTargetsPerHop: typeof args.maxTargetsPerHop === 'number' ? args.maxTargetsPerHop : 2,
+            },
+            aiConfig
+          );
           break;
         }
         default:

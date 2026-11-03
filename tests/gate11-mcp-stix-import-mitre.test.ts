@@ -38,11 +38,14 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     const listJson = (await listRes.json()) as {
       result: { tools: Array<{ name: string }> };
     };
-    expect(listJson.result.tools.length).toBe(6);
+    expect(listJson.result.tools.length).toBe(7);
     expect(listJson.result.tools.map((t) => t.name)).toContain(
       'cangrejo_unpack_defanged_iocs'
     );
     expect(listJson.result.tools.map((t) => t.name)).toContain('cangrejo_map_mitre_attack');
+    expect(listJson.result.tools.map((t) => t.name)).toContain(
+      'cangrejo_ai_auto_investigate'
+    );
 
     const callRes = await cangrejoHonoApp.request('/api/mcp', {
       method: 'POST',
