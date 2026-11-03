@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { D1SchemaRunner } from './D1SchemaRunner.js';
 
-const DEFAULT_LICENSE_HMAC_SECRET =
+const getDefaultLicenseHmacSecret = (): string =>
   (typeof process !== 'undefined' && process.env?.CANGREJO_LICENSE_SECRET) ||
   'cangrejo-oro-hmac-sha256-master-secret-2026';
 
@@ -772,7 +772,7 @@ export class BunSqliteVault {
     ttlMs?: number;
     secret?: string;
   }): string {
-    const secret = params.secret ?? DEFAULT_LICENSE_HMAC_SECRET;
+    const secret = params.secret ?? getDefaultLicenseHmacSecret();
     const now = Date.now();
     const defaultCredits =
       params.tier === 'PLATINO_ENTERPRISE' ? 5_000 : params.tier === 'ORO_PRO' ? 500 : 0;
@@ -800,7 +800,7 @@ export class BunSqliteVault {
    */
   public static verifySignedLicenseToken(
     token: string,
-    secret = DEFAULT_LICENSE_HMAC_SECRET
+    secret = getDefaultLicenseHmacSecret()
   ): { valid: boolean; reason?: string; claims?: SignedLicenseClaims } {
     const parts = token.trim().split('.');
     if (parts.length !== 4 || parts[0] !== 'CGRJ') {

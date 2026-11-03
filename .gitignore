@@ -12,6 +12,7 @@ target/
 *.tsbuildinfo
 tsconfig.tsbuildinfo
 .cache/
+.codegraph/
 .moon/cache/
 
 # Environment & Secrets
