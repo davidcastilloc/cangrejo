@@ -1,4 +1,5 @@
 import {
+  CollaborationRoomHub,
   CollectionNodeView,
   EntityRegistry,
   GraphStore,
@@ -14,6 +15,7 @@ import {
   type MaltegoEntityData,
   type MaltegoLinkData,
   type Point2D,
+  type SerializedGraphModsDelta,
 } from '@cangrejo/core';
 import { Stix21Exporter } from '../../packages/transforms/src/formats/Stix21Exporter.js';
 import {
@@ -172,7 +174,7 @@ themeBridge.subscribe((mode, tokens) => {
   activeTokens = tokens;
   const lbl = document.getElementById('lbl-theme-mode');
   if (lbl) {
-    lbl.textContent = mode === 'dark' ? '☀ Daylight' : '🌙 Obsidian';
+    lbl.textContent = mode === 'dark' ? 'Daylight' : 'Obsidian';
   }
   renderPalette();
 });
@@ -183,6 +185,30 @@ document.getElementById('btn-theme-toggle')?.addEventListener('click', () => {
     `Tema cambiado a [${next === 'light' ? 'Paper Clean Daylight Report (WCAG AAA 17.8:1)' : 'Obsidian Studio Dark (WCAG AAA 16.5:1)'}].`
   );
 });
+
+// Viewport-aware positioning & auto-close for declarative top-bar popovers
+for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[popovertarget]')) {
+  const targetId = trigger.getAttribute('popovertarget');
+  const popoverEl = targetId ? document.getElementById(targetId) : null;
+  if (!popoverEl) continue;
+
+  const positionPopover = (): void => {
+    const rect = trigger.getBoundingClientRect();
+    const width = 284;
+    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+    popoverEl.style.top = `${Math.round(rect.bottom + 6)}px`;
+    popoverEl.style.left = `${Math.round(left)}px`;
+  };
+
+  trigger.addEventListener('click', positionPopover);
+  popoverEl.addEventListener('beforetoggle', positionPopover);
+  popoverEl.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement | null)?.closest('button');
+    if (btn && typeof (popoverEl as HTMLElement & { hidePopover?: () => void }).hidePopover === 'function') {
+      (popoverEl as HTMLElement & { hidePopover: () => void }).hidePopover();
+    }
+  });
+}
 
 function syncSceneAndUi(runLayoutAfter = false): void {
   if (runLayoutAfter && store.entityCount > 0) {
@@ -1510,6 +1536,77 @@ document.getElementById('btn-decrypt-mtgj')?.addEventListener('click', async () 
   }
 });
 
+const clientCollabHub = new CollaborationRoomHub();
+let isApplyingRemoteDelta = false;
+let lastProcessedUiSeq = 0;
+
+function applyRemoteSessionUiEvent(ev: {
+  seq: number;
+  type: 'select' | 'layout' | 'camera' | 'preset' | 'clear';
+  payload: Record<string, unknown>;
+}): void {
+  if (ev.seq <= lastProcessedUiSeq) return;
+  lastProcessedUiSeq = ev.seq;
+
+  if (ev.type === 'clear') {
+    isApplyingRemoteDelta = true;
+    try {
+      store.clear();
+      selection.clearSelection();
+      store.undoRedoManager.clear();
+    } finally {
+      isApplyingRemoteDelta = false;
+    }
+    syncSceneAndUi(false);
+    return;
+  }
+
+  if (ev.type === 'select' && Array.isArray(ev.payload.selectedEntityIds)) {
+    const ids = ev.payload.selectedEntityIds
+      .map((raw) => Guid.parse(String(raw)))
+      .filter((gid) => store.dataStore.hasEntity(gid));
+    selection.selectInModel(ids);
+    syncSceneAndUi(false);
+    return;
+  }
+
+  if (ev.type === 'layout' && typeof ev.payload.layoutMode === 'string') {
+    currentLayout = ev.payload.layoutMode as LayoutMode;
+    document.querySelectorAll('.btn-layout').forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-layout') === currentLayout);
+    });
+    syncSceneAndUi(false);
+    return;
+  }
+
+  if (ev.type === 'camera') {
+    if (ev.payload.action === 'fit') {
+      graphCanvas.zoomToFit(90);
+    } else if (typeof ev.payload.zoom === 'number') {
+      const cam = graphCanvas.getCameraState();
+      graphCanvas.setZoom(ev.payload.zoom, cam.viewportWidth * 0.5, cam.viewportHeight * 0.5);
+    }
+    syncSceneAndUi(false);
+  }
+}
+
+store.subscribe((mods) => {
+  if (isApplyingRemoteDelta) return;
+  const delta = clientCollabHub.serializeModsToDelta(
+    'expediente-apt29',
+    'browser-workstation',
+    store,
+    mods
+  );
+  void fetch('/api/collab/rooms/expediente-apt29/deltas', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(delta),
+  }).catch(() => {
+    // Graceful no-op when running offline
+  });
+});
+
 async function refreshCollaborationPresence(): Promise<void> {
   try {
     const res = await fetch('/api/collab/rooms/expediente-apt29');
@@ -1517,16 +1614,80 @@ async function refreshCollaborationPresence(): Promise<void> {
     const data = (await res.json()) as {
       ok: boolean;
       analysts?: Array<{ displayName: string; forensicRank: string }>;
+      deltas?: SerializedGraphModsDelta[];
+      session?: {
+        uiEvents?: Array<{
+          seq: number;
+          type: 'select' | 'layout' | 'camera' | 'preset' | 'clear';
+          payload: Record<string, unknown>;
+        }>;
+      };
     };
     const countEl = document.getElementById('lbl-collab-count');
     if (countEl && Array.isArray(data.analysts)) {
       countEl.textContent = String(data.analysts.length);
+    }
+    if (Array.isArray(data.deltas)) {
+      let appliedAny = false;
+      isApplyingRemoteDelta = true;
+      try {
+        for (const delta of data.deltas) {
+          if (clientCollabHub.applyDeltaToStore(store, delta, registry)) {
+            appliedAny = true;
+          }
+        }
+      } finally {
+        isApplyingRemoteDelta = false;
+      }
+      if (appliedAny) {
+        syncSceneAndUi(false);
+      }
+    }
+    if (Array.isArray(data.session?.uiEvents)) {
+      for (const ev of data.session.uiEvents) {
+        applyRemoteSessionUiEvent(ev);
+      }
     }
   } catch {
     // Graceful no-op when running offline
   }
 }
 void refreshCollaborationPresence();
+
+if (typeof EventSource !== 'undefined') {
+  try {
+    const es = new EventSource('/api/collab/rooms/expediente-apt29/stream');
+    es.onmessage = (msg) => {
+      try {
+        const parsed = JSON.parse(msg.data) as {
+          type?: 'init' | 'delta' | 'ui';
+          delta?: SerializedGraphModsDelta;
+          event?: {
+            seq: number;
+            type: 'select' | 'layout' | 'camera' | 'preset' | 'clear';
+            payload: Record<string, unknown>;
+          };
+        };
+        if (parsed.type === 'delta' && parsed.delta) {
+          isApplyingRemoteDelta = true;
+          try {
+            if (clientCollabHub.applyDeltaToStore(store, parsed.delta, registry)) {
+              syncSceneAndUi(false);
+            }
+          } finally {
+            isApplyingRemoteDelta = false;
+          }
+        } else if (parsed.type === 'ui' && parsed.event) {
+          applyRemoteSessionUiEvent(parsed.event);
+        }
+      } catch {
+        // Ignore malformed SSE frame
+      }
+    };
+  } catch {
+    // Graceful fallback when EventSource is unavailable
+  }
+}
 
 // =============================================================================
 // 9. 60 FPS Impeccable Style Scenegraph Renderer (Micro-Badges + Backed Edge Pills + Radar Minimap)

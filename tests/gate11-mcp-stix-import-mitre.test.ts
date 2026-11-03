@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cangrejoHonoApp } from '../apps/web/honoApp.js';
+import { dispatchMcpJsonRpcLine } from '../apps/web/mcpStdioServer.js';
 import { CloudflareWorkersAiEngine } from '../packages/transforms/src/index.js';
 
 describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 Importer & MITRE ATT&CK v15 Kill-Chain Mapper', () => {
@@ -38,7 +39,7 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     const listJson = (await listRes.json()) as {
       result: { tools: Array<{ name: string }> };
     };
-    expect(listJson.result.tools.length).toBe(7);
+    expect(listJson.result.tools.length).toBe(12);
     expect(listJson.result.tools.map((t) => t.name)).toContain(
       'cangrejo_unpack_defanged_iocs'
     );
@@ -46,6 +47,11 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     expect(listJson.result.tools.map((t) => t.name)).toContain(
       'cangrejo_ai_auto_investigate'
     );
+    expect(listJson.result.tools.map((t) => t.name)).toContain('cangrejo_session_state');
+    expect(listJson.result.tools.map((t) => t.name)).toContain('cangrejo_session_mutate_graph');
+    expect(listJson.result.tools.map((t) => t.name)).toContain('cangrejo_session_run_pesquisa');
+    expect(listJson.result.tools.map((t) => t.name)).toContain('cangrejo_session_view_control');
+    expect(listJson.result.tools.map((t) => t.name)).toContain('cangrejo_session_vault');
 
     const callRes = await cangrejoHonoApp.request('/api/mcp', {
       method: 'POST',
@@ -229,5 +235,154 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     expect(openApiJson.paths['/api/ai/unpack-iocs']).toBeDefined();
     expect(openApiJson.paths['/api/import/stix21']).toBeDefined();
     expect(openApiJson.paths['/api/analytics/mitre-attack']).toBeDefined();
+  });
+
+  it('4. controls the live Cangrejo session (mutate, undo/redo, live pesquisa, view/layout control, vault save/load & stdio bridge)', async () => {
+    const roomId = 'expediente-mcp-session-test';
+
+    // 1. Upsert 2 nodes + 1 link via stdio bridge
+    const upsertRaw = await dispatchMcpJsonRpcLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 101,
+        method: 'tools/call',
+        params: {
+          name: 'cangrejo_session_mutate_graph',
+          arguments: {
+            roomId,
+            action: 'upsert',
+            entities: [
+              { id: '9001', typeName: 'maltego.Domain', value: 'cloudflare.com', weight: 100 },
+              { id: '9002', typeName: 'maltego.IPv4Address', value: '1.1.1.1', weight: 90 },
+            ],
+            links: [{ id: '9099', sourceId: '9001', targetId: '9002', label: 'resolves-A' }],
+          },
+        },
+      })
+    );
+    expect(upsertRaw).not.toBeNull();
+    const upsertRpc = JSON.parse(upsertRaw!) as {
+      result: { structuredContent: { entityCount: number; linkCount: number; canUndo: boolean } };
+    };
+    expect(upsertRpc.result.structuredContent.entityCount).toBe(2);
+    expect(upsertRpc.result.structuredContent.linkCount).toBe(1);
+    expect(upsertRpc.result.structuredContent.canUndo).toBe(true);
+
+    // 2. Undo & Redo on the live session
+    const undoRaw = await dispatchMcpJsonRpcLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 102,
+        method: 'tools/call',
+        params: {
+          name: 'cangrejo_session_mutate_graph',
+          arguments: { roomId, action: 'undo' },
+        },
+      })
+    );
+    const undoRpc = JSON.parse(undoRaw!) as {
+      result: { structuredContent: { linkCount: number; canRedo: boolean } };
+    };
+    expect(undoRpc.result.structuredContent.linkCount).toBe(0);
+    expect(undoRpc.result.structuredContent.canRedo).toBe(true);
+
+    await dispatchMcpJsonRpcLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 103,
+        method: 'tools/call',
+        params: {
+          name: 'cangrejo_session_mutate_graph',
+          arguments: { roomId, action: 'redo' },
+        },
+      })
+    );
+
+    // 3. View control (select + layout + camera)
+    const viewRaw = await dispatchMcpJsonRpcLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 104,
+        method: 'tools/call',
+        params: {
+          name: 'cangrejo_session_view_control',
+          arguments: {
+            roomId,
+            selectEntityIds: ['9001'],
+            layoutMode: 'circular',
+            camera: { action: 'fit', zoom: 1.25 },
+          },
+        },
+      })
+    );
+    const viewRpc = JSON.parse(viewRaw!) as {
+      result: {
+        structuredContent: {
+          selectedEntityIds: string[];
+          layoutMode: string;
+          camera: { zoom: number };
+        };
+      };
+    };
+    expect(viewRpc.result.structuredContent.selectedEntityIds).toEqual(['9001']);
+    expect(viewRpc.result.structuredContent.layoutMode).toBe('circular');
+    expect(viewRpc.result.structuredContent.camera.zoom).toBe(1.25);
+
+    // 4. Execute live OSINT Pesquisa on selected node in session
+    const pesqRaw = await dispatchMcpJsonRpcLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 105,
+        method: 'tools/call',
+        params: {
+          name: 'cangrejo_session_run_pesquisa',
+          arguments: {
+            roomId,
+            transformId: 'ct-subdomains',
+          },
+        },
+      })
+    );
+    const pesqRpc = JSON.parse(pesqRaw!) as {
+      result: { structuredContent: { entityCount: number; totalAddedEntities: number } };
+    };
+    expect(pesqRpc.result.structuredContent.totalAddedEntities).toBeGreaterThanOrEqual(1);
+    expect(pesqRpc.result.structuredContent.entityCount).toBeGreaterThan(2);
+
+    // 5. Save session to SQLite Vault and inspect via cangrejo_session_state
+    const saveRaw = await dispatchMcpJsonRpcLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 106,
+        method: 'tools/call',
+        params: {
+          name: 'cangrejo_session_vault',
+          arguments: {
+            roomId,
+            action: 'save_expediente',
+            expedienteId: 'exp-mcp-saved-01',
+            title: 'Caso Controlado por MCP',
+            caseTier: 'PLATINO',
+          },
+        },
+      })
+    );
+    const saveRpc = JSON.parse(saveRaw!) as {
+      result: { structuredContent: { ok: boolean; expediente: { id: string; caseTier: string } } };
+    };
+    expect(saveRpc.result.structuredContent.ok).toBe(true);
+    expect(saveRpc.result.structuredContent.expediente.id).toBe('exp-mcp-saved-01');
+    expect(saveRpc.result.structuredContent.expediente.caseTier).toBe('PLATINO');
+
+    // Verify room collab endpoint reflects published GraphMods deltas & UI events
+    const roomRes = await cangrejoHonoApp.request(`/api/collab/rooms/${roomId}`);
+    expect(roomRes.status).toBe(200);
+    const roomJson = (await roomRes.json()) as {
+      deltas: unknown[];
+      session: { entityCount: number; uiEvents: unknown[] };
+    };
+    expect(roomJson.deltas.length).toBeGreaterThanOrEqual(3);
+    expect(roomJson.session.entityCount).toBe(pesqRpc.result.structuredContent.entityCount);
+    expect(roomJson.session.uiEvents.length).toBeGreaterThanOrEqual(2);
   });
 });

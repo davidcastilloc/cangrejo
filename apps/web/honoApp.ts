@@ -5,11 +5,19 @@ import {
   EntityRegistry,
   GraphStore,
   Guid,
+  StrategicGraphMerger,
   analyzeExpedienteForensics,
   createPropertyBag,
   getPartPrimaryValue,
   type MaltegoLinkData,
+  type SerializedEntityDelta,
+  type SerializedGraphModsDelta,
+  type SerializedLinkDelta,
 } from '../../packages/core/src/index.js';
+import {
+  LayoutPipeline,
+  type LayoutMode,
+} from '../../packages/renderer/src/index.js';
 import {
   BunSqliteVault,
   type CloudflareD1DatabaseLike,
@@ -404,13 +412,260 @@ cangrejoHonoApp.post('/api/vault/expedientes', async (c) => {
   }
 });
 
+export interface CangrejoSessionUiEvent {
+  seq: number;
+  type: 'select' | 'layout' | 'camera' | 'preset' | 'clear';
+  payload: Record<string, unknown>;
+  timestamp: number;
+}
+
+export interface CangrejoSessionRoomState {
+  roomId: string;
+  expedienteId: string;
+  title: string;
+  caseTier: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
+  store: GraphStore;
+  selectedEntityIds: string[];
+  layoutMode: LayoutMode;
+  camera: { panX: number; panY: number; zoom: number };
+  uiEvents: CangrejoSessionUiEvent[];
+  isApplyingRemoteDelta: boolean;
+  sseListeners: Set<(eventType: 'delta' | 'ui', payload: unknown) => void>;
+}
+
+const sessionMerger = new StrategicGraphMerger();
+const sessionLayoutPipeline = new LayoutPipeline();
+const sessionRooms = new Map<string, CangrejoSessionRoomState>();
+let globalSessionUiSeq = 0;
+
+function serializeStoreToPayload(store: GraphStore): {
+  entities: SerializedEntityDelta[];
+  links: SerializedLinkDelta[];
+} {
+  const entities: SerializedEntityDelta[] = Array.from(store.dataStore.getEntities().values()).map(
+    (ent) => {
+      const propsObj: Record<string, string> = {};
+      for (const [k, v] of ent.properties.values.entries()) {
+        propsObj[k] = String(v ?? '');
+      }
+      return {
+        id: ent.id.toString(),
+        typeName: ent.typeName,
+        value: getPartPrimaryValue(ent),
+        weight: ent.weight,
+        bookmark: ent.bookmark,
+        notes: { value: ent.notes.value, show: ent.notes.show },
+        properties: propsObj,
+        position: store.layoutStore.getPosition(ent.id),
+        pinned: store.layoutStore.isPinned(ent.id),
+      };
+    }
+  );
+
+  const links: SerializedLinkDelta[] = Array.from(store.structureStore.links.entries()).map(
+    ([lid, edge]) => {
+      const ldata = store.dataStore.getLink(lid);
+      const colorVal = ldata.properties.values.get('maltego.link.color');
+      return {
+        id: lid.toString(),
+        typeName: ldata.typeName,
+        sourceId: edge.source.toString(),
+        targetId: edge.target.toString(),
+        label: getPartPrimaryValue(ldata),
+        color: typeof colorVal === 'string' ? colorVal : '#38bdf8',
+        weight: ldata.weight,
+        isReversed: edge.isReversed,
+        path: store.layoutStore.getLinkPath(lid),
+      };
+    }
+  );
+
+  return { entities, links };
+}
+
+export function getOrCreateSessionRoom(roomId = 'expediente-apt29'): CangrejoSessionRoomState {
+  let state = sessionRooms.get(roomId);
+  if (state) return state;
+
+  const store = new GraphStore(Guid.generate());
+  state = {
+    roomId,
+    expedienteId: roomId,
+    title: `Expediente Forense (${roomId})`,
+    caseTier: 'ORO',
+    store,
+    selectedEntityIds: [],
+    layoutMode: 'organic',
+    camera: { panX: 0, panY: 0, zoom: 1 },
+    uiEvents: [],
+    isApplyingRemoteDelta: false,
+    sseListeners: new Set(),
+  };
+  sessionRooms.set(roomId, state);
+
+  store.subscribe((mods) => {
+    if (state!.isApplyingRemoteDelta) return;
+    const delta = collabHub.serializeModsToDelta(roomId, 'mcp-session-agent', store, mods);
+    collabHub.publishDelta(delta);
+  });
+
+  collabHub.subscribeRoom(roomId, (delta) => {
+    for (const listener of state!.sseListeners) {
+      try {
+        listener('delta', delta);
+      } catch {
+        // Ignore disconnected stream listeners
+      }
+    }
+  });
+
+  return state;
+}
+
+function emitSessionUiEvent(
+  session: CangrejoSessionRoomState,
+  type: CangrejoSessionUiEvent['type'],
+  payload: Record<string, unknown>
+): CangrejoSessionUiEvent {
+  globalSessionUiSeq += 1;
+  const ev: CangrejoSessionUiEvent = {
+    seq: globalSessionUiSeq,
+    type,
+    payload,
+    timestamp: Date.now(),
+  };
+  session.uiEvents.push(ev);
+  if (session.uiEvents.length > 100) {
+    session.uiEvents.shift();
+  }
+  for (const listener of session.sseListeners) {
+    try {
+      listener('ui', ev);
+    } catch {
+      // Ignore disconnected stream listeners
+    }
+  }
+  return ev;
+}
+
+function getSessionSnapshotSummary(session: CangrejoSessionRoomState) {
+  return {
+    roomId: session.roomId,
+    expedienteId: session.expedienteId,
+    title: session.title,
+    caseTier: session.caseTier,
+    entityCount: session.store.entityCount,
+    linkCount: session.store.linkCount,
+    selectedEntityIds: session.selectedEntityIds,
+    layoutMode: session.layoutMode,
+    camera: session.camera,
+    canUndo: session.store.undoRedoManager.canUndo,
+    canRedo: session.store.undoRedoManager.canRedo,
+    undoCount: session.store.undoRedoManager.undoCount,
+    redoCount: session.store.undoRedoManager.redoCount,
+    uiEvents: session.uiEvents,
+  };
+}
+
+function normalizeIncomingDeltaEntity(raw: unknown): SerializedEntityDelta {
+  const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const id = typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : Guid.generate().toString();
+  const posObj =
+    typeof obj.position === 'object' && obj.position !== null
+      ? (obj.position as Record<string, unknown>)
+      : {};
+  const notesObj =
+    typeof obj.notes === 'object' && obj.notes !== null
+      ? (obj.notes as Record<string, unknown>)
+      : null;
+  return {
+    id,
+    typeName:
+      typeof obj.typeName === 'string'
+        ? obj.typeName
+        : typeof obj.type === 'string'
+          ? obj.type
+          : 'maltego.Domain',
+    value: normalizeEntityValue(obj.value ?? obj.label ?? id),
+    weight: typeof obj.weight === 'number' ? obj.weight : 100,
+    bookmark: typeof obj.bookmark === 'number' ? obj.bookmark : -1,
+    notes: notesObj
+      ? { value: String(notesObj.value ?? ''), show: Boolean(notesObj.show) }
+      : { value: '', show: false },
+    properties: normalizeEntityFields(obj.properties ?? obj.fields),
+    position: {
+      x: typeof posObj.x === 'number' ? posObj.x : typeof obj.x === 'number' ? obj.x : 0,
+      y: typeof posObj.y === 'number' ? posObj.y : typeof obj.y === 'number' ? obj.y : 0,
+      z: typeof posObj.z === 'number' ? posObj.z : 0,
+    },
+    pinned: obj.pinned === true,
+  };
+}
+
+function normalizeIncomingDeltaLink(raw: unknown): SerializedLinkDelta {
+  const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  return {
+    id: typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : Guid.generate().toString(),
+    typeName: typeof obj.typeName === 'string' ? obj.typeName : 'maltego.link.transform-link',
+    sourceId: String(obj.sourceId ?? obj.source ?? ''),
+    targetId: String(obj.targetId ?? obj.target ?? ''),
+    label: typeof obj.label === 'string' ? obj.label : 'related-to',
+    color: typeof obj.color === 'string' ? obj.color : '#38bdf8',
+    weight: typeof obj.weight === 'number' ? obj.weight : 1,
+    isReversed: obj.isReversed === true,
+    path: Array.isArray(obj.path) ? (obj.path as Array<{ x: number; y: number }>) : [],
+  };
+}
+
 cangrejoHonoApp.get('/api/collab/rooms/:roomId', (c) => {
   const roomId = c.req.param('roomId');
+  const session = getOrCreateSessionRoom(roomId);
   return c.json({
     ok: true,
     roomId,
     analysts: collabHub.listRoomAnalysts(roomId),
     deltas: collabHub.getRoomDeltaHistory(roomId),
+    session: getSessionSnapshotSummary(session),
+  });
+});
+
+cangrejoHonoApp.get('/api/collab/rooms/:roomId/stream', (c) => {
+  const roomId = c.req.param('roomId');
+  const session = getOrCreateSessionRoom(roomId);
+  const encoder = new TextEncoder();
+  let cleanup: (() => void) | null = null;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (payload: unknown) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      };
+      send({
+        type: 'init',
+        session: getSessionSnapshotSummary(session),
+        ...serializeStoreToPayload(session.store),
+      });
+      const listener = (eventType: 'delta' | 'ui', payload: unknown) => {
+        send(eventType === 'delta' ? { type: 'delta', delta: payload } : { type: 'ui', event: payload });
+      };
+      session.sseListeners.add(listener);
+      cleanup = () => {
+        session.sseListeners.delete(listener);
+      };
+    },
+    cancel() {
+      cleanup?.();
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Cangrejo-Engine': 'Cangrejo-Oro-v1.0',
+    },
   });
 });
 
@@ -459,35 +714,59 @@ cangrejoHonoApp.post('/api/collab/rooms/:roomId/join', async (c) => {
 cangrejoHonoApp.post('/api/collab/rooms/:roomId/deltas', async (c) => {
   try {
     const roomId = c.req.param('roomId');
+    const session = getOrCreateSessionRoom(roomId);
     const body = (await c.req.json()) as Record<string, unknown>;
     const authorId = typeof body.authorId === 'string' ? body.authorId : 'analyst-oro-01';
-    const addedEntities = Array.isArray(body.addedEntities) ? body.addedEntities : [];
-    const updatedEntities = Array.isArray(body.updatedEntities) ? body.updatedEntities : [];
-    const removedEntityIds = Array.isArray(body.removedEntityIds)
-      ? body.removedEntityIds.map(String)
+    const addedEntities = Array.isArray(body.addedEntities)
+      ? body.addedEntities.map(normalizeIncomingDeltaEntity)
       : [];
-    const addedLinks = Array.isArray(body.addedLinks) ? body.addedLinks : [];
-    const removedLinkIds = Array.isArray(body.removedLinkIds)
-      ? body.removedLinkIds.map(String)
+    const updatedEntities = Array.isArray(body.updatedEntities)
+      ? body.updatedEntities.map(normalizeIncomingDeltaEntity)
+      : [];
+    const deletedEntityIds = Array.isArray(body.deletedEntityIds)
+      ? body.deletedEntityIds.map(String)
+      : Array.isArray(body.removedEntityIds)
+        ? body.removedEntityIds.map(String)
+        : [];
+    const addedLinks = Array.isArray(body.addedLinks)
+      ? body.addedLinks.map(normalizeIncomingDeltaLink)
+      : [];
+    const deletedLinkIds = Array.isArray(body.deletedLinkIds)
+      ? body.deletedLinkIds.map(String)
+      : Array.isArray(body.removedLinkIds)
+        ? body.removedLinkIds.map(String)
+        : [];
+    const movedEntities = Array.isArray(body.movedEntities)
+      ? (body.movedEntities as Array<{ id: string; position: { x: number; y: number; z: number } }>)
+      : [];
+    const pinChangedEntities = Array.isArray(body.pinChangedEntities)
+      ? (body.pinChangedEntities as Array<{ id: string; pinned: boolean }>)
       : [];
 
-    const envelope = {
+    const envelope: SerializedGraphModsDelta = {
       deltaId:
         typeof body.deltaId === 'string'
           ? body.deltaId
           : `delta-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       roomId,
       authorId,
-      lamportClock: Date.now(),
-      timestamp: Date.now(),
-      addedEntities: addedEntities as never[],
-      updatedEntities: updatedEntities as never[],
-      deletedEntityIds: removedEntityIds,
-      addedLinks: addedLinks as never[],
-      deletedLinkIds: removedLinkIds,
-      movedEntities: [],
-      pinChangedEntities: [],
+      lamportClock: typeof body.lamportClock === 'number' ? body.lamportClock : Date.now(),
+      timestamp: typeof body.timestamp === 'number' ? body.timestamp : Date.now(),
+      addedEntities,
+      updatedEntities,
+      deletedEntityIds,
+      addedLinks,
+      deletedLinkIds,
+      movedEntities,
+      pinChangedEntities,
     };
+
+    session.isApplyingRemoteDelta = true;
+    try {
+      collabHub.applyDeltaToStore(session.store, envelope, registry);
+    } finally {
+      session.isApplyingRemoteDelta = false;
+    }
 
     collabHub.publishDelta(envelope);
 
@@ -2425,7 +2704,114 @@ cangrejoHonoApp.post('/api/analytics/mitre-attack', async (c) => {
   }
 });
 
-const CANGREJO_MCP_TOOLS_CATALOG = [
+function clearStoreAtomically(store: GraphStore): void {
+  const existingIds = Array.from(store.structureStore.entities.keys());
+  if (existingIds.length === 0) return;
+  store.runInBatch(() => {
+    for (const id of existingIds) {
+      if (store.dataStore.hasEntity(id)) {
+        store.removeEntity(id);
+      }
+    }
+  });
+}
+
+function loadSessionPresetIntoStore(
+  session: CangrejoSessionRoomState,
+  presetId: string
+): { presetId: string; entityCount: number; linkCount: number } {
+  const store = session.store;
+  store.runInBatch(() => {
+    clearStoreAtomically(store);
+    if (presetId === 'cloudflare') {
+      const d1 = registry.createEntity('maltego.Domain', 'cloudflare.com', { weight: 100, bookmark: 4 });
+      const d2 = registry.createEntity('maltego.Domain', 'github.com', { weight: 100, bookmark: 2 });
+      store.addEntity(d1, { x: -180, y: 0, z: 0 });
+      store.addEntity(d2, { x: 180, y: 0, z: 0 });
+      session.selectedEntityIds = [d1.id.toString()];
+    } else if (presetId === 'crypto') {
+      const ransomWallet = registry.createEntity(
+        'maltego.BitcoinAddress',
+        'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        {
+          weight: 100,
+          bookmark: 1,
+          extraProperties: { cluster: 'BlackCat / ALPHV Treasury', balance: '148.42 BTC' },
+        }
+      );
+      store.addEntity(ransomWallet, { x: 0, y: -140, z: 0 });
+      for (let i = 1; i <= 5; i++) {
+        const hop = registry.createEntity(
+          'maltego.BitcoinAddress',
+          `bc1qmixerhop00${i}99x8877aabbccddeeff00112233`,
+          {
+            weight: 80,
+            bookmark: 5,
+            extraProperties: { hop: String(i), amount: `${(12.5 * i).toFixed(2)} BTC` },
+          }
+        );
+        store.addEntity(hop, { x: -240 + i * 80, y: 90, z: 0 });
+        store.addLink(
+          makeSimpleLink(Guid.generate(), `peel chain #${i}`, '#F59E0B'),
+          ransomWallet.id,
+          hop.id
+        );
+      }
+      session.selectedEntityIds = [ransomWallet.id.toString()];
+    } else {
+      const actor = registry.createEntity('maltego.ThreatActor', 'APT29 (Midnight Blizzard)', {
+        weight: 100,
+        bookmark: 0,
+        extraProperties: { mitre_id: 'G0016', attribution: 'SVR Foreign Intelligence' },
+      });
+      const cve = registry.createEntity('maltego.CVE', 'CVE-2024-21412', {
+        weight: 95,
+        bookmark: 1,
+        extraProperties: { cvss: '8.1 HIGH', vector: 'SmartScreen Bypass' },
+      });
+      const hash = registry.createEntity(
+        'maltego.Hash',
+        '94b8f12c77d0e1a9bc82144f0019c8a21e7731094b8f12c77d0e1a9bc82144f0',
+        {
+          weight: 90,
+          bookmark: 0,
+          extraProperties: { family: 'WINELOADER Stage-2', algorithm: 'SHA-256' },
+        }
+      );
+      const c2Domain = registry.createEntity('maltego.Domain', 'cloudflare.com', {
+        weight: 95,
+        bookmark: 4,
+        extraProperties: { registrar: 'Cloudflare Inc.', role: 'Redirector / CDN Front' },
+      });
+      const c2Ip = registry.createEntity('maltego.IPv4Address', '104.16.132.229', {
+        weight: 90,
+        bookmark: 3,
+        extraProperties: { asn: 'AS13335' },
+      });
+      store.addEntity(actor, { x: 0, y: -150, z: 0 }, true);
+      store.addEntity(cve, { x: -250, y: -10, z: 0 });
+      store.addEntity(hash, { x: 0, y: -10, z: 0 });
+      store.addEntity(c2Domain, { x: 250, y: -10, z: 0 });
+      store.addEntity(c2Ip, { x: 250, y: 150, z: 0 });
+      store.addLink(makeSimpleLink(Guid.generate(), 'weaponizes', '#EF4444'), actor.id, cve.id);
+      store.addLink(makeSimpleLink(Guid.generate(), 'deploys loader', '#EF4444'), actor.id, hash.id);
+      store.addLink(makeSimpleLink(Guid.generate(), 'beacons HTTPS', '#3B82F6'), hash.id, c2Domain.id);
+      store.addLink(makeSimpleLink(Guid.generate(), 'resolves A', '#38BDF8'), c2Domain.id, c2Ip.id);
+      session.selectedEntityIds = [c2Domain.id.toString()];
+    }
+  });
+  emitSessionUiEvent(session, 'preset', {
+    presetId,
+    selectedEntityIds: session.selectedEntityIds,
+  });
+  return {
+    presetId,
+    entityCount: store.entityCount,
+    linkCount: store.linkCount,
+  };
+}
+
+export const CANGREJO_MCP_TOOLS_CATALOG = [
   {
     name: 'cangrejo_unpack_defanged_iocs',
     description:
@@ -2448,10 +2834,11 @@ const CANGREJO_MCP_TOOLS_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        roomId: { type: 'string', description: 'Optional live session room ID (defaults to expediente-apt29 when entities omitted).' },
         expedienteId: { type: 'string', description: 'Unique forensic case identifier.' },
         entities: {
           type: 'array',
-          description: 'List of graph entities ({ id, typeName, value }).',
+          description: 'List of graph entities ({ id, typeName, value }). Omit to analyze the active session graph.',
           items: { type: 'object' },
         },
         links: {
@@ -2460,7 +2847,6 @@ const CANGREJO_MCP_TOOLS_CATALOG = [
           items: { type: 'object' },
         },
       },
-      required: ['entities'],
     },
   },
   {
@@ -2470,10 +2856,10 @@ const CANGREJO_MCP_TOOLS_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        roomId: { type: 'string' },
         entities: { type: 'array', items: { type: 'object' } },
         links: { type: 'array', items: { type: 'object' } },
       },
-      required: ['entities'],
     },
   },
   {
@@ -2483,13 +2869,13 @@ const CANGREJO_MCP_TOOLS_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        roomId: { type: 'string' },
         expedienteId: { type: 'string' },
         title: { type: 'string' },
         leadAnalyst: { type: 'string' },
         entities: { type: 'array', items: { type: 'object' } },
         links: { type: 'array', items: { type: 'object' } },
       },
-      required: ['entities'],
     },
   },
   {
@@ -2499,10 +2885,10 @@ const CANGREJO_MCP_TOOLS_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        roomId: { type: 'string' },
         entities: { type: 'array', items: { type: 'object' } },
         links: { type: 'array', items: { type: 'object' } },
       },
-      required: ['entities'],
     },
   },
   {
@@ -2512,6 +2898,11 @@ const CANGREJO_MCP_TOOLS_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        roomId: {
+          type: 'string',
+          description: 'If provided with mergeIntoSession=true, merges the verified STIX 2.1 bundle into the live session.',
+        },
+        mergeIntoSession: { type: 'boolean' },
         bundle: {
           type: 'object',
           description: 'Complete OASIS STIX 2.1 JSON bundle.',
@@ -2527,15 +2918,187 @@ const CANGREJO_MCP_TOOLS_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        roomId: { type: 'string' },
+        mergeIntoSession: { type: 'boolean', description: 'When true, merges discovered nodes/links into the live session.' },
         maxHops: { type: 'number', description: 'Number of autonomous OSINT hops (1..3).' },
         maxTargetsPerHop: { type: 'number', description: 'Max pivot nodes expanded per hop (1..5).' },
         entities: { type: 'array', items: { type: 'object' } },
         links: { type: 'array', items: { type: 'object' } },
       },
-      required: ['entities'],
+    },
+  },
+  {
+    name: 'cangrejo_session_state',
+    description:
+      'Reads the live CANGREJO workstation session state (entities, links, selectedEntityIds, layoutMode, camera, Undo/Redo stack, and active expediente metadata). Supports filtering entities by query or typeName.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Session room ID (default: "expediente-apt29").' },
+        query: { type: 'string', description: 'Optional substring filter on entity value or typeName.' },
+        typeName: { type: 'string', description: 'Optional exact entity typeName filter (e.g. "maltego.Domain").' },
+      },
+    },
+  },
+  {
+    name: 'cangrejo_session_mutate_graph',
+    description:
+      'Mutates the live CANGREJO session graph atomically and broadcasts GraphMods deltas in real time to connected browser workstations. Supports adding/updating entities & links ("upsert"), cascading deletion ("remove"), raw IOC text extraction ("paste_iocs"), "undo", "redo", and "clear".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Session room ID (default: "expediente-apt29").' },
+        action: {
+          type: 'string',
+          enum: ['upsert', 'remove', 'paste_iocs', 'undo', 'redo', 'clear'],
+          description: 'Mutation operation to execute on the active session GraphStore.',
+        },
+        entities: {
+          type: 'array',
+          description: 'Entities to add or update when action="upsert" ({ id?, typeName, value, weight?, bookmark?, properties?, position?, pinned? }).',
+          items: { type: 'object' },
+        },
+        links: {
+          type: 'array',
+          description: 'Directed links to add when action="upsert" ({ id?, sourceId, targetId, label?, color?, weight? }).',
+          items: { type: 'object' },
+        },
+        entityIds: {
+          type: 'array',
+          description: 'Entity IDs to remove (with cascading incident link deletion) when action="remove".',
+          items: { type: 'string' },
+        },
+        linkIds: {
+          type: 'array',
+          description: 'Link IDs to remove when action="remove".',
+          items: { type: 'string' },
+        },
+        rawText: {
+          type: 'string',
+          description: 'Unstructured CTI bulletin, log, or email to extract IOCs from when action="paste_iocs".',
+        },
+        incidentTitle: {
+          type: 'string',
+          description: 'Optional root phrase node label when action="paste_iocs".',
+        },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'cangrejo_session_run_pesquisa',
+    description:
+      'Executes a live OSINT Pesquisa transform (DNS A/MX/NS/TXT, crt.sh CT, RDAP WHOIS, BGP/ASN, Threat/CVE, Bitcoin UTXO, or "all") on target entities in the active session and merges discovered nodes and links into the live graph via StrategicGraphMerger.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Session room ID (default: "expediente-apt29").' },
+        transformId: {
+          type: 'string',
+          description: 'Transform ID ("all", "dns-to-ip", "dns-to-mx", "dns-to-ns", "dns-txt-records", "ct-subdomains", "ip-to-asn", "threat-intel", "crypto-trace", "whois-rdap").',
+        },
+        entityIds: {
+          type: 'array',
+          description: 'Specific entity IDs in the session to expand. If omitted, uses entityValue or currently selected entities.',
+          items: { type: 'string' },
+        },
+        entityValue: {
+          type: 'string',
+          description: 'Target indicator value (e.g. "cloudflare.com"). If not yet in the session graph, it is automatically created first.',
+        },
+        entityType: {
+          type: 'string',
+          description: 'Entity type when spawning entityValue (default: "maltego.Domain").',
+        },
+        sliderLimit: { type: 'number', description: 'Max child entities per transform (default: 12).' },
+      },
+    },
+  },
+  {
+    name: 'cangrejo_session_view_control',
+    description:
+      'Controls the active CANGREJO workstation viewport, selection, layout algorithm (organic, hierarchical, circular, block, interactive), camera (fit or pan/zoom), or sample investigation presets (apt29, cloudflare, crypto).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Session room ID (default: "expediente-apt29").' },
+        selectEntityIds: {
+          type: 'array',
+          description: 'Entity IDs to select and highlight in the workstation inspector.',
+          items: { type: 'string' },
+        },
+        layoutMode: {
+          type: 'string',
+          enum: ['organic', 'hierarchical', 'circular', 'block', 'interactive'],
+          description: 'Layout algorithm to execute on the session GraphStore.',
+        },
+        camera: {
+          type: 'object',
+          description: 'Camera command ({ action: "fit" | "set", panX?: number, panY?: number, zoom?: number }).',
+        },
+        preset: {
+          type: 'string',
+          enum: ['apt29', 'cloudflare', 'crypto'],
+          description: 'Optional preset investigation to load into the session.',
+        },
+      },
+    },
+  },
+  {
+    name: 'cangrejo_session_vault',
+    description:
+      'Saves or loads the active session graph to/from the SQLite/D1 Vault (cangrejo_expedientes), lists saved expedientes, or exports the active session as OASIS STIX 2.1, Court-Admissible Daubert HTML5 Dossier, or .cgrx PKZIP archive.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Session room ID (default: "expediente-apt29").' },
+        action: {
+          type: 'string',
+          enum: [
+            'save_expediente',
+            'load_expediente',
+            'list_expedientes',
+            'export_stix21',
+            'export_dossier_html',
+            'export_cgrx',
+          ],
+        },
+        expedienteId: { type: 'string', description: 'Expediente ID for save_expediente or load_expediente.' },
+        title: { type: 'string', description: 'Expediente or Dossier title.' },
+        caseTier: {
+          type: 'string',
+          enum: ['PLATINO', 'ORO', 'PLATA', 'BRONCE'],
+        },
+      },
+      required: ['action'],
     },
   },
 ] as const;
+
+function resolveStoreForMcpTool(args: Record<string, unknown>): {
+  session: CangrejoSessionRoomState;
+  store: GraphStore;
+  usedSessionStore: boolean;
+} {
+  const roomId =
+    typeof args.roomId === 'string' && args.roomId.trim() ? args.roomId.trim() : 'expediente-apt29';
+  const session = getOrCreateSessionRoom(roomId);
+  const hasExplicitEntities =
+    (Array.isArray(args.entities) && args.entities.length > 0) ||
+    (Array.isArray(args.nodes) && args.nodes.length > 0);
+  if (hasExplicitEntities) {
+    return {
+      session,
+      store: buildStoreFromGraphPayload(args),
+      usedSessionStore: false,
+    };
+  }
+  return {
+    session,
+    store: session.store,
+    usedSessionStore: true,
+  };
+}
 
 cangrejoHonoApp.get('/api/mcp', (c) => {
   return c.json({
@@ -2604,32 +3167,40 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_discover_latent_links': {
+          const { session, store, usedSessionStore } = resolveStoreForMcpTool(args);
+          const serialized = usedSessionStore ? serializeStoreToPayload(store) : null;
           toolOutput = await CloudflareWorkersAiEngine.discoverLatentLinksRrf(
             {
-              expedienteId: typeof args.expedienteId === 'string' ? args.expedienteId : undefined,
-              entities: Array.isArray(args.entities)
-                ? (args.entities as Array<{ id: string; typeName: string; value: string }>)
-                : [],
-              links: Array.isArray(args.links)
-                ? (args.links as Array<{ sourceId: string; targetId: string; label?: string }>)
-                : [],
+              expedienteId:
+                typeof args.expedienteId === 'string' ? args.expedienteId : session.expedienteId,
+              entities: serialized
+                ? serialized.entities
+                : Array.isArray(args.entities)
+                  ? (args.entities as Array<{ id: string; typeName: string; value: string }>)
+                  : [],
+              links: serialized
+                ? serialized.links
+                : Array.isArray(args.links)
+                  ? (args.links as Array<{ sourceId: string; targetId: string; label?: string }>)
+                  : [],
             },
             aiConfig
           );
           break;
         }
         case 'cangrejo_classify_anomalies': {
-          const store = buildStoreFromGraphPayload(args);
+          const { store } = resolveStoreForMcpTool(args);
           toolOutput = await CloudflareWorkersAiEngine.classifyInfrastructureAnomalies(store, aiConfig);
           break;
         }
         case 'cangrejo_generate_daubert_dossier': {
-          const store = buildStoreFromGraphPayload(args);
+          const { session, store } = resolveStoreForMcpTool(args);
           toolOutput = await CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrative(
             store,
             {
-              expedienteId: typeof args.expedienteId === 'string' ? args.expedienteId : undefined,
-              title: typeof args.title === 'string' ? args.title : undefined,
+              expedienteId:
+                typeof args.expedienteId === 'string' ? args.expedienteId : session.expedienteId,
+              title: typeof args.title === 'string' ? args.title : session.title,
               leadAnalyst: typeof args.leadAnalyst === 'string' ? args.leadAnalyst : undefined,
             },
             aiConfig
@@ -2637,7 +3208,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_map_mitre_attack': {
-          const store = buildStoreFromGraphPayload(args);
+          const { store } = resolveStoreForMcpTool(args);
           toolOutput = CloudflareWorkersAiEngine.analyzeMitreAttackAndTimeline(store, aiConfig);
           break;
         }
@@ -2646,12 +3217,45 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
             typeof args.bundle === 'object' && args.bundle !== null
               ? (args.bundle as Record<string, unknown>)
               : args;
-          toolOutput = Stix21Exporter.importBundle(bundleArg);
+          const imported = Stix21Exporter.importBundle(bundleArg);
+          if (args.mergeIntoSession === true || typeof args.roomId === 'string') {
+            const roomId =
+              typeof args.roomId === 'string' && args.roomId.trim()
+                ? args.roomId.trim()
+                : 'expediente-apt29';
+            const session = getOrCreateSessionRoom(roomId);
+            session.store.runInBatch(() => {
+              for (const ent of imported.entities) {
+                const id = Guid.parse(ent.id);
+                const created = registry.createEntity(ent.typeName, ent.value, {
+                  id,
+                  weight: ent.weight,
+                  bookmark: ent.bookmark,
+                });
+                if (!session.store.dataStore.hasEntity(id)) {
+                  session.store.addEntity(created, ent.position, false);
+                }
+              }
+              for (const lnk of imported.links) {
+                const srcId = Guid.parse(lnk.sourceId);
+                const dstId = Guid.parse(lnk.targetId);
+                const lid = Guid.parse(lnk.id);
+                if (
+                  session.store.dataStore.hasEntity(srcId) &&
+                  session.store.dataStore.hasEntity(dstId) &&
+                  !session.store.structureStore.hasLink(lid)
+                ) {
+                  session.store.addLink(makeSimpleLink(lid, lnk.label, lnk.color), srcId, dstId);
+                }
+              }
+            });
+          }
+          toolOutput = imported;
           break;
         }
         case 'cangrejo_ai_auto_investigate': {
-          const store = buildStoreFromGraphPayload(args);
-          toolOutput = await CloudflareWorkersAiEngine.executeAutonomousInvestigation(
+          const { session, store, usedSessionStore } = resolveStoreForMcpTool(args);
+          const result = await CloudflareWorkersAiEngine.executeAutonomousInvestigation(
             store,
             {
               maxHops: typeof args.maxHops === 'number' ? args.maxHops : 2,
@@ -2659,7 +3263,624 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
             },
             aiConfig
           );
+          if (args.mergeIntoSession === true || usedSessionStore) {
+            session.store.runInBatch(() => {
+              for (const rawEnt of result.discoveredEntities) {
+                const norm = normalizeIncomingDeltaEntity(rawEnt);
+                const entId = Guid.parse(norm.id);
+                if (!session.store.dataStore.hasEntity(entId)) {
+                  const ent = registry.createEntity(norm.typeName, norm.value, {
+                    id: entId,
+                    weight: norm.weight,
+                    bookmark: norm.bookmark,
+                  });
+                  session.store.addEntity(ent, norm.position, false);
+                }
+              }
+              for (const rawLnk of result.discoveredLinks) {
+                const norm = normalizeIncomingDeltaLink(rawLnk);
+                if (!norm.sourceId || !norm.targetId) continue;
+                const srcId = Guid.parse(norm.sourceId);
+                const dstId = Guid.parse(norm.targetId);
+                const lid = Guid.parse(norm.id);
+                if (
+                  session.store.dataStore.hasEntity(srcId) &&
+                  session.store.dataStore.hasEntity(dstId) &&
+                  !session.store.structureStore.hasLink(lid)
+                ) {
+                  session.store.addLink(
+                    makeSimpleLink(lid, norm.label, norm.color),
+                    srcId,
+                    dstId
+                  );
+                }
+              }
+            });
+          }
+          toolOutput = result;
           break;
+        }
+        case 'cangrejo_session_state': {
+          const roomId =
+            typeof args.roomId === 'string' && args.roomId.trim()
+              ? args.roomId.trim()
+              : 'expediente-apt29';
+          const session = getOrCreateSessionRoom(roomId);
+          const payload = serializeStoreToPayload(session.store);
+          const query = typeof args.query === 'string' ? args.query.trim().toLowerCase() : '';
+          const typeFilter = typeof args.typeName === 'string' ? args.typeName.trim() : '';
+
+          const filteredEntities = payload.entities.filter((e) => {
+            if (typeFilter && e.typeName !== typeFilter) return false;
+            if (
+              query &&
+              !e.value.toLowerCase().includes(query) &&
+              !e.typeName.toLowerCase().includes(query)
+            ) {
+              return false;
+            }
+            return true;
+          });
+          const allowedIds = new Set(filteredEntities.map((e) => e.id));
+          const filteredLinks =
+            query || typeFilter
+              ? payload.links.filter((l) => allowedIds.has(l.sourceId) || allowedIds.has(l.targetId))
+              : payload.links;
+
+          toolOutput = {
+            ok: true,
+            ...getSessionSnapshotSummary(session),
+            entities: filteredEntities,
+            links: filteredLinks,
+          };
+          break;
+        }
+        case 'cangrejo_session_mutate_graph': {
+          const roomId =
+            typeof args.roomId === 'string' && args.roomId.trim()
+              ? args.roomId.trim()
+              : 'expediente-apt29';
+          const session = getOrCreateSessionRoom(roomId);
+          const action = String(args.action ?? 'upsert');
+          const store = session.store;
+
+          if (action === 'clear') {
+            clearStoreAtomically(store);
+            session.selectedEntityIds = [];
+            emitSessionUiEvent(session, 'clear', {});
+            toolOutput = {
+              ok: true,
+              action: 'clear',
+              ...getSessionSnapshotSummary(session),
+            };
+            break;
+          }
+
+          if (action === 'undo') {
+            const applied = store.undoRedoManager.undo();
+            toolOutput = {
+              ok: true,
+              action: 'undo',
+              applied,
+              ...getSessionSnapshotSummary(session),
+            };
+            break;
+          }
+
+          if (action === 'redo') {
+            const applied = store.undoRedoManager.redo();
+            toolOutput = {
+              ok: true,
+              action: 'redo',
+              applied,
+              ...getSessionSnapshotSummary(session),
+            };
+            break;
+          }
+
+          if (action === 'remove') {
+            const entityIds = Array.isArray(args.entityIds) ? args.entityIds.map(String) : [];
+            const linkIds = Array.isArray(args.linkIds) ? args.linkIds.map(String) : [];
+            let removedEntities = 0;
+            let removedLinks = 0;
+
+            store.runInBatch(() => {
+              for (const rawLid of linkIds) {
+                const lid = Guid.parse(rawLid);
+                if (store.structureStore.hasLink(lid)) {
+                  store.removeLink(lid);
+                  removedLinks++;
+                }
+              }
+              for (const rawEid of entityIds) {
+                const eid = Guid.parse(rawEid);
+                if (store.dataStore.hasEntity(eid)) {
+                  store.removeEntity(eid);
+                  removedEntities++;
+                }
+              }
+            });
+
+            const removedSet = new Set(entityIds);
+            session.selectedEntityIds = session.selectedEntityIds.filter((id) => !removedSet.has(id));
+            toolOutput = {
+              ok: true,
+              action: 'remove',
+              removedEntities,
+              removedLinks,
+              ...getSessionSnapshotSummary(session),
+            };
+            break;
+          }
+
+          if (action === 'paste_iocs') {
+            const rawText = String(args.rawText ?? '');
+            const ingestRes = await cangrejoHonoApp.request('/api/ingest/raw-text', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: rawText,
+                incidentTitle:
+                  typeof args.incidentTitle === 'string'
+                    ? args.incidentTitle
+                    : 'Boletín Ingestado vía MCP',
+              }),
+            });
+            const ingestData = (await ingestRes.json()) as {
+              ok: boolean;
+              extractedCount?: number;
+              incidentRoot?: SerializedEntityDelta;
+              entities?: SerializedEntityDelta[];
+              links?: Array<{
+                id: string;
+                sourceId: string;
+                targetId: string;
+                label: string;
+                color: string;
+              }>;
+            };
+
+            if (ingestData.ok && ingestData.incidentRoot && ingestData.entities && ingestData.links) {
+              store.runInBatch(() => {
+                const rootId = Guid.parse(ingestData.incidentRoot!.id);
+                const rootEnt = registry.createEntity(
+                  ingestData.incidentRoot!.typeName,
+                  ingestData.incidentRoot!.value,
+                  { id: rootId, weight: ingestData.incidentRoot!.weight, bookmark: 0 }
+                );
+                store.addEntity(rootEnt, ingestData.incidentRoot!.position, false);
+
+                for (const item of ingestData.entities!) {
+                  const entId = Guid.parse(item.id);
+                  const ent = registry.createEntity(item.typeName, item.value, {
+                    id: entId,
+                    weight: item.weight,
+                    bookmark: 1,
+                  });
+                  store.addEntity(ent, item.position, false);
+                }
+
+                for (const lnk of ingestData.links!) {
+                  store.addLink(
+                    makeSimpleLink(Guid.parse(lnk.id), lnk.label, lnk.color),
+                    Guid.parse(lnk.sourceId),
+                    Guid.parse(lnk.targetId)
+                  );
+                }
+              });
+              session.selectedEntityIds = [ingestData.incidentRoot.id];
+              emitSessionUiEvent(session, 'select', {
+                selectedEntityIds: session.selectedEntityIds,
+              });
+            }
+
+            toolOutput = {
+              ok: true,
+              action: 'paste_iocs',
+              extractedCount: ingestData.extractedCount ?? 0,
+              ...getSessionSnapshotSummary(session),
+            };
+            break;
+          }
+
+          // Default action === 'upsert'
+          const rawEntities = Array.isArray(args.entities) ? args.entities : [];
+          const rawLinks = Array.isArray(args.links) ? args.links : [];
+          const upsertedEntityIds: string[] = [];
+          const upsertedLinkIds: string[] = [];
+
+          store.runInBatch(() => {
+            for (const rawEnt of rawEntities) {
+              const norm = normalizeIncomingDeltaEntity(rawEnt);
+              const eid = Guid.parse(norm.id);
+              const created = registry.createEntity(norm.typeName, norm.value, {
+                id: eid,
+                weight: norm.weight,
+                bookmark: norm.bookmark,
+                extraProperties: norm.properties,
+              });
+              created.notes = norm.notes;
+              if (store.dataStore.hasEntity(eid)) {
+                store.updateEntity(created);
+                store.setEntityPosition(eid, norm.position);
+                store.setEntityPinned(eid, norm.pinned);
+              } else {
+                store.addEntity(created, norm.position, norm.pinned);
+              }
+              upsertedEntityIds.push(eid.toString());
+            }
+
+            for (const rawLnk of rawLinks) {
+              const norm = normalizeIncomingDeltaLink(rawLnk);
+              if (!norm.sourceId || !norm.targetId) continue;
+              const srcId = Guid.parse(norm.sourceId);
+              const dstId = Guid.parse(norm.targetId);
+              const lid = Guid.parse(norm.id);
+              if (!store.dataStore.hasEntity(srcId) || !store.dataStore.hasEntity(dstId)) continue;
+              if (!store.structureStore.hasLink(lid)) {
+                store.addLink(
+                  makeSimpleLink(lid, norm.label, norm.color, norm.weight),
+                  srcId,
+                  dstId,
+                  norm.isReversed,
+                  norm.path
+                );
+                upsertedLinkIds.push(lid.toString());
+              }
+            }
+          });
+
+          toolOutput = {
+            ok: true,
+            action: 'upsert',
+            upsertedEntityIds,
+            upsertedLinkIds,
+            ...getSessionSnapshotSummary(session),
+          };
+          break;
+        }
+        case 'cangrejo_session_run_pesquisa': {
+          const roomId =
+            typeof args.roomId === 'string' && args.roomId.trim()
+              ? args.roomId.trim()
+              : 'expediente-apt29';
+          const session = getOrCreateSessionRoom(roomId);
+          const store = session.store;
+          const transformId = typeof args.transformId === 'string' ? args.transformId : 'all';
+          const sliderLimit = typeof args.sliderLimit === 'number' ? args.sliderLimit : 12;
+
+          const targetEntityIds: Guid[] = [];
+          if (Array.isArray(args.entityIds) && args.entityIds.length > 0) {
+            for (const rawId of args.entityIds) {
+              const gid = Guid.parse(String(rawId));
+              if (store.dataStore.hasEntity(gid)) targetEntityIds.push(gid);
+            }
+          } else if (typeof args.entityValue === 'string' && args.entityValue.trim()) {
+            const val = args.entityValue.trim();
+            let existing = Array.from(store.dataStore.getEntities().values()).find(
+              (e) => getPartPrimaryValue(e).toLowerCase() === val.toLowerCase()
+            );
+            if (!existing) {
+              const typeName =
+                typeof args.entityType === 'string' && args.entityType.trim()
+                  ? args.entityType.trim()
+                  : 'maltego.Domain';
+              existing = registry.createEntity(typeName, val, { weight: 95, bookmark: 4 });
+              store.addEntity(existing, { x: 0, y: 0, z: 0 }, false);
+            }
+            targetEntityIds.push(existing.id);
+          } else if (session.selectedEntityIds.length > 0) {
+            for (const rawId of session.selectedEntityIds) {
+              const gid = Guid.parse(rawId);
+              if (store.dataStore.hasEntity(gid)) targetEntityIds.push(gid);
+            }
+          } else {
+            const firstKey = store.dataStore.getEntities().keys().next().value;
+            if (firstKey) targetEntityIds.push(firstKey);
+          }
+
+          let totalAddedEntities = 0;
+          let totalMergedEntities = 0;
+          let totalAddedLinks = 0;
+          const runs: Array<{
+            sourceEntityId: string;
+            sourceValue: string;
+            discoveredCount: number;
+            addedCount: number;
+          }> = [];
+
+          for (const eid of targetEntityIds) {
+            const entity = store.dataStore.tryGetEntity(eid);
+            if (!entity) continue;
+            const primaryValue = getPartPrimaryValue(entity);
+            const fieldsObj: Record<string, string> = {};
+            for (const [k, v] of entity.properties.values.entries()) {
+              fieldsObj[k] = String(v ?? '');
+            }
+
+            const runRes = await cangrejoHonoApp.request('/api/transforms/run', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                transformId,
+                entityType: entity.typeName,
+                entityValue: primaryValue,
+                entityFields: fieldsObj,
+                sliderLimit,
+              }),
+            });
+            const runData = (await runRes.json()) as {
+              ok: boolean;
+              entities?: Array<{
+                typeName: string;
+                value: string;
+                weight: number;
+                fields: Record<string, string>;
+                linkLabel: string;
+                linkColor: string;
+              }>;
+            };
+            if (!runData.ok || !runData.entities) continue;
+
+            const parentPos = store.layoutStore.getPosition(entity.id);
+            const returnedEntities = runData.entities;
+            const incomingEntities = returnedEntities.map((parsedEnt, idx) => {
+              const angle = (2 * Math.PI * idx) / Math.max(1, returnedEntities.length);
+              const radius = 210;
+              const entData = registry.createEntity(parsedEnt.typeName, parsedEnt.value, {
+                weight: parsedEnt.weight,
+                extraProperties: parsedEnt.fields,
+              });
+              return {
+                data: entData,
+                position: {
+                  x: parentPos.x + Math.cos(angle) * radius,
+                  y: parentPos.y + Math.sin(angle) * radius,
+                  z: 0,
+                },
+                linkLabel: parsedEnt.linkLabel,
+                linkColor: parsedEnt.linkColor,
+              };
+            });
+
+            const incomingLinks = incomingEntities.map((item) => ({
+              data: makeSimpleLink(Guid.generate(), item.linkLabel, item.linkColor),
+              source: entity.id,
+              target: item.data.id,
+            }));
+
+            const mergeResult = sessionMerger.merge(store, {
+              entities: incomingEntities,
+              links: incomingLinks,
+            });
+            totalAddedEntities += mergeResult.addedEntities.length;
+            totalMergedEntities += mergeResult.mergedEntities.length;
+            totalAddedLinks += mergeResult.addedLinks.length;
+            runs.push({
+              sourceEntityId: entity.id.toString(),
+              sourceValue: primaryValue,
+              discoveredCount: returnedEntities.length,
+              addedCount: mergeResult.addedEntities.length,
+            });
+          }
+
+          toolOutput = {
+            ok: true,
+            transformId,
+            runs,
+            totalAddedEntities,
+            totalMergedEntities,
+            totalAddedLinks,
+            ...getSessionSnapshotSummary(session),
+          };
+          break;
+        }
+        case 'cangrejo_session_view_control': {
+          const roomId =
+            typeof args.roomId === 'string' && args.roomId.trim()
+              ? args.roomId.trim()
+              : 'expediente-apt29';
+          const session = getOrCreateSessionRoom(roomId);
+
+          if (typeof args.preset === 'string' && args.preset.trim()) {
+            loadSessionPresetIntoStore(session, args.preset.trim());
+          }
+
+          if (Array.isArray(args.selectEntityIds)) {
+            session.selectedEntityIds = args.selectEntityIds.map(String);
+            collabHub.updatePresence(roomId, 'analyst-oro-01', {
+              selectedEntityIds: session.selectedEntityIds,
+            });
+            emitSessionUiEvent(session, 'select', {
+              selectedEntityIds: session.selectedEntityIds,
+            });
+          }
+
+          let layoutMetrics: unknown = null;
+          if (typeof args.layoutMode === 'string' && args.layoutMode.trim()) {
+            const mode = args.layoutMode.trim() as LayoutMode;
+            session.layoutMode = mode;
+            if (session.store.entityCount > 0) {
+              layoutMetrics = sessionLayoutPipeline.executeLayout(session.store, mode, {
+                preferTier: 'tier2-wasm',
+              });
+            }
+            emitSessionUiEvent(session, 'layout', { layoutMode: mode });
+          }
+
+          if (typeof args.camera === 'object' && args.camera !== null) {
+            const cam = args.camera as {
+              action?: string;
+              panX?: number;
+              panY?: number;
+              zoom?: number;
+            };
+            if (typeof cam.panX === 'number') session.camera.panX = cam.panX;
+            if (typeof cam.panY === 'number') session.camera.panY = cam.panY;
+            if (typeof cam.zoom === 'number') session.camera.zoom = cam.zoom;
+            emitSessionUiEvent(session, 'camera', {
+              action: cam.action ?? 'set',
+              ...session.camera,
+            });
+          }
+
+          toolOutput = {
+            ok: true,
+            layoutMetrics,
+            ...getSessionSnapshotSummary(session),
+          };
+          break;
+        }
+        case 'cangrejo_session_vault': {
+          const roomId =
+            typeof args.roomId === 'string' && args.roomId.trim()
+              ? args.roomId.trim()
+              : 'expediente-apt29';
+          const session = getOrCreateSessionRoom(roomId);
+          const action = String(args.action ?? 'list_expedientes');
+
+          if (action === 'list_expedientes') {
+            toolOutput = {
+              ok: true,
+              expedientes: sqliteVault.listExpedientes(),
+            };
+            break;
+          }
+
+          if (action === 'save_expediente') {
+            const expId =
+              typeof args.expedienteId === 'string' && args.expedienteId.trim()
+                ? args.expedienteId.trim()
+                : session.expedienteId;
+            const title =
+              typeof args.title === 'string' && args.title.trim() ? args.title.trim() : session.title;
+            const rawTier =
+              typeof args.caseTier === 'string' ? args.caseTier.toUpperCase() : session.caseTier;
+            const caseTier =
+              rawTier === 'PLATINO' || rawTier === 'ORO' || rawTier === 'PLATA' || rawTier === 'BRONCE'
+                ? rawTier
+                : 'ORO';
+            session.expedienteId = expId;
+            session.title = title;
+            session.caseTier = caseTier;
+            const serialized = serializeStoreToPayload(session.store);
+            const record = sqliteVault.saveExpediente({
+              id: expId,
+              titleOrMeta: { title, caseTier },
+              entityCount: serialized.entities.length,
+              linkCount: serialized.links.length,
+              cgrjPayload: {
+                id: expId,
+                title,
+                caseTier,
+                ...serialized,
+              },
+            });
+            toolOutput = {
+              ok: true,
+              action: 'save_expediente',
+              expediente: record,
+            };
+            break;
+          }
+
+          if (action === 'load_expediente') {
+            const expId =
+              typeof args.expedienteId === 'string' && args.expedienteId.trim()
+                ? args.expedienteId.trim()
+                : session.expedienteId;
+            const saved = sqliteVault.getExpediente(expId);
+            if (!saved) {
+              throw new Error(`Expediente "${expId}" not found in SQLite Vault.`);
+            }
+            const parsedPayload = JSON.parse(saved.cgrjPayload) as Record<string, unknown>;
+            const rawEntities = Array.isArray(parsedPayload.entities) ? parsedPayload.entities : [];
+            const rawLinks = Array.isArray(parsedPayload.links) ? parsedPayload.links : [];
+
+            session.store.runInBatch(() => {
+              clearStoreAtomically(session.store);
+              for (const rawEnt of rawEntities) {
+                const norm = normalizeIncomingDeltaEntity(rawEnt);
+                const eid = Guid.parse(norm.id);
+                const created = registry.createEntity(norm.typeName, norm.value, {
+                  id: eid,
+                  weight: norm.weight,
+                  bookmark: norm.bookmark,
+                  extraProperties: norm.properties,
+                });
+                created.notes = norm.notes;
+                session.store.addEntity(created, norm.position, norm.pinned);
+              }
+              for (const rawLnk of rawLinks) {
+                const norm = normalizeIncomingDeltaLink(rawLnk);
+                if (!norm.sourceId || !norm.targetId) continue;
+                const srcId = Guid.parse(norm.sourceId);
+                const dstId = Guid.parse(norm.targetId);
+                const lid = Guid.parse(norm.id);
+                if (
+                  session.store.dataStore.hasEntity(srcId) &&
+                  session.store.dataStore.hasEntity(dstId) &&
+                  !session.store.structureStore.hasLink(lid)
+                ) {
+                  session.store.addLink(
+                    makeSimpleLink(lid, norm.label, norm.color, norm.weight),
+                    srcId,
+                    dstId,
+                    norm.isReversed,
+                    norm.path
+                  );
+                }
+              }
+            });
+            session.expedienteId = saved.id;
+            session.title = saved.title;
+            session.caseTier = saved.caseTier;
+            toolOutput = {
+              ok: true,
+              action: 'load_expediente',
+              ...getSessionSnapshotSummary(session),
+            };
+            break;
+          }
+
+          if (action === 'export_stix21') {
+            const bundle = Stix21Exporter.exportFromStore(session.store, {
+              expedienteTitle: typeof args.title === 'string' ? args.title : session.title,
+              caseTier: session.caseTier,
+            });
+            toolOutput = { ok: true, action: 'export_stix21', bundle };
+            break;
+          }
+
+          if (action === 'export_dossier_html') {
+            const editionState = sqliteVault.getEditionState();
+            const dossier = ForensicDossierGenerator.generateFromStore(session.store, {
+              expedienteId: session.expedienteId,
+              expedienteTitle: typeof args.title === 'string' ? args.title : session.title,
+              caseTier: session.caseTier,
+              editionTier: editionState.editionTier,
+              organizationName: editionState.whiteLabel.organizationName,
+              badgeTitle: editionState.whiteLabel.badgeTitle,
+              watermarkEnabled: editionState.whiteLabel.watermarkEnabled,
+            });
+            toolOutput = { ok: true, action: 'export_dossier_html', dossier };
+            break;
+          }
+
+          if (action === 'export_cgrx') {
+            const zipBytes = mtgxHandler.exportToMtgxBytes(session.store, {
+              graphName: session.title,
+            });
+            toolOutput = {
+              ok: true,
+              action: 'export_cgrx',
+              mtgxBase64: Buffer.from(zipBytes).toString('base64'),
+              mtgxSizeBytes: zipBytes.byteLength,
+            };
+            break;
+          }
+
+          throw new Error(`Unsupported cangrejo_session_vault action: "${action}"`);
         }
         default:
           return c.json(

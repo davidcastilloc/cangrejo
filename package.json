@@ -12,6 +12,7 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
     "start": "bun run apps/web/bunServer.ts",
+    "mcp:stdio": "bun run apps/web/mcpStdioServer.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:bun": "bun test",
