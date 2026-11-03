@@ -1,0 +1,12 @@
+[package]
+name = "cangrejo-layout-rs"
+version = "1.0.0"
+edition = "2021"
+description = "CANGREJO Native Rust Force-Directed & Spatial Layout Kernel (callable via Bun FFI, Tauri, and WebAssembly)"
+license = "Apache-2.0"
+
+[lib]
+name = "cangrejo_layout_rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]

@@ -27,10 +27,11 @@ tasks:
       - "/tsconfig.json"
 
   test:
-    command: "bun test ../../tests/gate0-foundations.test.ts"
+    command: "bun test ../../tests/gate0-foundations.test.ts ../../tests/gate4-modern-stack.test.ts"
     deps:
       - "core:test"
     inputs:
       - "src/**/*"
       - "/schemas/**/*"
       - "/tests/gate0-foundations.test.ts"
+      - "/tests/gate4-modern-stack.test.ts"

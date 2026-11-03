@@ -1,0 +1,159 @@
+import { z } from 'zod';
+import type { ValidationOutcome } from './MtgjSchemaValidator.js';
+
+/**
+ * CSP-Safe Zod Schemas for CANGREJO (.cgrj / .mtgj v2.0.0 & Pesquisa HTTP Contracts).
+ *
+ * CRITICAL CONTRACT INVARIANT:
+ * Every object schema MUST use `.passthrough()` so that custom OSINT provider attributes,
+ * dynamic ontology properties, and enriched metadata are NEVER pruned or stripped during
+ * validation or HTTP serialization.
+ */
+
+export const CgrjPropertySchema = z
+  .object({
+    name: z.string().min(1),
+    displayName: z.string(),
+    type: z.string(),
+    value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()]),
+    special: z.array(z.string()).optional(),
+    matchingRule: z.string().optional(),
+    hidden: z.boolean().optional(),
+    readonly: z.boolean().optional(),
+    nullable: z.boolean().optional(),
+  })
+  .passthrough();
+
+export const CgrjEntitySchema = z
+  .object({
+    id: z.string().min(1),
+    type: z.string().min(1),
+    weight: z.number().int().min(1),
+    position: z
+      .object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number().optional(),
+      })
+      .passthrough()
+      .optional(),
+    pinned: z.boolean().optional(),
+    bookmark: z.number().int().min(-1).max(23).optional(),
+    notes: z
+      .object({
+        value: z.string(),
+        show: z.boolean().optional(),
+      })
+      .passthrough()
+      .optional(),
+    displayInfo: z
+      .array(
+        z
+          .object({
+            title: z.string(),
+            content: z.string(),
+            type: z.string().optional(),
+          })
+          .passthrough()
+      )
+      .optional(),
+    props: z.array(CgrjPropertySchema),
+  })
+  .passthrough();
+
+export const CgrjLinkSchema = z
+  .object({
+    id: z.string().min(1),
+    type: z.string().min(1),
+    source: z.string().min(1),
+    target: z.string().min(1),
+    reversed: z.boolean().optional(),
+    weight: z.number().int().min(1).optional(),
+    bookmark: z.number().int().min(-1).max(23).optional(),
+    props: z.array(CgrjPropertySchema).optional(),
+  })
+  .passthrough();
+
+export const CgrjEncryptionEnvelopeSchema = z
+  .object({
+    algorithm: z.literal('AES-GCM-256'),
+    keyWrap: z.enum(['RSA-OAEP-256', 'ECDH-ES+A256KW']),
+    salt: z.string().min(1),
+    iterations: z.number().int().min(100_000),
+    iv: z.string().min(1),
+    tag: z.string().min(1),
+    gmac: z.string().min(1),
+    encryptedFields: z.array(z.string()),
+  })
+  .passthrough();
+
+export const CgrjDocumentSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().optional(),
+    schemaVersion: z.literal('2.0.0'),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    entities: z.array(CgrjEntitySchema),
+    links: z.array(CgrjLinkSchema),
+    collections: z.array(z.record(z.string(), z.unknown())).optional(),
+    encryption: CgrjEncryptionEnvelopeSchema.nullable().optional(),
+  })
+  .passthrough();
+
+/**
+ * HTTP Contract Schemas for Live Pesquisa OSINT Execution (`POST /api/transforms/run`).
+ * Uses `.passthrough()` at every level to guarantee zero field pruning.
+ */
+export const PesquisaEntityItemSchema = z
+  .object({
+    typeName: z.string().min(1),
+    value: z.string(),
+    weight: z.number(),
+    fields: z.record(z.string(), z.unknown()),
+    linkLabel: z.string(),
+    linkColor: z.string(),
+  })
+  .passthrough();
+
+export const PesquisaRunResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    xmlRequest: z.string().optional(),
+    xmlResponse: z.string().optional(),
+    entities: z.array(PesquisaEntityItemSchema).optional(),
+    messages: z
+      .array(
+        z
+          .object({
+            type: z.string(),
+            text: z.string(),
+          })
+          .passthrough()
+      )
+      .optional(),
+    v3Delta: z.record(z.string(), z.unknown()).optional(),
+    error: z.string().optional(),
+  })
+  .passthrough();
+
+/**
+ * Validates a `.cgrj` / `.mtgj` v2.0.0 document using CSP-safe Zod schemas (no `eval` or `new Function`).
+ * Preserves all extra properties via `.passthrough()`.
+ */
+export function validateCgrjWithZod(document: unknown): ValidationOutcome & { data?: unknown } {
+  const parsed = CgrjDocumentSchema.safeParse(document);
+  if (parsed.success) {
+    return {
+      valid: true,
+      errors: [],
+      data: parsed.data,
+    };
+  }
+  const errors = parsed.error.issues.map(
+    (issue) => `/${issue.path.join('/')} ${issue.message}`
+  );
+  return {
+    valid: false,
+    errors,
+  };
+}

@@ -27,8 +27,9 @@ tasks:
       - "package.json"
 
   test:
-    command: "bun test ../../tests/gate0-foundations.test.ts"
+    command: "bun test ../../tests/gate0-foundations.test.ts ../../tests/gate4-modern-stack.test.ts"
     inputs:
       - "src/**/*"
       - "migrations/**/*"
       - "/tests/gate0-foundations.test.ts"
+      - "/tests/gate4-modern-stack.test.ts"

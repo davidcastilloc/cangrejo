@@ -1,0 +1,30 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "library"
+stack: "systems"
+language: "rust"
+
+project:
+  name: "cangrejo-layout-rs"
+  description: "CANGREJO Native Rust Force-Directed & Spatial Layout Kernel (Cargo + C-ABI for Bun FFI, Tauri & WebAssembly)"
+
+tags:
+  - "rust"
+  - "layout"
+  - "ffi"
+  - "wasm"
+
+tasks:
+  typecheck:
+    command: "cargo check --offline"
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+
+  test:
+    command: "cargo test --offline"
+    deps:
+      - "typecheck"
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"

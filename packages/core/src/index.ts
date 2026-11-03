@@ -24,3 +24,6 @@ export * from './selection/GraphStoreSelection.js';
 export * from './merger/MatchingRules.js';
 export * from './merger/PartMergeStrategy.js';
 export * from './merger/StrategicGraphMerger.js';
+
+export * from './collaboration/CollaborationRoomHub.js';
+
