@@ -4,11 +4,30 @@ import path from 'node:path';
 import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
-const { DatabaseSync } = require('node:sqlite') as {
-  DatabaseSync: new (path: string) => DatabaseSyncType;
-};
+function resolveBaseDir(): string {
+  try {
+    if (typeof import.meta !== 'undefined' && typeof import.meta.url === 'string' && import.meta.url.startsWith('file:')) {
+      return path.dirname(fileURLToPath(import.meta.url));
+    }
+  } catch {
+    // Fallback for bundled edge runtimes (Cloudflare Workers workerd)
+  }
+  return typeof process !== 'undefined' && typeof process.cwd === 'function'
+    ? path.resolve(process.cwd(), 'packages/database-d1/src')
+    : '/packages/database-d1/src';
+}
+
+function loadNodeDatabaseSync(): new (path: string) => DatabaseSyncType {
+  const req = createRequire(
+    typeof import.meta !== 'undefined' && typeof import.meta.url === 'string'
+      ? import.meta.url
+      : 'file:///index.js'
+  );
+  const mod = req('node:sqlite') as {
+    DatabaseSync: new (path: string) => DatabaseSyncType;
+  };
+  return mod.DatabaseSync;
+}
 
 export interface D1OrganizationRow {
   id: string;
@@ -29,13 +48,14 @@ export class D1SchemaRunner {
   public readonly db: DatabaseSyncType;
 
   public constructor(dbPath = ':memory:') {
+    const DatabaseSync = loadNodeDatabaseSync();
     this.db = new DatabaseSync(dbPath);
     this.db.exec('PRAGMA foreign_keys = ON;');
     this.db.exec('PRAGMA recursive_triggers = ON;');
   }
 
   public static getMigrationSqlPath(): string {
-    return path.resolve(__dirname, '../migrations/0001_initial_schema.sql');
+    return path.resolve(resolveBaseDir(), '../migrations/0001_initial_schema.sql');
   }
 
   public applyInitialSchema(): void {
