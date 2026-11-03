@@ -9,8 +9,24 @@ export interface CloudflareAiBindingLike {
   run(model: string, inputs: Record<string, unknown>): Promise<unknown>;
 }
 
+export interface CloudflareVectorizeBindingLike {
+  upsert?(
+    vectors: Array<{
+      id: string;
+      values: number[];
+      namespace?: string;
+      metadata?: Record<string, unknown>;
+    }>
+  ): Promise<unknown>;
+  query?(
+    vector: number[],
+    options?: { topK?: number; namespace?: string; returnMetadata?: boolean }
+  ): Promise<unknown>;
+}
+
 export interface CloudflareWorkersAiRuntimeConfig {
   aiBinding?: CloudflareAiBindingLike;
+  vectorizeBinding?: CloudflareVectorizeBindingLike;
   cloudflareAccountId?: string;
   cloudflareApiToken?: string;
   aiGatewaySlug?: string;
@@ -402,6 +418,21 @@ export class CloudflareWorkersAiEngine {
         ),
       };
     });
+
+    if (config?.vectorizeBinding && typeof config.vectorizeBinding.upsert === 'function') {
+      try {
+        await config.vectorizeBinding.upsert(
+          descriptions.map((d) => ({
+            id: `${vectorizeNamespace}:${d.id}`,
+            values: Array.from(d.embedding),
+            namespace: vectorizeNamespace,
+            metadata: { entityId: d.id, value: d.val, typeName: d.type },
+          }))
+        );
+      } catch (err) {
+        console.error('[CloudflareWorkersAiEngine] Vectorize upsert failed:', err);
+      }
+    }
 
     const pairs: CandidatePair[] = [];
     for (let i = 0; i < descriptions.length; i++) {

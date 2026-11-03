@@ -273,3 +273,66 @@ WHEN OLD.updated_at = NEW.updated_at AND unixepoch() != OLD.updated_at
 BEGIN
     UPDATE api_keys_vault SET updated_at = unixepoch() WHERE id = OLD.id;
 END;
+
+-- ------------------------------------------------------------------------------
+-- 12. OPERATIONAL EXPEDIENTE VAULT, SINGLEFLIGHT TTL CACHE, EDITION & RADAR 24/7
+-- ------------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS cangrejo_expedientes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    tier TEXT NOT NULL DEFAULT 'ORO',
+    entity_count INTEGER NOT NULL DEFAULT 0,
+    link_count INTEGER NOT NULL DEFAULT 0,
+    encrypted INTEGER NOT NULL DEFAULT 0,
+    payload_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS cangrejo_pesquisa_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transform_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_value TEXT NOT NULL,
+    discovered_count INTEGER NOT NULL DEFAULT 0,
+    elapsed_ms INTEGER NOT NULL DEFAULT 0,
+    executed_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS cangrejo_pesquisa_cache (
+    cache_key TEXT PRIMARY KEY,
+    response_json TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    expires_at_ms INTEGER NOT NULL,
+    hit_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS cangrejo_edition_config (
+    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    edition_tier TEXT NOT NULL DEFAULT 'COMMUNITY',
+    organization_name TEXT NOT NULL DEFAULT 'CANGREJO — Unidad de Criminalística Digital & OSINT',
+    badge_title TEXT NOT NULL DEFAULT 'CANGREJO COMMUNITY EDITION',
+    watermark_enabled INTEGER NOT NULL DEFAULT 1,
+    osint_credits_remaining INTEGER NOT NULL DEFAULT 25,
+    osint_credits_monthly_allowance INTEGER NOT NULL DEFAULT 25,
+    license_key_masked TEXT,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS cangrejo_provider_keys (
+    provider TEXT PRIMARY KEY,
+    api_key_secret TEXT NOT NULL,
+    key_masked TEXT NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS cangrejo_radar_watches (
+    id TEXT PRIMARY KEY,
+    target_value TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    baseline_digest_hex TEXT NOT NULL,
+    baseline_snapshot_json TEXT NOT NULL,
+    last_checked_at INTEGER NOT NULL,
+    drift_count INTEGER NOT NULL DEFAULT 0,
+    last_drift_alert_json TEXT
+);

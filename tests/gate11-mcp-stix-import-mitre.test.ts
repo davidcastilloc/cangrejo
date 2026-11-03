@@ -192,5 +192,38 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     const indexHtml = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
     expect(indexHtml).toContain('id="btn-import-stix21"');
     expect(indexHtml).toContain('id="btn-ai-run-tools"');
+
+    // Verify Vectorize binding upsert in F2 & OpenAPI 3.1.0 v1.1.0 completeness
+    let upsertedCount = 0;
+    await CloudflareWorkersAiEngine.discoverLatentLinksRrf(
+      {
+        expedienteId: 'exp-vec-test',
+        entities: [
+          { id: '1', typeName: 'maltego.Domain', value: 'a.apt29.org' },
+          { id: '2', typeName: 'maltego.Domain', value: 'b.apt29.org' },
+        ],
+      },
+      {
+        vectorizeBinding: {
+          upsert: async (vectors) => {
+            upsertedCount = vectors.length;
+            return { count: vectors.length };
+          },
+        },
+      }
+    );
+    expect(upsertedCount).toBe(2);
+
+    const openApiRes = await cangrejoHonoApp.request('/api/openapi.json');
+    expect(openApiRes.status).toBe(200);
+    const openApiJson = (await openApiRes.json()) as {
+      info: { version: string };
+      paths: Record<string, unknown>;
+    };
+    expect(openApiJson.info.version).toBe('1.1.0');
+    expect(openApiJson.paths['/api/mcp']).toBeDefined();
+    expect(openApiJson.paths['/api/ai/unpack-iocs']).toBeDefined();
+    expect(openApiJson.paths['/api/import/stix21']).toBeDefined();
+    expect(openApiJson.paths['/api/analytics/mitre-attack']).toBeDefined();
   });
 });

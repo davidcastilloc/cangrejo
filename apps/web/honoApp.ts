@@ -41,6 +41,7 @@ import {
   buildTransformV2RequestXml,
   parseTransformV2ResponseXml,
   type CloudflareAiBindingLike,
+  type CloudflareVectorizeBindingLike,
   type CloudflareWorkersAiRuntimeConfig,
 } from '../../packages/transforms/src/index.js';
 
@@ -177,10 +178,10 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
   return c.json({
     openapi: '3.1.0',
     info: {
-      title: 'CANGREJO — Open-Source OSINT & Forensic Link-Analysis API',
-      version: '1.0.0',
+      title: 'CANGREJO — Open-Source / Open-Core OSINT, CTI & Forensic Link-Analysis API',
+      version: '1.1.0',
       description:
-        'Web-Standard Hono API for Live Pesquisa OSINT Transforms, Bóveda Cero Zero-Knowledge Encryption, SQLite Expediente Vault, and Multiplayer Collaboration.',
+        'Web-Standard Hono API for Live Pesquisa OSINT Transforms, Bóveda Cero Zero-Knowledge Encryption, SQLite/D1 Vault, Cloudflare Workers AI Forensics (F1-F5), MITRE ATT&CK v15, and Native Model Context Protocol (MCP).',
       license: {
         name: 'Apache-2.0',
         url: 'https://www.apache.org/licenses/LICENSE-2.0',
@@ -201,10 +202,22 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
       '/api/export/mtgj-encrypted': {
         post: { summary: 'Bóveda Cero Zero-Knowledge AES-256-GCM + AES-GMAC encryption' },
       },
+      '/api/import/mtgj-decrypted': {
+        post: {
+          summary:
+            'Decrypt and verify Bóveda Cero (.cgrj) AES-256-GCM + AES-GMAC envelope',
+        },
+      },
       '/api/analytics/forensic': {
         post: {
           summary:
             'Forensic Graph Analytics (Shortest Forensic Path, PageRank Centrality & Directed Cycle Rings)',
+        },
+      },
+      '/api/analytics/mitre-attack': {
+        post: {
+          summary:
+            'Map graph topology to MITRE ATT&CK Enterprise v15.1 tactics, techniques, and kill-chain timeline',
         },
       },
       '/api/export/stix21': {
@@ -213,17 +226,62 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
             'Export OASIS STIX 2.1 Cyber Threat Intelligence Bundle with SHA-256 Chain-of-Custody Manifest',
         },
       },
+      '/api/import/stix21': {
+        post: {
+          summary:
+            'Import OASIS STIX 2.1 Bundle into CANGREJO nodes/links and verify SHA-256 x_cangrejo_custody seal',
+        },
+      },
       '/api/export/dossier-html': {
         post: {
           summary:
-            'Generate Printable HTML5/PDF Forensic Dossier (Caso Cangrejo) with PageRank & SHA-256 Custody Seal',
+            'Generate Printable HTML5/PDF Forensic Dossier (Caso Cangrejo) with PageRank, Daubert/FRE 702 Ed25519 Attestation & SHA-256 Custody Seal',
         },
       },
-      '/api/import/mtgj-decrypted': {
-        post: {
-          summary:
-            'Decrypt and verify Bóveda Cero (.cgrj) AES-256-GCM + AES-GMAC envelope',
-        },
+      '/api/edition/status': {
+        get: { summary: 'Get Open-Core Edition tier, credit ledger, and White-Label status' },
+      },
+      '/api/edition/activate': {
+        post: { summary: 'Activate signed CGRJ license token or switch Open-Core Edition tier' },
+      },
+      '/api/edition/provider-keys': {
+        get: { summary: 'List configured BYOK OSINT provider API keys (masked)' },
+        post: { summary: 'Configure BYOK API key for Shodan, VirusTotal, or AbuseIPDB' },
+      },
+      '/api/billing/issue-license': {
+        post: { summary: 'Issue HMAC-SHA256 signed commercial license token' },
+      },
+      '/api/billing/webhook': {
+        post: { summary: 'Stripe / LemonSqueezy commercial subscription webhook handler' },
+      },
+      '/api/radar/watches': {
+        get: { summary: 'List active Radar Cangrejo 24/7 continuous drift watches' },
+        post: { summary: 'Register domain/target on Radar Cangrejo 24/7 baseline monitor' },
+      },
+      '/api/radar/scan': {
+        post: { summary: 'Evaluate live DNS/CT infrastructure drift against SHA-256 baseline' },
+      },
+      '/api/ingest/raw-text': {
+        post: { summary: 'Smart IOC Paste-to-Graph unstructured text extractor' },
+      },
+      '/api/ai/unpack-iocs': {
+        post: { summary: 'F1: Cognitive IOC Unpacker & Defanger with UTF-8 byte offsets' },
+      },
+      '/api/ai/latent-links': {
+        post: { summary: 'F2: Latent Link Discovery via Cloudflare Vectorize + SQLite RRF (k=60)' },
+      },
+      '/api/ai/anomalies': {
+        post: { summary: 'F3: Structural Peel-Chain & Fast-Flux C2 Anomaly Classifier' },
+      },
+      '/api/ai/daubert-synthesis': {
+        post: { summary: 'F4: Court-Admissible Daubert / FRE 702 Narrative + Ed25519 Signature' },
+      },
+      '/api/ai/copilot': {
+        post: { summary: 'F5: Contextual Forensic Graph Copilot ("El Comisario IA") with Tool-Calling' },
+      },
+      '/api/mcp': {
+        get: { summary: 'Model Context Protocol (MCP) server capabilities & tool catalog' },
+        post: { summary: 'Model Context Protocol (MCP JSON-RPC 2.0) initialize, tools/list & tools/call' },
       },
     },
   });
@@ -1986,9 +2044,14 @@ function resolveAiRuntimeConfig(c: { env?: unknown }): CloudflareWorkersAiRuntim
     typeof (envRecord.AI as { run?: unknown }).run === 'function'
       ? (envRecord.AI as CloudflareAiBindingLike)
       : undefined;
+  const vectorizeBinding =
+    typeof envRecord.VECTORIZE_INDEX === 'object' && envRecord.VECTORIZE_INDEX !== null
+      ? (envRecord.VECTORIZE_INDEX as CloudflareVectorizeBindingLike)
+      : undefined;
 
   return {
     aiBinding,
+    vectorizeBinding,
     cloudflareAccountId:
       typeof envRecord.CLOUDFLARE_ACCOUNT_ID === 'string'
         ? envRecord.CLOUDFLARE_ACCOUNT_ID

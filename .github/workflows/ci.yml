@@ -1,4 +1,4 @@
-name: CANGREJO CI — Bun + Rust + moonrepo Polyglot DAG (Gates 0-6)
+name: CANGREJO CI — Bun + Rust + moonrepo Polyglot DAG (Gates 0-11)
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   moon-bun-dag:
-    name: "🚀 Bun 1.4 + Rust + moon 2.6 Polyglot DAG (19 Tasks / Gates 0-6)"
+    name: "🚀 Bun 1.4 + Rust + moon 2.6 Polyglot DAG (19 Tasks / Gates 0-11)"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -33,7 +33,7 @@ jobs:
       - name: Display 9-Project moon Polyglot Graph
         run: bun run moon:projects
 
-      - name: Run 19-Task Polyglot DAG (Typecheck + Build + Gates 0-6) via moon
+      - name: Run 19-Task Polyglot DAG (Typecheck + Build + Gates 0-11) via moon
         run: bun run moon:check
 
   node-compat:
