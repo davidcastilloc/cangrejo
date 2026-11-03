@@ -1,0 +1,19 @@
+services:
+  cangrejo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cangrejo-osint-workstation
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - CANGREJO_HOST=0.0.0.0
+      - CANGREJO_PORT=3000
+      - CANGREJO_SQLITE_PATH=/data/cangrejo_vault.sqlite
+    volumes:
+      - cangrejo_vault_data:/data
+    restart: unless-stopped
+
+volumes:
+  cangrejo_vault_data:
