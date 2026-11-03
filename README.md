@@ -10,11 +10,12 @@
 *High-Performance Open-Source OSINT, Threat Intelligence & Forensic Link-Analysis Graph Platform*
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-F59E0B.svg?style=flat-square)](./LICENSE)
+[![Runtime: Bun 1.4](https://img.shields.io/badge/Runtime-Bun%201.4.3-FBF0DF.svg?style=flat-square&logo=bun&logoColor=000000)](./.prototools)
+[![Monorepo: moon 2.6](https://img.shields.io/badge/Monorepo-moon%202.6.5-6366F1.svg?style=flat-square)](./.moon/workspace.yml)
 [![TypeScript 5.8](https://img.shields.io/badge/TypeScript-5.8%20Strict-2563EB.svg?style=flat-square)](./tsconfig.json)
 [![WebGPU / WGSL](https://img.shields.io/badge/Renderer-WebGPU%20%2B%20WGSL%2060FPS-22D3EE.svg?style=flat-square)](./packages/renderer)
 [![Zero-Knowledge Vault](https://img.shields.io/badge/Vault-AES--256--GCM%20%2B%20GMAC-10B981.svg?style=flat-square)](./packages/transforms)
 [![Accessibility](https://img.shields.io/badge/WCAG%202.1-AAA%20Verified-8B5CF6.svg?style=flat-square)](./docs/brand/BRAND_IDENTITY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-FBBF24.svg?style=flat-square)](./CONTRIBUTING.md)
 
 **[English](./README.md)** · **[Español (Documentación Oficial y Glosario Venezolano)](./README.es.md)** · **[Brand Identity Manifesto](./docs/brand/BRAND_IDENTITY.md)** · **[Architecture & UI/UX Specs](./docs/ui_ux_accessibility_and_css_framework_recommendations.md)**
 
@@ -105,26 +106,27 @@ Every pull request is verified against **36 deterministic automated tests across
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Powered by **Bun** & **moonrepo**)
 
-### Prerequisites
-- **Node.js** `>= 22.0.0` (tested on Node.js v22 LTS and v24)
-- **npm** `>= 10.0.0`
-
-### Installation & Live Workstation
+Cangrejo uses **[Bun (`v1.4.3+`)](https://bun.sh)** as its primary high-speed JavaScript/TypeScript runtime and **[moon (`v2.6.5+`)](https://moonrepo.dev)** (Rust-based polyglot monorepo orchestrator) for content-addressable DAG caching across all 7 `@cangrejo/*` packages (with full Node.js `>= 22` compatibility).
 
 ```bash
-# 1. Install workspace dependencies
-npm install
+# 1. Install workspace dependencies in milliseconds via Bun
+bun install
 
-# 2. Run strict TypeScript typechecking across all 7 packages
-npm run typecheck
+# 2. Inspect the 7-package moon dependency graph
+bun run moon:projects
 
-# 3. Run the 36-test verification suite (Gates 0, 1, 2, 3)
-npm test
+# 3. Execute all 13 DAG tasks (typecheck + Gate 0-3 tests) via moon + Bun
+#    • Cold run: ~639 ms (202,278 expect() assertions across 36 tests)
+#    • Warm cached run: ~160 ms ("❯❯❯❯ to the moon")
+bun run moon:check
 
-# 4. Launch the interactive Cangrejo OSINT Workstation on http://127.0.0.1:5173
-npm run dev
+# 4. Run native Bun test runner directly (< 640 ms)
+bun test
+
+# 5. Launch the interactive Cangrejo OSINT Workstation on http://127.0.0.1:5173
+bun run dev
 ```
 
 Open **`http://127.0.0.1:5173/`** in your browser to explore:

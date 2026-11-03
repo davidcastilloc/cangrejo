@@ -1,0 +1,22 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "library"
+stack: "frontend"
+language: "typescript"
+
+project:
+  name: "@cangrejo/design-tokens"
+  description: "OKLCH Semantic Design Tokens (Obsidian Studio & Daylight Report), Category Vector Icons & ThemeBridge (WCAG 2.1 AAA)"
+
+tags:
+  - "design-system"
+  - "accessibility"
+  - "wcag-aaa"
+
+tasks:
+  typecheck:
+    command: "bun x tsc --noEmit -p ../../tsconfig.json"
+    inputs:
+      - "src/**/*"
+      - "package.json"
+      - "/tsconfig.json"

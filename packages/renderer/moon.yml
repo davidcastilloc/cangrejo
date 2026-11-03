@@ -1,0 +1,40 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "library"
+stack: "frontend"
+language: "typescript"
+
+project:
+  name: "@cangrejo/renderer"
+  description: "Catatumbo WebGPU Renderer (64B Node / 48B Edge Instanced Buffers, 4 WGSL Shaders, 4096x4096 IconAtlas & 3-Tier Layout Engine)"
+
+dependsOn:
+  - "core"
+  - "platform-bridge"
+  - "design-tokens"
+
+tags:
+  - "webgpu"
+  - "wgsl"
+  - "renderer"
+  - "layout"
+
+tasks:
+  typecheck:
+    command: "bun x tsc --noEmit -p ../../tsconfig.json"
+    deps:
+      - "core:typecheck"
+      - "platform-bridge:typecheck"
+      - "design-tokens:typecheck"
+    inputs:
+      - "src/**/*"
+      - "package.json"
+      - "/tsconfig.json"
+
+  test:
+    command: "bun test ../../tests/gate2-renderer-layout.test.ts"
+    deps:
+      - "core:test"
+    inputs:
+      - "src/**/*"
+      - "/tests/gate2-renderer-layout.test.ts"

@@ -1,0 +1,41 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "library"
+stack: "systems"
+language: "typescript"
+
+project:
+  name: "@cangrejo/transforms"
+  description: "Pesquisa OSINT Transform Runner (XML v2, JSON v3, Local CLI Sandbox), .cgrx PKZIP Archive Codec & Bóveda Cero Zero-Knowledge Encryption (AES-256-GCM + AES-GMAC)"
+
+dependsOn:
+  - "core"
+  - "schemas"
+  - "platform-bridge"
+
+tags:
+  - "transforms"
+  - "osint"
+  - "cryptography"
+  - "zero-knowledge"
+
+tasks:
+  typecheck:
+    command: "bun x tsc --noEmit -p ../../tsconfig.json"
+    deps:
+      - "core:typecheck"
+      - "schemas:typecheck"
+      - "platform-bridge:typecheck"
+    inputs:
+      - "src/**/*"
+      - "package.json"
+      - "/tsconfig.json"
+
+  test:
+    command: "bun test ../../tests/gate3-transforms-formats.test.ts"
+    deps:
+      - "core:test"
+      - "schemas:test"
+    inputs:
+      - "src/**/*"
+      - "/tests/gate3-transforms-formats.test.ts"

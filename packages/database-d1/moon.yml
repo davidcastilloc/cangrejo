@@ -1,0 +1,34 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "library"
+stack: "backend"
+language: "typescript"
+
+project:
+  name: "@cangrejo/database-d1"
+  description: "Cloudflare D1 & Bun SQLite Edge Relational Persistence Engine"
+
+dependsOn:
+  - "core"
+
+tags:
+  - "database"
+  - "sqlite"
+  - "cloudflare-d1"
+
+tasks:
+  typecheck:
+    command: "bun x tsc --noEmit -p ../../tsconfig.json"
+    deps:
+      - "core:typecheck"
+    inputs:
+      - "src/**/*"
+      - "migrations/**/*"
+      - "package.json"
+
+  test:
+    command: "bun test ../../tests/gate0-foundations.test.ts"
+    inputs:
+      - "src/**/*"
+      - "migrations/**/*"
+      - "/tests/gate0-foundations.test.ts"

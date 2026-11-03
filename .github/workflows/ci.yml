@@ -1,4 +1,4 @@
-name: CANGREJO CI — Typecheck & Architectural Gates (0-3)
+name: CANGREJO CI — Bun + moonrepo DAG & Architectural Gates (0-3)
 
 on:
   push:
@@ -10,14 +10,36 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify (@cangrejo/* on Node ${{ matrix.node-version }})
+  moon-bun-dag:
+    name: "🚀 Bun 1.4 + moon 2.6 DAG (13 Tasks)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun Runtime
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.3"
+
+      - name: Install Dependencies via Bun
+        run: bun install --frozen-lockfile
+
+      - name: Display moon Project Graph
+        run: bun run moon:projects
+
+      - name: Run 13-Task DAG (Typecheck + Gates 0-3) via moon + Bun
+        run: bun run moon:check
+
+  node-compat:
+    name: "Node.js ${{ matrix.node-version }} Compatibility"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node-version: [22.x, 24.x]
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -34,14 +56,5 @@ jobs:
       - name: Run Strict TypeScript Typecheck
         run: npm run typecheck
 
-      - name: Run Gate 0 — Foundations & Schema Validator
-        run: npm run test:gate0
-
-      - name: Run Gate 1 — Expediente Graph Engine & 10k Merger Benchmark
-        run: npm run test:gate1
-
-      - name: Run Gate 2 — Catatumbo WebGPU Renderer & 100k Node S4 Benchmark
-        run: npm run test:gate2
-
-      - name: Run Gate 3 — Pesquisa Transforms & Bóveda Cero Encryption
-        run: npm run test:gate3
+      - name: Run Vitest Suite (Gates 0-3)
+        run: npm test

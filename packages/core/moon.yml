@@ -1,0 +1,30 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "library"
+stack: "systems"
+language: "typescript"
+
+project:
+  name: "@cangrejo/core"
+  description: "Expediente Tripartite Graph Engine (CSR Structure, Typed PropertyBag, Float32 Layout, 107 Entities, 17 IOC Regex Converters, StrategicGraphMerger & CollectionNodeView)"
+
+tags:
+  - "engine"
+  - "graph"
+  - "osint"
+
+tasks:
+  typecheck:
+    command: "bun x tsc --noEmit -p ../../tsconfig.json"
+    inputs:
+      - "src/**/*"
+      - "package.json"
+      - "/tsconfig.json"
+      - "/tsconfig.base.json"
+
+  test:
+    command: "bun test ../../tests/gate0-foundations.test.ts ../../tests/gate1-graph-engine.test.ts"
+    inputs:
+      - "src/**/*"
+      - "/tests/gate0-foundations.test.ts"
+      - "/tests/gate1-graph-engine.test.ts"

@@ -12,13 +12,19 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "test:bun": "bun test",
     "test:watch": "vitest",
-    "test:gate0": "vitest run tests/gate0-foundations.test.ts",
-    "test:gate1": "vitest run tests/gate1-graph-engine.test.ts",
-    "test:gate2": "vitest run tests/gate2-renderer-layout.test.ts",
-    "test:gate3": "vitest run tests/gate3-transforms-formats.test.ts"
+    "test:gate0": "bun test tests/gate0-foundations.test.ts",
+    "test:gate1": "bun test tests/gate1-graph-engine.test.ts",
+    "test:gate2": "bun test tests/gate2-renderer-layout.test.ts",
+    "test:gate3": "bun test tests/gate3-transforms-formats.test.ts",
+    "moon:projects": "moon projects",
+    "moon:check": "moon run :typecheck :test",
+    "moon:ci": "moon ci"
   },
+  "packageManager": "bun@1.4.3",
   "devDependencies": {
+    "@moonrepo/cli": "^2.6.5",
     "@types/node": "^22.10.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",

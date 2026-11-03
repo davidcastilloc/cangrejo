@@ -1,0 +1,36 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "library"
+stack: "systems"
+language: "typescript"
+
+project:
+  name: "@cangrejo/schemas"
+  description: "JSON Schema Draft 2020-12 Validator & Serializer for .cgrj / .mtgj Graph Documents and Zero-Knowledge Envelopes"
+
+dependsOn:
+  - "core"
+
+tags:
+  - "schemas"
+  - "validation"
+
+tasks:
+  typecheck:
+    command: "bun x tsc --noEmit -p ../../tsconfig.json"
+    deps:
+      - "core:typecheck"
+    inputs:
+      - "src/**/*"
+      - "package.json"
+      - "/schemas/**/*"
+      - "/tsconfig.json"
+
+  test:
+    command: "bun test ../../tests/gate0-foundations.test.ts"
+    deps:
+      - "core:test"
+    inputs:
+      - "src/**/*"
+      - "/schemas/**/*"
+      - "/tests/gate0-foundations.test.ts"

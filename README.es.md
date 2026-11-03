@@ -62,20 +62,27 @@ Para dotar al proyecto de una identidad propia e inconfundible dentro del ecosis
 
 ---
 
-## 🚀 Inicio Rápido
+## 🚀 Inicio Rápido (Impulsado por **Bun 1.4** y **moon 2.6**)
+
+**Cangrejo** utiliza **[Bun (`v1.4.3+`)](https://bun.sh)** como runtime ultrarrápido de TypeScript y **[moon (`v2.6.5+`)](https://moonrepo.dev)** (orquestador de monorepos políglota escrito en Rust) para ejecutar el grafo de dependencias (DAG) con caché direccionable por contenido en los 7 paquetes `@cangrejo/*`:
 
 ```bash
-# 1. Instalar dependencias del monorepo
-npm install
+# 1. Instalar dependencias del monorepo con Bun
+bun install
 
-# 2. Verificar tipado estricto en los 7 paquetes (@cangrejo/*)
-npm run typecheck
+# 2. Inspeccionar la tabla de los 7 proyectos en moon
+bun run moon:projects
 
-# 3. Ejecutar los 36 tests automatizados (Gates 0, 1, 2 y 3)
-npm test
+# 3. Ejecutar las 13 tareas del DAG (typecheck + tests Gates 0-3) con moon + Bun
+#    • Ejecución en frío (Cold): ~639 ms (36 tests / 202.278 aserciones)
+#    • Ejecución en caché (Warm): ~160 ms ("❯❯❯❯ to the moon")
+bun run moon:check
 
-# 4. Iniciar la estación de trabajo interactiva en http://127.0.0.1:5173
-npm run dev
+# 4. Ejecutar directamente el runner nativo de Bun
+bun test
+
+# 5. Iniciar la estación de trabajo interactiva en http://127.0.0.1:5173
+bun run dev
 ```
 
 ---

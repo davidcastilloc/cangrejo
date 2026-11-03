@@ -1,0 +1,32 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+layer: "library"
+stack: "systems"
+language: "typescript"
+
+project:
+  name: "@cangrejo/platform-bridge"
+  description: "Multi-Host Runtime Bridge (Web PWA, Tauri Desktop Rayon Offload, VS Code Extension)"
+
+dependsOn:
+  - "core"
+
+tags:
+  - "bridge"
+  - "platform"
+
+tasks:
+  typecheck:
+    command: "bun x tsc --noEmit -p ../../tsconfig.json"
+    deps:
+      - "core:typecheck"
+    inputs:
+      - "src/**/*"
+      - "package.json"
+      - "/tsconfig.json"
+
+  test:
+    command: "bun test ../../tests/gate0-foundations.test.ts"
+    inputs:
+      - "src/**/*"
+      - "/tests/gate0-foundations.test.ts"
