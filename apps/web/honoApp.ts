@@ -1,5 +1,6 @@
+import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
-import { Hono } from 'hono';
+import { Hono, type Context, type Next } from 'hono';
 import {
   CollaborationRoomHub,
   EntityRegistry,
@@ -21,6 +22,7 @@ import {
 import {
   BunSqliteVault,
   type CloudflareD1DatabaseLike,
+  type CloudflareR2BucketLike,
 } from '../../packages/database-d1/src/index.js';
 import {
   AiAnomalyClusterRequestSchema,
@@ -73,6 +75,20 @@ function extractD1Binding(env: unknown): CloudflareD1DatabaseLike | undefined {
     typeof (candidate as CloudflareD1DatabaseLike).prepare === 'function'
   ) {
     return candidate as CloudflareD1DatabaseLike;
+  }
+  return undefined;
+}
+
+function extractR2Binding(env: unknown): CloudflareR2BucketLike | undefined {
+  if (!env || typeof env !== 'object') return undefined;
+  const candidate = (env as Record<string, unknown>).CANGREJO_VAULT_R2;
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    typeof (candidate as CloudflareR2BucketLike).get === 'function' &&
+    typeof (candidate as CloudflareR2BucketLike).put === 'function'
+  ) {
+    return candidate as CloudflareR2BucketLike;
   }
   return undefined;
 }
@@ -326,6 +342,10 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
         get: { summary: 'Model Context Protocol (MCP) server capabilities & tool catalog' },
         post: { summary: 'Model Context Protocol (MCP JSON-RPC 2.0) initialize, tools/list & tools/call' },
       },
+      '/api/mcp/{sessionId}': {
+        get: { summary: 'Multi-tenant Isolated MCP Session capabilities & tool catalog' },
+        post: { summary: 'Multi-tenant Isolated MCP Session JSON-RPC 2.0 endpoint with Bearer License / Session Token Auth' },
+      },
     },
   });
 });
@@ -421,6 +441,13 @@ export interface CangrejoSessionUiEvent {
 
 export interface CangrejoSessionRoomState {
   roomId: string;
+  scopedRoomKey: string;
+  tenantId: string;
+  rawSessionId: string;
+  dbSessionId: string;
+  isCloudScoped: boolean;
+  lastSeq: number;
+  pendingDeltas: SerializedGraphModsDelta[];
   expedienteId: string;
   title: string;
   caseTier: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
@@ -435,7 +462,7 @@ export interface CangrejoSessionRoomState {
 
 const sessionMerger = new StrategicGraphMerger();
 const sessionLayoutPipeline = new LayoutPipeline();
-const sessionRooms = new Map<string, CangrejoSessionRoomState>();
+export const sessionRooms = new Map<string, CangrejoSessionRoomState>();
 let globalSessionUiSeq = 0;
 
 function serializeStoreToPayload(store: GraphStore): {
@@ -483,16 +510,38 @@ function serializeStoreToPayload(store: GraphStore): {
   return { entities, links };
 }
 
-export function getOrCreateSessionRoom(roomId = 'expediente-apt29'): CangrejoSessionRoomState {
-  let state = sessionRooms.get(roomId);
+export function getOrCreateSessionRoom(
+  roomId = 'expediente-apt29',
+  scoping?: {
+    scopedRoomKey?: string;
+    tenantId?: string;
+    rawSessionId?: string;
+    dbSessionId?: string;
+    isCloudScoped?: boolean;
+    caseTier?: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
+  }
+): CangrejoSessionRoomState {
+  const scopedRoomKey = scoping?.scopedRoomKey ?? roomId;
+  let state = sessionRooms.get(scopedRoomKey);
   if (state) return state;
+
+  const rawSessionId = scoping?.rawSessionId ?? roomId;
+  const tenantId = scoping?.tenantId ?? 'local-community';
+  const dbSessionId = scoping?.dbSessionId ?? `${tenantId}:${rawSessionId}`;
 
   const store = new GraphStore(Guid.generate());
   state = {
-    roomId,
-    expedienteId: roomId,
-    title: `Expediente Forense (${roomId})`,
-    caseTier: 'ORO',
+    roomId: rawSessionId,
+    scopedRoomKey,
+    tenantId,
+    rawSessionId,
+    dbSessionId,
+    isCloudScoped: scoping?.isCloudScoped ?? false,
+    lastSeq: 0,
+    pendingDeltas: [],
+    expedienteId: rawSessionId,
+    title: `Expediente Forense (${rawSessionId})`,
+    caseTier: scoping?.caseTier ?? 'ORO',
     store,
     selectedEntityIds: [],
     layoutMode: 'organic',
@@ -501,15 +550,16 @@ export function getOrCreateSessionRoom(roomId = 'expediente-apt29'): CangrejoSes
     isApplyingRemoteDelta: false,
     sseListeners: new Set(),
   };
-  sessionRooms.set(roomId, state);
+  sessionRooms.set(scopedRoomKey, state);
 
   store.subscribe((mods) => {
     if (state!.isApplyingRemoteDelta) return;
-    const delta = collabHub.serializeModsToDelta(roomId, 'mcp-session-agent', store, mods);
+    const delta = collabHub.serializeModsToDelta(scopedRoomKey, 'mcp-session-agent', store, mods);
+    state!.pendingDeltas.push(delta);
     collabHub.publishDelta(delta);
   });
 
-  collabHub.subscribeRoom(roomId, (delta) => {
+  collabHub.subscribeRoom(scopedRoomKey, (delta) => {
     for (const listener of state!.sseListeners) {
       try {
         listener('delta', delta);
@@ -3075,14 +3125,484 @@ export const CANGREJO_MCP_TOOLS_CATALOG = [
   },
 ] as const;
 
-function resolveStoreForMcpTool(args: Record<string, unknown>): {
+export interface McpRequestTenantContext {
+  isCloudScoped: boolean;
+  hasUrlSessionId: boolean;
+  tenantId: string;
+  rawSessionId: string;
+  dbSessionId: string;
+  scopedRoomKey: string;
+  tier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+  token: string | null;
+}
+
+const mcpContextMap = new WeakMap< object, McpRequestTenantContext>();
+
+function setMcpContext(c: Context, ctx: McpRequestTenantContext): void {
+  mcpContextMap.set(c.req.raw, ctx);
+}
+
+function getMcpContext(c: Context): McpRequestTenantContext {
+  return (
+    mcpContextMap.get(c.req.raw) ?? {
+      isCloudScoped: false,
+      hasUrlSessionId: false,
+      tenantId: 'local-community',
+      rawSessionId: 'expediente-apt29',
+      dbSessionId: 'local-community:expediente-apt29',
+      scopedRoomKey: 'expediente-apt29',
+      tier: 'COMMUNITY',
+      token: null,
+    }
+  );
+}
+
+export async function mcpAuthMiddleware(c: Context, next: Next): Promise<Response | void> {
+  const sessionId = c.req.param('sessionId');
+  const d1Binding = extractD1Binding(c.env);
+  const envTier = process.env.CANGREJO_EDITION_TIER;
+  const authHeader = c.req.header('Authorization');
+  const queryToken = c.req.query('token')?.trim();
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : queryToken;
+
+  const isCloud = Boolean(
+    sessionId ||
+      token ||
+      d1Binding ||
+      (envTier && envTier !== 'COMMUNITY')
+  );
+
+  // Community loopback bypass for root endpoint (/api/mcp) when no token/sessionId/D1 is present
+  if (!isCloud) {
+    setMcpContext(c, {
+      isCloudScoped: false,
+      hasUrlSessionId: false,
+      tenantId: 'local-community',
+      rawSessionId: 'expediente-apt29',
+      dbSessionId: 'local-community:expediente-apt29',
+      scopedRoomKey: 'expediente-apt29',
+      tier: 'COMMUNITY',
+      token: null,
+    });
+    return next();
+  }
+
+  if (!token) {
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32000,
+          message: 'Authentication required: Missing Bearer token or signed license key.',
+        },
+      },
+      401
+    );
+  }
+
+  const activeD1 = d1Binding ?? sqliteVault.asD1Database();
+  const rawSessionId = sessionId && sessionId.trim() ? sessionId.trim() : 'expediente-apt29';
+
+  // Type A: Cryptographic Signed License Token (CGRJ.<TIER>.<claims>.<hmac>)
+  if (token.startsWith('CGRJ.')) {
+    const verified = BunSqliteVault.verifySignedLicenseToken(token);
+    if (!verified.valid || !verified.claims) {
+      return c.json(
+        {
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32001, message: `Invalid license token: ${verified.reason}` },
+        },
+        403
+      );
+    }
+
+    const claims = verified.claims;
+    const sigHex = token.split('.')[3] ?? '';
+    const sigHash = crypto.createHash('sha256').update(sigHex).digest('hex');
+    const orgDigest = crypto
+      .createHash('sha256')
+      .update(claims.organizationName)
+      .digest('hex')
+      .slice(0, 12);
+    const tenantId = `org_${orgDigest}`;
+    const dbSessionId = `${tenantId}:${rawSessionId}`;
+    const scopedRoomKey = `tenant:${tenantId}:session:${rawSessionId}`;
+    const expiresEpoch =
+      typeof claims.expiresAt === 'number'
+        ? Math.floor(claims.expiresAt / 1000)
+        : Math.floor(Date.now() / 1000) + 86400 * 365;
+
+    await BunSqliteVault.provisionMcpSessionJit(activeD1, {
+      tenantId,
+      tier: claims.tier,
+      organizationName: claims.organizationName,
+      licenseSignatureHash: sigHash,
+      creditsRemaining: claims.credits ?? 0,
+      dbSessionId,
+      rawSessionId,
+      expiresEpoch,
+    });
+
+    setMcpContext(c, {
+      isCloudScoped: true,
+      hasUrlSessionId: Boolean(sessionId && sessionId.trim()),
+      tenantId,
+      rawSessionId,
+      dbSessionId,
+      scopedRoomKey,
+      tier: claims.tier,
+      token,
+    });
+    return next();
+  }
+
+  // Type B: Dedicated D1 Database Session Token (ses_sec_<hex>)
+  await BunSqliteVault.ensureMcpSessionD1TablesSafe(activeD1);
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const sessionRow = await activeD1
+    .prepare(
+      `SELECT s.session_id, s.tenant_id, s.raw_session_id, s.status, s.expires_at, t.tier
+       FROM cangrejo_mcp_sessions s
+       JOIN cangrejo_tenant_metadata t ON s.tenant_id = t.tenant_id
+       WHERE s.session_token_hash = ? AND s.status = 'active'`
+    )
+    .bind(tokenHash)
+    .first<{
+      session_id: string;
+      tenant_id: string;
+      raw_session_id: string;
+      status: string;
+      expires_at: number;
+      tier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+    }>();
+
+  if (!sessionRow || (sessionRow.expires_at && sessionRow.expires_at < Math.floor(Date.now() / 1000))) {
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32001, message: 'Invalid, expired, or unauthorized MCP session token.' },
+      },
+      403
+    );
+  }
+
+  if (sessionId && sessionId.trim() && sessionId.trim() !== sessionRow.raw_session_id) {
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32001,
+          message: 'Session token is not authorized for this investigation slug.',
+        },
+      },
+      403
+    );
+  }
+
+  setMcpContext(c, {
+    isCloudScoped: true,
+    hasUrlSessionId: Boolean(sessionId && sessionId.trim()),
+    tenantId: sessionRow.tenant_id,
+    rawSessionId: sessionRow.raw_session_id,
+    dbSessionId: sessionRow.session_id,
+    scopedRoomKey: `tenant:${sessionRow.tenant_id}:session:${sessionRow.raw_session_id}`,
+    tier: sessionRow.tier,
+    token,
+  });
+  return next();
+}
+
+function populateStoreFromSnapshotObject(
+  store: GraphStore,
+  snapshotObj: Record<string, unknown>
+): void {
+  store.runInBatch(() => {
+    clearStoreAtomically(store);
+    if (typeof snapshotObj.graph === 'object' && snapshotObj.graph !== null) {
+      const validator = new MtgjSchemaValidator();
+      const deserialized = validator.deserializeToGraphStore(
+        snapshotObj as Parameters<typeof validator.deserializeToGraphStore>[0]
+      );
+      for (const ent of deserialized.dataStore.getEntities().values()) {
+        store.addEntity(
+          ent,
+          deserialized.layoutStore.getPosition(ent.id),
+          deserialized.layoutStore.isPinned(ent.id)
+        );
+      }
+      for (const [lid, edge] of deserialized.structureStore.links.entries()) {
+        const ldata = deserialized.dataStore.getLink(lid);
+        store.addLink(
+          ldata,
+          edge.source,
+          edge.target,
+          edge.isReversed,
+          deserialized.layoutStore.getLinkPath(lid)
+        );
+      }
+      return;
+    }
+
+    const rawEntities = Array.isArray(snapshotObj.entities) ? snapshotObj.entities : [];
+    const rawLinks = Array.isArray(snapshotObj.links) ? snapshotObj.links : [];
+    for (const rawEnt of rawEntities) {
+      const norm = normalizeIncomingDeltaEntity(rawEnt);
+      const eid = Guid.parse(norm.id);
+      const created = registry.createEntity(norm.typeName, norm.value, {
+        id: eid,
+        weight: norm.weight,
+        bookmark: norm.bookmark,
+        extraProperties: norm.properties,
+      });
+      created.notes = norm.notes;
+      store.addEntity(created, norm.position, norm.pinned);
+    }
+    for (const rawLnk of rawLinks) {
+      const norm = normalizeIncomingDeltaLink(rawLnk);
+      if (!norm.sourceId || !norm.targetId) continue;
+      const srcId = Guid.parse(norm.sourceId);
+      const dstId = Guid.parse(norm.targetId);
+      const lid = Guid.parse(norm.id);
+      if (
+        store.dataStore.hasEntity(srcId) &&
+        store.dataStore.hasEntity(dstId) &&
+        !store.structureStore.hasLink(lid)
+      ) {
+        store.addLink(
+          makeSimpleLink(lid, norm.label, norm.color, norm.weight),
+          srcId,
+          dstId,
+          norm.isReversed,
+          norm.path
+        );
+      }
+    }
+  });
+}
+
+async function resolveMcpSessionRoom(
+  c: Context,
+  args: Record<string, unknown>
+): Promise<CangrejoSessionRoomState> {
+  const mcpCtx = getMcpContext(c);
+  const argRoomId =
+    typeof args.roomId === 'string' && args.roomId.trim() ? args.roomId.trim() : null;
+
+  if (!mcpCtx.isCloudScoped) {
+    const roomId = argRoomId ?? 'expediente-apt29';
+    const session = getOrCreateSessionRoom(roomId);
+    session.pendingDeltas = [];
+    return session;
+  }
+
+  const rawSessionId = mcpCtx.hasUrlSessionId
+    ? mcpCtx.rawSessionId
+    : argRoomId ?? mcpCtx.rawSessionId;
+  const tenantId = mcpCtx.tenantId;
+  const dbSessionId = `${tenantId}:${rawSessionId}`;
+  const scopedRoomKey = `tenant:${tenantId}:session:${rawSessionId}`;
+  const caseTier: 'PLATINO' | 'ORO' =
+    mcpCtx.tier === 'PLATINO_ENTERPRISE' ? 'PLATINO' : 'ORO';
+
+  const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+  const r2 = extractR2Binding(c.env);
+
+  let meta = await BunSqliteVault.getMcpSessionMeta(activeD1, dbSessionId);
+  if (!meta && mcpCtx.token && mcpCtx.token.startsWith('CGRJ.')) {
+    const verified = BunSqliteVault.verifySignedLicenseToken(mcpCtx.token);
+    if (verified.valid && verified.claims) {
+      const sigHex = mcpCtx.token.split('.')[3] ?? '';
+      const sigHash = crypto.createHash('sha256').update(sigHex).digest('hex');
+      const expiresEpoch =
+        typeof verified.claims.expiresAt === 'number'
+          ? Math.floor(verified.claims.expiresAt / 1000)
+          : Math.floor(Date.now() / 1000) + 86400 * 365;
+      await BunSqliteVault.provisionMcpSessionJit(activeD1, {
+        tenantId,
+        tier: verified.claims.tier,
+        organizationName: verified.claims.organizationName,
+        licenseSignatureHash: sigHash,
+        creditsRemaining: verified.claims.credits ?? 0,
+        dbSessionId,
+        rawSessionId,
+        expiresEpoch,
+      });
+      meta = await BunSqliteVault.getMcpSessionMeta(activeD1, dbSessionId);
+    }
+  }
+
+  const d1LastSeq = meta?.last_seq ?? 0;
+  const d1CheckpointSeq = meta?.checkpoint_seq ?? 0;
+  const cached = sessionRooms.get(scopedRoomKey);
+
+  if (cached) {
+    // Case A: Fresh cache at D1 high-water mark and >= checkpointSeq
+    if (cached.lastSeq === d1LastSeq && cached.lastSeq >= d1CheckpointSeq) {
+      cached.pendingDeltas = [];
+      return cached;
+    }
+
+    // Case B: Compaction Boundary Invariant Violation (cached.lastSeq < d1CheckpointSeq)
+    if (cached.lastSeq < d1CheckpointSeq) {
+      sessionRooms.delete(scopedRoomKey);
+    } else if (cached.lastSeq < d1LastSeq) {
+      // Case C: Safe Delta Catchup from WAL [cached.lastSeq + 1 .. d1LastSeq]
+      const missedRows = await BunSqliteVault.fetchMutationsAfterSeq(
+        activeD1,
+        dbSessionId,
+        cached.lastSeq
+      );
+      cached.isApplyingRemoteDelta = true;
+      try {
+        for (const row of missedRows) {
+          const parsedDelta = JSON.parse(row.delta_json) as SerializedGraphModsDelta;
+          collabHub.applyDeltaToStore(cached.store, parsedDelta, registry);
+        }
+      } finally {
+        cached.isApplyingRemoteDelta = false;
+      }
+      cached.lastSeq = d1LastSeq;
+      cached.pendingDeltas = [];
+      return cached;
+    }
+  }
+
+  // Step 3: Cold Start Hydration from Two-Tier D1 BLOB / R2 Snapshot + Trailing WAL Deltas
+  const hydrated = await BunSqliteVault.hydrateSessionSnapshotAndDeltas(
+    activeD1,
+    r2,
+    dbSessionId
+  );
+  const freshSession = getOrCreateSessionRoom(rawSessionId, {
+    scopedRoomKey,
+    tenantId,
+    rawSessionId,
+    dbSessionId,
+    isCloudScoped: true,
+    caseTier,
+  });
+
+  freshSession.isApplyingRemoteDelta = true;
+  try {
+    if (hydrated.snapshotDoc) {
+      populateStoreFromSnapshotObject(freshSession.store, hydrated.snapshotDoc);
+    } else {
+      clearStoreAtomically(freshSession.store);
+    }
+    for (const row of hydrated.trailingMutations) {
+      const parsedDelta = JSON.parse(row.delta_json) as SerializedGraphModsDelta;
+      collabHub.applyDeltaToStore(freshSession.store, parsedDelta, registry);
+    }
+  } finally {
+    freshSession.isApplyingRemoteDelta = false;
+  }
+
+  freshSession.lastSeq = hydrated.lastSeq;
+  freshSession.pendingDeltas = [];
+  return freshSession;
+}
+
+async function commitSessionMutationIfCloud(
+  c: Context,
+  session: CangrejoSessionRoomState,
+  action:
+    | 'upsert'
+    | 'remove'
+    | 'clear'
+    | 'paste_iocs'
+    | 'delta'
+    | 'layout'
+    | 'undo'
+    | 'redo'
+): Promise<void> {
+  if (!session.isCloudScoped) return;
+
+  const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+  const r2 = extractR2Binding(c.env);
+
+  const deltasToCommit: SerializedGraphModsDelta[] =
+    session.pendingDeltas.length > 0
+      ? [...session.pendingDeltas]
+      : [
+          {
+            deltaId: `delta-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            roomId: session.scopedRoomKey,
+            authorId: 'mcp-agent',
+            lamportClock: Date.now(),
+            timestamp: Date.now(),
+            addedEntities: [],
+            updatedEntities: [],
+            deletedEntityIds: [],
+            addedLinks: [],
+            deletedLinkIds: [],
+            movedEntities: [],
+            pinChangedEntities: [],
+          },
+        ];
+  session.pendingDeltas = [];
+
+  for (const delta of deltasToCommit) {
+    const occResult = await BunSqliteVault.appendGraphMutationWithOcc(activeD1, {
+      dbSessionId: session.dbSessionId,
+      expectedNextSeq: session.lastSeq + 1,
+      deltaId: delta.deltaId,
+      authorId: 'mcp-agent',
+      action,
+      deltaPayload: JSON.stringify(delta),
+      onReconcileMissedDeltas: (missedDeltas) => {
+        session.isApplyingRemoteDelta = true;
+        try {
+          for (const row of missedDeltas) {
+            const missed = JSON.parse(row.delta_json) as SerializedGraphModsDelta;
+            collabHub.applyDeltaToStore(session.store, missed, registry);
+          }
+        } finally {
+          session.isApplyingRemoteDelta = false;
+        }
+      },
+    });
+    session.lastSeq = occResult.committedSeq;
+  }
+
+  if (session.lastSeq > 0 && session.lastSeq % 50 === 0) {
+    const serialized = serializeStoreToPayload(session.store);
+    const snapshotPromise = BunSqliteVault.persistGraphSnapshotToD1OrR2(activeD1, r2, {
+      tenantId: session.tenantId,
+      dbSessionId: session.dbSessionId,
+      checkpointSeq: session.lastSeq,
+      nodeCount: serialized.entities.length,
+      edgeCount: serialized.links.length,
+      serializedGraph: JSON.stringify(serialized),
+      pruneBeforeCheckpoint: true,
+    });
+    try {
+      const execCtx = c.executionCtx;
+      if (execCtx && typeof execCtx.waitUntil === 'function') {
+        execCtx.waitUntil(snapshotPromise);
+      } else {
+        await snapshotPromise;
+      }
+    } catch {
+      await snapshotPromise;
+    }
+  }
+}
+
+async function resolveStoreForMcpTool(
+  c: Context,
+  args: Record<string, unknown>
+): Promise<{
   session: CangrejoSessionRoomState;
   store: GraphStore;
   usedSessionStore: boolean;
-} {
-  const roomId =
-    typeof args.roomId === 'string' && args.roomId.trim() ? args.roomId.trim() : 'expediente-apt29';
-  const session = getOrCreateSessionRoom(roomId);
+}> {
+  const session = await resolveMcpSessionRoom(c, args);
   const hasExplicitEntities =
     (Array.isArray(args.entities) && args.entities.length > 0) ||
     (Array.isArray(args.nodes) && args.nodes.length > 0);
@@ -3100,11 +3620,19 @@ function resolveStoreForMcpTool(args: Record<string, unknown>): {
   };
 }
 
-cangrejoHonoApp.get('/api/mcp', (c) => {
+function handleMcpCatalogRequest(c: Context) {
+  const mcpCtx = getMcpContext(c);
   return c.json({
     ok: true,
     protocol: 'Model Context Protocol (MCP)',
     protocolVersion: '2024-11-05',
+    session: {
+      tenantId: mcpCtx.tenantId,
+      sessionId: mcpCtx.rawSessionId,
+      dbSessionId: mcpCtx.dbSessionId,
+      tier: mcpCtx.tier,
+      isCloudScoped: mcpCtx.isCloudScoped,
+    },
     serverInfo: {
       name: 'cangrejo-osint-mcp',
       version: '1.1.0',
@@ -3112,9 +3640,9 @@ cangrejoHonoApp.get('/api/mcp', (c) => {
     },
     tools: CANGREJO_MCP_TOOLS_CATALOG,
   });
-});
+}
 
-cangrejoHonoApp.post('/api/mcp', async (c) => {
+async function handleMcpJsonRpcDispatch(c: Context) {
   try {
     const rpc = (await c.req.json()) as {
       jsonrpc?: string;
@@ -3126,6 +3654,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
     const method = rpc.method ?? '';
 
     if (method === 'initialize') {
+      const mcpCtx = getMcpContext(c);
       return c.json({
         jsonrpc: '2.0',
         id: rpcId,
@@ -3137,6 +3666,8 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           serverInfo: {
             name: 'cangrejo-osint-mcp',
             version: '1.1.0',
+            tier: mcpCtx.tier,
+            sessionId: mcpCtx.rawSessionId,
           },
         },
       });
@@ -3167,7 +3698,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_discover_latent_links': {
-          const { session, store, usedSessionStore } = resolveStoreForMcpTool(args);
+          const { session, store, usedSessionStore } = await resolveStoreForMcpTool(c, args);
           const serialized = usedSessionStore ? serializeStoreToPayload(store) : null;
           toolOutput = await CloudflareWorkersAiEngine.discoverLatentLinksRrf(
             {
@@ -3189,12 +3720,12 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_classify_anomalies': {
-          const { store } = resolveStoreForMcpTool(args);
+          const { store } = await resolveStoreForMcpTool(c, args);
           toolOutput = await CloudflareWorkersAiEngine.classifyInfrastructureAnomalies(store, aiConfig);
           break;
         }
         case 'cangrejo_generate_daubert_dossier': {
-          const { session, store } = resolveStoreForMcpTool(args);
+          const { session, store } = await resolveStoreForMcpTool(c, args);
           toolOutput = await CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrative(
             store,
             {
@@ -3208,7 +3739,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_map_mitre_attack': {
-          const { store } = resolveStoreForMcpTool(args);
+          const { store } = await resolveStoreForMcpTool(c, args);
           toolOutput = CloudflareWorkersAiEngine.analyzeMitreAttackAndTimeline(store, aiConfig);
           break;
         }
@@ -3219,11 +3750,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
               : args;
           const imported = Stix21Exporter.importBundle(bundleArg);
           if (args.mergeIntoSession === true || typeof args.roomId === 'string') {
-            const roomId =
-              typeof args.roomId === 'string' && args.roomId.trim()
-                ? args.roomId.trim()
-                : 'expediente-apt29';
-            const session = getOrCreateSessionRoom(roomId);
+            const session = await resolveMcpSessionRoom(c, args);
             session.store.runInBatch(() => {
               for (const ent of imported.entities) {
                 const id = Guid.parse(ent.id);
@@ -3249,12 +3776,13 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
                 }
               }
             });
+            await commitSessionMutationIfCloud(c, session, 'upsert');
           }
           toolOutput = imported;
           break;
         }
         case 'cangrejo_ai_auto_investigate': {
-          const { session, store, usedSessionStore } = resolveStoreForMcpTool(args);
+          const { session, store, usedSessionStore } = await resolveStoreForMcpTool(c, args);
           const result = await CloudflareWorkersAiEngine.executeAutonomousInvestigation(
             store,
             {
@@ -3296,16 +3824,13 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
                 }
               }
             });
+            await commitSessionMutationIfCloud(c, session, 'upsert');
           }
           toolOutput = result;
           break;
         }
         case 'cangrejo_session_state': {
-          const roomId =
-            typeof args.roomId === 'string' && args.roomId.trim()
-              ? args.roomId.trim()
-              : 'expediente-apt29';
-          const session = getOrCreateSessionRoom(roomId);
+          const session = await resolveMcpSessionRoom(c, args);
           const payload = serializeStoreToPayload(session.store);
           const query = typeof args.query === 'string' ? args.query.trim().toLowerCase() : '';
           const typeFilter = typeof args.typeName === 'string' ? args.typeName.trim() : '';
@@ -3336,11 +3861,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_session_mutate_graph': {
-          const roomId =
-            typeof args.roomId === 'string' && args.roomId.trim()
-              ? args.roomId.trim()
-              : 'expediente-apt29';
-          const session = getOrCreateSessionRoom(roomId);
+          const session = await resolveMcpSessionRoom(c, args);
           const action = String(args.action ?? 'upsert');
           const store = session.store;
 
@@ -3348,6 +3869,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
             clearStoreAtomically(store);
             session.selectedEntityIds = [];
             emitSessionUiEvent(session, 'clear', {});
+            await commitSessionMutationIfCloud(c, session, 'clear');
             toolOutput = {
               ok: true,
               action: 'clear',
@@ -3358,6 +3880,9 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
 
           if (action === 'undo') {
             const applied = store.undoRedoManager.undo();
+            if (applied) {
+              await commitSessionMutationIfCloud(c, session, 'undo');
+            }
             toolOutput = {
               ok: true,
               action: 'undo',
@@ -3369,6 +3894,9 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
 
           if (action === 'redo') {
             const applied = store.undoRedoManager.redo();
+            if (applied) {
+              await commitSessionMutationIfCloud(c, session, 'redo');
+            }
             toolOutput = {
               ok: true,
               action: 'redo',
@@ -3403,6 +3931,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
 
             const removedSet = new Set(entityIds);
             session.selectedEntityIds = session.selectedEntityIds.filter((id) => !removedSet.has(id));
+            await commitSessionMutationIfCloud(c, session, 'remove');
             toolOutput = {
               ok: true,
               action: 'remove',
@@ -3472,6 +4001,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
               emitSessionUiEvent(session, 'select', {
                 selectedEntityIds: session.selectedEntityIds,
               });
+              await commitSessionMutationIfCloud(c, session, 'paste_iocs');
             }
 
             toolOutput = {
@@ -3530,6 +4060,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
             }
           });
 
+          await commitSessionMutationIfCloud(c, session, 'upsert');
           toolOutput = {
             ok: true,
             action: 'upsert',
@@ -3540,11 +4071,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_session_run_pesquisa': {
-          const roomId =
-            typeof args.roomId === 'string' && args.roomId.trim()
-              ? args.roomId.trim()
-              : 'expediente-apt29';
-          const session = getOrCreateSessionRoom(roomId);
+          const session = await resolveMcpSessionRoom(c, args);
           const store = session.store;
           const transformId = typeof args.transformId === 'string' ? args.transformId : 'all';
           const sliderLimit = typeof args.sliderLimit === 'number' ? args.sliderLimit : 12;
@@ -3664,6 +4191,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
             });
           }
 
+          await commitSessionMutationIfCloud(c, session, 'upsert');
           toolOutput = {
             ok: true,
             transformId,
@@ -3676,11 +4204,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_session_view_control': {
-          const roomId =
-            typeof args.roomId === 'string' && args.roomId.trim()
-              ? args.roomId.trim()
-              : 'expediente-apt29';
-          const session = getOrCreateSessionRoom(roomId);
+          const session = await resolveMcpSessionRoom(c, args);
 
           if (typeof args.preset === 'string' && args.preset.trim()) {
             loadSessionPresetIntoStore(session, args.preset.trim());
@@ -3688,7 +4212,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
 
           if (Array.isArray(args.selectEntityIds)) {
             session.selectedEntityIds = args.selectEntityIds.map(String);
-            collabHub.updatePresence(roomId, 'analyst-oro-01', {
+            collabHub.updatePresence(session.scopedRoomKey, 'analyst-oro-01', {
               selectedEntityIds: session.selectedEntityIds,
             });
             emitSessionUiEvent(session, 'select', {
@@ -3724,6 +4248,10 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
             });
           }
 
+          if (session.pendingDeltas.length > 0) {
+            await commitSessionMutationIfCloud(c, session, 'layout');
+          }
+
           toolOutput = {
             ok: true,
             layoutMetrics,
@@ -3732,11 +4260,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
           break;
         }
         case 'cangrejo_session_vault': {
-          const roomId =
-            typeof args.roomId === 'string' && args.roomId.trim()
-              ? args.roomId.trim()
-              : 'expediente-apt29';
-          const session = getOrCreateSessionRoom(roomId);
+          const session = await resolveMcpSessionRoom(c, args);
           const action = String(args.action ?? 'list_expedientes');
 
           if (action === 'list_expedientes') {
@@ -3776,6 +4300,21 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
                 ...serialized,
               },
             });
+
+            if (session.isCloudScoped) {
+              const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+              const r2 = extractR2Binding(c.env);
+              await BunSqliteVault.persistGraphSnapshotToD1OrR2(activeD1, r2, {
+                tenantId: session.tenantId,
+                dbSessionId: session.dbSessionId,
+                checkpointSeq: session.lastSeq,
+                nodeCount: serialized.entities.length,
+                edgeCount: serialized.links.length,
+                serializedGraph: JSON.stringify(serialized),
+                pruneBeforeCheckpoint: true,
+              });
+            }
+
             toolOutput = {
               ok: true,
               action: 'save_expediente',
@@ -3835,6 +4374,7 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
             session.expedienteId = saved.id;
             session.title = saved.title;
             session.caseTier = saved.caseTier;
+            await commitSessionMutationIfCloud(c, session, 'upsert');
             toolOutput = {
               ok: true,
               action: 'load_expediente',
@@ -3937,7 +4477,13 @@ cangrejoHonoApp.post('/api/mcp', async (c) => {
       500
     );
   }
-});
+}
+
+cangrejoHonoApp.get('/api/mcp', mcpAuthMiddleware, handleMcpCatalogRequest);
+cangrejoHonoApp.post('/api/mcp', mcpAuthMiddleware, handleMcpJsonRpcDispatch);
+cangrejoHonoApp.get('/api/mcp/:sessionId', mcpAuthMiddleware, handleMcpCatalogRequest);
+cangrejoHonoApp.post('/api/mcp/:sessionId', mcpAuthMiddleware, handleMcpJsonRpcDispatch);
+
 
 
 

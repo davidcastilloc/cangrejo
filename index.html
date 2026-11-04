@@ -668,6 +668,93 @@ AS13335</textarea>
                 </div>
               </div>
             </div>
+
+            <!-- Section: Model Context Protocol (MCP) Client Onboarding -->
+            <div class="lore-section" id="mcp-onboarding-section">
+              <div class="mcp-section-header">
+                <div class="mcp-title-wrap">
+                  <h3>🤖 Conexión de Asistentes IA &amp; Clientes MCP (Model Context Protocol)</h3>
+                  <span id="mcp-active-edition-tag" class="status-pill status-pill-community">COMMUNITY (LOCAL)</span>
+                </div>
+                <div class="mcp-health-badge" title="12 herramientas forenses listas para invocación">
+                  <span class="presence-dot"></span>
+                  <span id="lbl-mcp-tool-count" class="tabular">12 herramientas MCP activas</span>
+                </div>
+              </div>
+
+              <p class="mcp-desc-text">
+                Conecta <strong>Claude Desktop</strong>, <strong>Cursor</strong> o <strong>Claude Code CLI</strong> para interactuar directamente con el grafo pericial activo. Los agentes pueden mutar entidades, desofuscar IOCs, mapear tácticas MITRE ATT&amp;CK y sintetizar dictámenes Daubert.
+              </p>
+
+              <!-- Interactive Controls: Transport & Session Parameters -->
+              <div class="mcp-controls-grid">
+                <div class="mcp-field-group">
+                  <label for="inp-mcp-session-id" class="mcp-label">Expediente / Sala Activa (Session ID):</label>
+                  <input
+                    id="inp-mcp-session-id"
+                    type="text"
+                    class="palette-search-input"
+                    value="expediente-apt29"
+                    placeholder="expediente-apt29"
+                    aria-label="Identificador de sesión o expediente"
+                  />
+                </div>
+
+                <div id="mcp-token-container" class="mcp-field-group hidden">
+                  <label for="inp-mcp-auth-token" class="mcp-label">Token de Licencia (Bearer Auth):</label>
+                  <div class="mcp-input-action-row">
+                    <input
+                      id="inp-mcp-auth-token"
+                      type="password"
+                      class="palette-search-input mcp-token-input"
+                      placeholder="CGRJ.ORO_PRO... o pega tu clave"
+                      value=""
+                      aria-label="Token de autenticación Bearer"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                    <button id="btn-mcp-toggle-token" type="button" class="btn btn-subtle" aria-label="Mostrar clave de licencia">
+                      👁️ Ver
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Sub-transport toggle for Community edition -->
+                <div id="mcp-community-transport-toggle" class="mcp-field-group">
+                  <label class="mcp-label">Protocolo de Transporte:</label>
+                  <div class="console-tabs" role="tablist">
+                    <button id="btn-transport-stdio" type="button" class="tab-btn active" role="tab" aria-selected="true">Stdio (Local Bun)</button>
+                    <button id="btn-transport-http" type="button" class="tab-btn" role="tab" aria-selected="false">HTTP / SSE (:3000)</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Client Selector Tabs -->
+              <div class="mcp-client-tabs-bar">
+                <div class="console-tabs" role="tablist" aria-label="Clientes MCP compatibles">
+                  <button id="tab-client-claude-desktop" type="button" class="tab-btn active" role="tab" aria-selected="true">
+                    Claude Desktop
+                  </button>
+                  <button id="tab-client-cursor" type="button" class="tab-btn" role="tab" aria-selected="false">
+                    Cursor (.cursor/mcp.json)
+                  </button>
+                  <button id="tab-client-claude-code" type="button" class="tab-btn" role="tab" aria-selected="false">
+                    Claude Code CLI
+                  </button>
+                </div>
+                <span id="lbl-mcp-filepath" class="mcp-filepath-hint">
+                  Archivo: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>
+                </span>
+              </div>
+
+              <!-- Code Block with Copy Action -->
+              <div class="mcp-code-container">
+                <pre id="mcp-snippet-output" class="console-output mcp-code-block"></pre>
+                <button id="btn-mcp-copy-snippet" type="button" class="btn btn-primary mcp-copy-btn" aria-label="Copiar configuración al portapapeles">
+                  📋 Copiar Configuración
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

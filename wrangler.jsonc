@@ -20,6 +20,12 @@
       "migrations_dir": "packages/database-d1/migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "CANGREJO_VAULT_R2",
+      "bucket_name": "cangrejo-vault-snapshots"
+    }
+  ],
   "vectorize": [
     {
       "binding": "VECTORIZE_INDEX",

@@ -2148,12 +2148,282 @@ loreModalBackdrop?.addEventListener('click', (e) => {
   }
 });
 
-// Wire Odoo-Style Open-Core Edition & Enterprise Cloud Modal
+// Wire Odoo-Style Open-Core Edition & Enterprise Cloud Modal + MCP Client Onboarding
 const editionModalBackdrop = document.getElementById('edition-modal-backdrop');
 const lblEditionTier = document.getElementById('lbl-edition-tier');
 const lblEditionSubtitle = document.getElementById('lbl-edition-subtitle');
 const inpEditionOrg = document.getElementById('inp-edition-org') as HTMLInputElement | null;
 const inpEditionKey = document.getElementById('inp-edition-key') as HTMLInputElement | null;
+
+type McpClientType = 'claude-desktop' | 'cursor' | 'claude-code';
+type McpTransportType = 'stdio' | 'http';
+
+interface McpUiState {
+  client: McpClientType;
+  transport: McpTransportType;
+  editionTier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+  licenseKey: string | null;
+  sessionId: string;
+}
+
+const MCP_STORAGE_TOKEN_KEY = 'cangrejo_mcp_auth_token';
+
+const mcpState: McpUiState = {
+  client: 'claude-desktop',
+  transport: 'stdio',
+  editionTier: 'COMMUNITY',
+  licenseKey: null,
+  sessionId: 'expediente-apt29',
+};
+
+export function initMcpModalController(): void {
+  const sessionInp = document.getElementById('inp-mcp-session-id') as HTMLInputElement | null;
+  sessionInp?.addEventListener('input', (e) => {
+    mcpState.sessionId = (e.target as HTMLInputElement).value.trim() || 'expediente-apt29';
+    renderMcpSnippet();
+  });
+
+  const tokenInp = document.getElementById('inp-mcp-auth-token') as HTMLInputElement | null;
+  tokenInp?.addEventListener('input', (e) => {
+    const val = (e.target as HTMLInputElement).value.trim();
+    mcpState.licenseKey = val.length > 0 ? val : null;
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      if (val) window.sessionStorage.setItem(MCP_STORAGE_TOKEN_KEY, val);
+      else window.sessionStorage.removeItem(MCP_STORAGE_TOKEN_KEY);
+    }
+    renderMcpSnippet();
+  });
+
+  const toggleBtn = document.getElementById('btn-mcp-toggle-token');
+  toggleBtn?.addEventListener('click', () => {
+    if (!tokenInp) return;
+    const isPassword = tokenInp.type === 'password';
+    tokenInp.type = isPassword ? 'text' : 'password';
+    toggleBtn.textContent = isPassword ? '🙈 Ocultar' : '👁️ Ver';
+    toggleBtn.setAttribute(
+      'aria-label',
+      isPassword ? 'Ocultar clave de licencia' : 'Mostrar clave de licencia'
+    );
+  });
+
+  const clientTabs: Array<{ id: string; client: McpClientType }> = [
+    { id: 'tab-client-claude-desktop', client: 'claude-desktop' },
+    { id: 'tab-client-cursor', client: 'cursor' },
+    { id: 'tab-client-claude-code', client: 'claude-code' },
+  ];
+
+  for (const { id, client } of clientTabs) {
+    document.getElementById(id)?.addEventListener('click', () => {
+      mcpState.client = client;
+      for (const t of clientTabs) {
+        const btn = document.getElementById(t.id);
+        const isActive = t.client === client;
+        btn?.classList.toggle('active', isActive);
+        btn?.setAttribute('aria-selected', String(isActive));
+      }
+      renderMcpSnippet();
+    });
+  }
+
+  const stdioBtn = document.getElementById('btn-transport-stdio');
+  const httpBtn = document.getElementById('btn-transport-http');
+  stdioBtn?.addEventListener('click', () => {
+    mcpState.transport = 'stdio';
+    stdioBtn.classList.add('active');
+    stdioBtn.setAttribute('aria-selected', 'true');
+    httpBtn?.classList.remove('active');
+    httpBtn?.setAttribute('aria-selected', 'false');
+    renderMcpSnippet();
+  });
+  httpBtn?.addEventListener('click', () => {
+    mcpState.transport = 'http';
+    httpBtn.classList.add('active');
+    httpBtn.setAttribute('aria-selected', 'true');
+    stdioBtn?.classList.remove('active');
+    stdioBtn?.setAttribute('aria-selected', 'false');
+    renderMcpSnippet();
+  });
+
+  const copyBtn = document.getElementById('btn-mcp-copy-snippet');
+  copyBtn?.addEventListener('click', async () => {
+    const codeEl = document.getElementById('mcp-snippet-output');
+    if (!codeEl?.textContent) return;
+    try {
+      await navigator.clipboard.writeText(codeEl.textContent);
+      const originalText = copyBtn.textContent;
+      copyBtn.textContent = '✅ ¡Copiado!';
+      setTimeout(() => {
+        copyBtn.textContent = originalText;
+      }, 2000);
+    } catch {
+      // Fallback
+    }
+  });
+
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    const cachedToken = window.sessionStorage.getItem(MCP_STORAGE_TOKEN_KEY);
+    if (cachedToken && tokenInp) {
+      tokenInp.value = cachedToken;
+      mcpState.licenseKey = cachedToken;
+    }
+  }
+
+  renderMcpSnippet();
+}
+
+export function updateMcpOnboardingView(
+  editionTier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE',
+  rawKey: string | null
+): void {
+  mcpState.editionTier = editionTier;
+
+  const tokenInp = document.getElementById('inp-mcp-auth-token') as HTMLInputElement | null;
+  const cached =
+    typeof window !== 'undefined' && window.sessionStorage
+      ? window.sessionStorage.getItem(MCP_STORAGE_TOKEN_KEY)
+      : null;
+
+  if (rawKey && !rawKey.includes('****')) {
+    mcpState.licenseKey = rawKey;
+    if (tokenInp) tokenInp.value = rawKey;
+  } else if (cached) {
+    mcpState.licenseKey = cached;
+    if (tokenInp) tokenInp.value = cached;
+  }
+
+  renderMcpSnippet();
+}
+
+function renderMcpSnippet(): void {
+  const isCloud = mcpState.editionTier !== 'COMMUNITY';
+  const host = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:3000';
+  const cloudHost =
+    host.includes('127.0.0.1') || host.includes('localhost')
+      ? 'https://cangrejo.osint.network'
+      : host;
+  const token = mcpState.licenseKey || 'CGRJ-LICENSE-TOKEN-AQUI';
+  const session = mcpState.sessionId.trim() || 'expediente-apt29';
+
+  let snippet = '';
+  let pathHint = '';
+
+  if (mcpState.client === 'claude-desktop') {
+    pathHint =
+      'Archivo: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (o <code>%APPDATA%\\Claude\\...</code>)';
+    if (!isCloud) {
+      snippet = JSON.stringify(
+        {
+          mcpServers: {
+            cangrejo: {
+              command: 'bun',
+              args: ['run', 'apps/web/mcpStdioServer.ts'],
+              cwd: '/path/to/cangrejo',
+              env: { CANGREJO_MCP_URL: `${host}/api/mcp` },
+            },
+          },
+        },
+        null,
+        2
+      );
+    } else {
+      snippet = JSON.stringify(
+        {
+          mcpServers: {
+            'cangrejo-cloud': {
+              command: 'bun',
+              args: ['run', 'apps/web/mcpStdioServer.ts'],
+              cwd: '/path/to/cangrejo',
+              env: {
+                CANGREJO_MCP_URL: `${cloudHost}/api/mcp/${session}`,
+                CANGREJO_MCP_TOKEN: token,
+              },
+            },
+          },
+        },
+        null,
+        2
+      );
+    }
+  } else if (mcpState.client === 'cursor') {
+    pathHint = 'Archivo: <code>.cursor/mcp.json</code> en la raíz de tu proyecto';
+    if (!isCloud) {
+      if (mcpState.transport === 'stdio') {
+        snippet = JSON.stringify(
+          {
+            mcpServers: {
+              cangrejo: {
+                command: 'bun',
+                args: ['run', 'mcp:stdio'],
+                cwd: '/path/to/cangrejo',
+              },
+            },
+          },
+          null,
+          2
+        );
+      } else {
+        snippet = JSON.stringify(
+          {
+            mcpServers: {
+              cangrejo: { url: `${host}/api/mcp` },
+            },
+          },
+          null,
+          2
+        );
+      }
+    } else {
+      snippet = JSON.stringify(
+        {
+          mcpServers: {
+            'cangrejo-cloud': {
+              url: `${cloudHost}/api/mcp/${session}`,
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          },
+        },
+        null,
+        2
+      );
+    }
+  } else if (mcpState.client === 'claude-code') {
+    pathHint = 'Ejecuta directamente en tu terminal:';
+    if (!isCloud) {
+      if (mcpState.transport === 'stdio') {
+        snippet = `claude mcp add cangrejo bun run --cwd /path/to/cangrejo mcp:stdio`;
+      } else {
+        snippet = `claude mcp add --transport http cangrejo ${host}/api/mcp`;
+      }
+    } else {
+      snippet = `claude mcp add --transport http --header "Authorization: Bearer ${token}" cangrejo-cloud ${cloudHost}/api/mcp/${session}`;
+    }
+  }
+
+  const outEl = document.getElementById('mcp-snippet-output');
+  if (outEl) outEl.textContent = snippet;
+  const hintEl = document.getElementById('lbl-mcp-filepath');
+  if (hintEl) hintEl.innerHTML = pathHint;
+
+  const tokenBox = document.getElementById('mcp-token-container');
+  const transportToggle = document.getElementById('mcp-community-transport-toggle');
+  const editionTag = document.getElementById('mcp-active-edition-tag');
+
+  if (isCloud) {
+    tokenBox?.classList.remove('hidden');
+    transportToggle?.classList.add('hidden');
+    if (editionTag) {
+      editionTag.textContent = `${mcpState.editionTier} (CLOUD SAAS)`;
+      editionTag.className = 'status-pill status-pill-cloud';
+    }
+  } else {
+    tokenBox?.classList.add('hidden');
+    transportToggle?.classList.remove('hidden');
+    if (editionTag) {
+      editionTag.textContent = 'COMMUNITY (LOCAL)';
+      editionTag.className = 'status-pill status-pill-community';
+    }
+  }
+}
 
 async function syncEditionBadge(): Promise<void> {
   try {
@@ -2164,6 +2434,7 @@ async function syncEditionBadge(): Promise<void> {
       editionTier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
       editionLabel: string;
       creditsRemaining: number;
+      licenseKeyMasked?: string | null;
       whiteLabel?: { organizationName: string };
     };
     if (!data.ok) return;
@@ -2181,6 +2452,10 @@ async function syncEditionBadge(): Promise<void> {
     if (inpEditionOrg && data.whiteLabel?.organizationName) {
       inpEditionOrg.value = data.whiteLabel.organizationName;
     }
+    updateMcpOnboardingView(
+      data.editionTier,
+      inpEditionKey?.value.trim() || data.licenseKeyMasked || null
+    );
   } catch {
     // Non-fatal UI enrichment
   }
@@ -2209,6 +2484,14 @@ async function activateEditionTier(
       whiteLabel?: { organizationName: string; watermarkEnabled: boolean };
     };
     if (data.ok) {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        if (tier !== 'COMMUNITY' && licenseKey) {
+          window.sessionStorage.setItem(MCP_STORAGE_TOKEN_KEY, licenseKey);
+        } else {
+          window.sessionStorage.removeItem(MCP_STORAGE_TOKEN_KEY);
+        }
+      }
+      updateMcpOnboardingView(tier, tier !== 'COMMUNITY' ? licenseKey : null);
       await syncEditionBadge();
       appendLog(
         `Edición actualizada: ${data.editionLabel} • Créditos OSINT: ${data.creditsRemaining} • Marca Blanca: ${
@@ -2918,6 +3201,7 @@ document.getElementById('btn-ai-mitre')?.addEventListener('click', async () => {
 });
 
 resizeCanvas();
+initMcpModalController();
 void syncEditionBadge();
 loadPreset('apt29');
 requestAnimationFrame(renderFrame);

@@ -103,6 +103,72 @@ export interface CloudflareD1DatabaseLike {
   ): Promise<Array<{ results?: T[] }>>;
 }
 
+export interface CloudflareR2ObjectBodyLike {
+  arrayBuffer(): Promise<ArrayBuffer>;
+  customMetadata?: Record<string, string>;
+}
+
+export interface CloudflareR2BucketLike {
+  put(
+    key: string,
+    value: Uint8Array | ArrayBuffer | string,
+    options?: { customMetadata?: Record<string, string> }
+  ): Promise<unknown>;
+  get(key: string): Promise<CloudflareR2ObjectBodyLike | null>;
+}
+
+export interface McpSessionConsolidatedMeta {
+  session_id: string;
+  tenant_id: string;
+  raw_session_id: string;
+  status: string;
+  last_seq: number;
+  expires_at: number;
+  checkpoint_seq: number;
+  storage_tier: 'd1_inline' | 'r2_offload' | null;
+  snapshot_r2_key: string | null;
+  byte_size: number;
+  payload_sha256: string | null;
+}
+
+export interface McpGraphMutationRow {
+  seq: number;
+  delta_id: string;
+  author_id: string;
+  action: string;
+  delta_json: string;
+}
+
+export const MAX_D1_INLINE_SNAPSHOT_BYTES = 1_500_000;
+
+export async function compressGraphSnapshot(jsonText: string): Promise<Uint8Array> {
+  const inputBytes = new TextEncoder().encode(jsonText);
+  if (typeof CompressionStream !== 'undefined') {
+    const cs = new CompressionStream('gzip');
+    const readPromise = new Response(cs.readable).arrayBuffer();
+    const writer = cs.writable.getWriter();
+    await writer.write(inputBytes);
+    await writer.close();
+    return new Uint8Array(await readPromise);
+  }
+  const zlib = await import('node:zlib');
+  return new Uint8Array(zlib.gzipSync(inputBytes));
+}
+
+export async function decompressGraphSnapshot(compressedBytes: Uint8Array): Promise<string> {
+  if (typeof DecompressionStream !== 'undefined') {
+    const ds = new DecompressionStream('gzip');
+    const readPromise = new Response(ds.readable).arrayBuffer();
+    const writer = ds.writable.getWriter();
+    await writer.write(new Uint8Array(compressedBytes));
+    await writer.close();
+    const decompressed = new Uint8Array(await readPromise);
+    return new TextDecoder().decode(decompressed);
+  }
+  const zlib = await import('node:zlib');
+  return new TextDecoder().decode(zlib.gunzipSync(compressedBytes));
+}
+
 interface SqliteStatementLike {
   run(...params: unknown[]): unknown;
   get(...params: unknown[]): unknown;
@@ -487,6 +553,91 @@ export class BunSqliteVault {
         current_digest_hex TEXT NOT NULL,
         detected_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS cangrejo_tenant_metadata (
+        tenant_id TEXT PRIMARY KEY,
+        tier TEXT NOT NULL DEFAULT 'COMMUNITY'
+          CHECK (tier IN ('COMMUNITY', 'ORO_PRO', 'PLATINO_ENTERPRISE')),
+        license_key_masked TEXT,
+        license_signature_hash TEXT,
+        organization_name TEXT NOT NULL,
+        max_active_mcp_sessions INTEGER NOT NULL DEFAULT 5,
+        max_entities_per_session INTEGER NOT NULL DEFAULT 25000,
+        credits_remaining INTEGER NOT NULL DEFAULT 0,
+        settings_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tenant_tier ON cangrejo_tenant_metadata(tier);
+
+      CREATE TABLE IF NOT EXISTS cangrejo_mcp_sessions (
+        session_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES cangrejo_tenant_metadata(tenant_id) ON DELETE CASCADE,
+        raw_session_id TEXT NOT NULL,
+        user_id TEXT,
+        session_token_hash TEXT,
+        title TEXT NOT NULL DEFAULT 'Expediente MCP',
+        case_tier TEXT NOT NULL DEFAULT 'ORO'
+          CHECK (case_tier IN ('PLATINO', 'ORO', 'PLATA', 'BRONCE')),
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK (status IN ('active', 'idle', 'closed', 'revoked')),
+        last_seq INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        last_active_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        expires_at INTEGER NOT NULL,
+        CONSTRAINT uq_tenant_raw_session UNIQUE (tenant_id, raw_session_id)
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_session_token
+        ON cangrejo_mcp_sessions(session_token_hash)
+        WHERE session_token_hash IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_session_tenant
+        ON cangrejo_mcp_sessions(tenant_id, status);
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_session_expires
+        ON cangrejo_mcp_sessions(expires_at);
+
+      CREATE TABLE IF NOT EXISTS cangrejo_session_graphs (
+        session_id TEXT PRIMARY KEY REFERENCES cangrejo_mcp_sessions(session_id) ON DELETE CASCADE,
+        checkpoint_seq INTEGER NOT NULL DEFAULT 0,
+        node_count INTEGER NOT NULL DEFAULT 0,
+        edge_count INTEGER NOT NULL DEFAULT 0,
+        storage_tier TEXT NOT NULL DEFAULT 'd1_inline'
+          CHECK (storage_tier IN ('d1_inline', 'r2_offload')),
+        compression_codec TEXT NOT NULL DEFAULT 'gzip'
+          CHECK (compression_codec IN ('gzip', 'cgrx', 'none')),
+        snapshot_payload BLOB,
+        snapshot_r2_key TEXT,
+        byte_size INTEGER NOT NULL DEFAULT 0,
+        payload_sha256 TEXT NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE TABLE IF NOT EXISTS cangrejo_graph_mutations (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES cangrejo_mcp_sessions(session_id) ON DELETE CASCADE,
+        seq INTEGER NOT NULL,
+        delta_id TEXT NOT NULL,
+        author_id TEXT NOT NULL DEFAULT 'mcp-agent',
+        action TEXT NOT NULL
+          CHECK (action IN ('upsert', 'remove', 'clear', 'paste_iocs', 'delta', 'layout', 'undo', 'redo')),
+        delta_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        CONSTRAINT uq_session_seq UNIQUE (session_id, seq)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mutations_created_at
+        ON cangrejo_graph_mutations(created_at);
+
+      CREATE TRIGGER IF NOT EXISTS trg_tenant_metadata_updated_at
+      AFTER UPDATE ON cangrejo_tenant_metadata
+      FOR EACH ROW
+      WHEN OLD.updated_at = NEW.updated_at AND unixepoch() != OLD.updated_at
+      BEGIN
+        UPDATE cangrejo_tenant_metadata SET updated_at = unixepoch() WHERE tenant_id = OLD.tenant_id;
+      END;
     `);
   }
 
@@ -1499,6 +1650,628 @@ export class BunSqliteVault {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Exposes this `BunSqliteVault` SQLite instance via the asynchronous `CloudflareD1DatabaseLike`
+   * contract (`prepare`, `bind`, `run`, `first`, `all`, and atomic transactional `batch`).
+   * Used both for local Community parity and for deterministic Gate 12 D1 integration tests.
+   */
+  public asD1Database(): CloudflareD1DatabaseLike {
+    const db = this.db;
+
+    interface BoundSqliteStmt extends CloudflareD1PreparedStatementLike {
+      __sql: string;
+      __params: unknown[];
+    }
+
+    const makeStatement = (query: string, boundParams: unknown[] = []): BoundSqliteStmt => ({
+      __sql: query,
+      __params: boundParams,
+      bind(...values: unknown[]): CloudflareD1PreparedStatementLike {
+        return makeStatement(query, values);
+      },
+      async run<T = unknown>(): Promise<{ success?: boolean; results?: T[] }> {
+        const stmt = db.prepare(query);
+        stmt.run(...boundParams);
+        return { success: true, results: [] };
+      },
+      async first<T = unknown>(colName?: string): Promise<T | null> {
+        const stmt = db.prepare(query);
+        const row = stmt.get(...boundParams) as Record<string, unknown> | undefined;
+        if (!row) return null;
+        if (colName) return ((row[colName] as T) ?? null);
+        return row as unknown as T;
+      },
+      async all<T = unknown>(): Promise<{ results?: T[] }> {
+        const stmt = db.prepare(query);
+        const rows = stmt.all(...boundParams) as T[];
+        return { results: Array.isArray(rows) ? rows : [] };
+      },
+    });
+
+    return {
+      prepare(query: string): CloudflareD1PreparedStatementLike {
+        return makeStatement(query);
+      },
+      async exec(query: string): Promise<unknown> {
+        db.exec(query);
+        return { ok: true };
+      },
+      async batch<T = unknown>(
+        statements: CloudflareD1PreparedStatementLike[]
+      ): Promise<Array<{ results?: T[] }>> {
+        const results: Array<{ results?: T[] }> = [];
+        db.exec('BEGIN IMMEDIATE;');
+        try {
+          for (const rawStmt of statements) {
+            const internal = rawStmt as unknown as Partial<BoundSqliteStmt>;
+            if (typeof internal.__sql === 'string') {
+              const trimmed = internal.__sql.trim().toUpperCase();
+              const stmt = db.prepare(internal.__sql);
+              const params = internal.__params ?? [];
+              if (trimmed.startsWith('SELECT')) {
+                const rows = stmt.all(...params) as T[];
+                results.push({ results: Array.isArray(rows) ? rows : [] });
+              } else {
+                stmt.run(...params);
+                results.push({ results: [] });
+              }
+            } else {
+              const res = await rawStmt.run<T>();
+              results.push({ results: res.results ?? [] });
+            }
+          }
+          db.exec('COMMIT;');
+          return results;
+        } catch (err) {
+          try {
+            db.exec('ROLLBACK;');
+          } catch {
+            // Ignore rollback error if transaction already aborted
+          }
+          throw err;
+        }
+      },
+    };
+  }
+
+  public static async ensureMcpSessionD1TablesSafe(
+    d1: CloudflareD1DatabaseLike | undefined
+  ): Promise<void> {
+    if (!d1 || typeof d1.prepare !== 'function') return;
+    try {
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_tenant_metadata (
+            tenant_id TEXT PRIMARY KEY,
+            tier TEXT NOT NULL DEFAULT 'COMMUNITY'
+              CHECK (tier IN ('COMMUNITY', 'ORO_PRO', 'PLATINO_ENTERPRISE')),
+            license_key_masked TEXT,
+            license_signature_hash TEXT,
+            organization_name TEXT NOT NULL,
+            max_active_mcp_sessions INTEGER NOT NULL DEFAULT 5,
+            max_entities_per_session INTEGER NOT NULL DEFAULT 25000,
+            credits_remaining INTEGER NOT NULL DEFAULT 0,
+            settings_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+          )`
+        )
+        .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_mcp_sessions (
+            session_id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL REFERENCES cangrejo_tenant_metadata(tenant_id) ON DELETE CASCADE,
+            raw_session_id TEXT NOT NULL,
+            user_id TEXT,
+            session_token_hash TEXT,
+            title TEXT NOT NULL DEFAULT 'Expediente MCP',
+            case_tier TEXT NOT NULL DEFAULT 'ORO'
+              CHECK (case_tier IN ('PLATINO', 'ORO', 'PLATA', 'BRONCE')),
+            status TEXT NOT NULL DEFAULT 'active'
+              CHECK (status IN ('active', 'idle', 'closed', 'revoked')),
+            last_seq INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            last_active_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            expires_at INTEGER NOT NULL,
+            CONSTRAINT uq_tenant_raw_session UNIQUE (tenant_id, raw_session_id)
+          )`
+        )
+        .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_session_graphs (
+            session_id TEXT PRIMARY KEY REFERENCES cangrejo_mcp_sessions(session_id) ON DELETE CASCADE,
+            checkpoint_seq INTEGER NOT NULL DEFAULT 0,
+            node_count INTEGER NOT NULL DEFAULT 0,
+            edge_count INTEGER NOT NULL DEFAULT 0,
+            storage_tier TEXT NOT NULL DEFAULT 'd1_inline'
+              CHECK (storage_tier IN ('d1_inline', 'r2_offload')),
+            compression_codec TEXT NOT NULL DEFAULT 'gzip'
+              CHECK (compression_codec IN ('gzip', 'cgrx', 'none')),
+            snapshot_payload BLOB,
+            snapshot_r2_key TEXT,
+            byte_size INTEGER NOT NULL DEFAULT 0,
+            payload_sha256 TEXT NOT NULL,
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+          )`
+        )
+        .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_graph_mutations (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES cangrejo_mcp_sessions(session_id) ON DELETE CASCADE,
+            seq INTEGER NOT NULL,
+            delta_id TEXT NOT NULL,
+            author_id TEXT NOT NULL DEFAULT 'mcp-agent',
+            action TEXT NOT NULL
+              CHECK (action IN ('upsert', 'remove', 'clear', 'paste_iocs', 'delta', 'layout', 'undo', 'redo')),
+            delta_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            CONSTRAINT uq_session_seq UNIQUE (session_id, seq)
+          )`
+        )
+        .run();
+    } catch {
+      // Ignore on pre-migrated D1 databases
+    }
+  }
+
+  /**
+   * Atomically provisions both `cangrejo_tenant_metadata` and `cangrejo_mcp_sessions`
+   * via `d1.batch([upsertTenantStmt, upsertSessionStmt])` (Just-In-Time provisioning).
+   */
+  public static async provisionMcpSessionJit(
+    d1: CloudflareD1DatabaseLike,
+    params: {
+      tenantId: string;
+      tier: CangrejoEditionTier;
+      organizationName: string;
+      licenseSignatureHash: string | null;
+      creditsRemaining: number;
+      dbSessionId: string;
+      rawSessionId: string;
+      expiresEpoch: number;
+      sessionTokenHash?: string | null;
+    }
+  ): Promise<void> {
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const maxSessions = params.tier === 'PLATINO_ENTERPRISE' ? 25 : 5;
+    const maxEntities = params.tier === 'PLATINO_ENTERPRISE' ? 100_000 : 25_000;
+    const caseTier = params.tier === 'PLATINO_ENTERPRISE' ? 'PLATINO' : 'ORO';
+
+    const upsertTenantStmt = d1
+      .prepare(
+        `INSERT INTO cangrejo_tenant_metadata (
+          tenant_id, tier, organization_name, license_signature_hash,
+          max_active_mcp_sessions, max_entities_per_session, credits_remaining, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+        ON CONFLICT(tenant_id) DO UPDATE SET
+          tier = excluded.tier,
+          organization_name = excluded.organization_name,
+          license_signature_hash = excluded.license_signature_hash,
+          updated_at = unixepoch()`
+      )
+      .bind(
+        params.tenantId,
+        params.tier,
+        params.organizationName,
+        params.licenseSignatureHash,
+        maxSessions,
+        maxEntities,
+        params.creditsRemaining
+      );
+
+    const upsertSessionStmt = d1
+      .prepare(
+        `INSERT INTO cangrejo_mcp_sessions (
+          session_id, tenant_id, raw_session_id, session_token_hash, title, case_tier,
+          status, last_seq, created_at, last_active_at, expires_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'active', 0, unixepoch(), unixepoch(), ?)
+        ON CONFLICT(session_id) DO UPDATE SET
+          last_active_at = unixepoch(),
+          status = 'active'`
+      )
+      .bind(
+        params.dbSessionId,
+        params.tenantId,
+        params.rawSessionId,
+        params.sessionTokenHash ?? null,
+        `Expediente ${params.rawSessionId}`,
+        caseTier,
+        params.expiresEpoch
+      );
+
+    if (typeof d1.batch === 'function') {
+      await d1.batch([upsertTenantStmt, upsertSessionStmt]);
+    } else {
+      await upsertTenantStmt.run();
+      await upsertSessionStmt.run();
+    }
+  }
+
+  /**
+   * Retrieves consolidated session and checkpoint sequence state in a single indexed read.
+   */
+  public static async getMcpSessionMeta(
+    d1: CloudflareD1DatabaseLike,
+    dbSessionId: string
+  ): Promise<McpSessionConsolidatedMeta | null> {
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const row = await d1
+      .prepare(
+        `SELECT
+          s.session_id, s.tenant_id, s.raw_session_id, s.status, s.last_seq, s.expires_at,
+          COALESCE(g.checkpoint_seq, 0) AS checkpoint_seq,
+          g.storage_tier, g.snapshot_r2_key, COALESCE(g.byte_size, 0) AS byte_size, g.payload_sha256
+        FROM cangrejo_mcp_sessions s
+        LEFT JOIN cangrejo_session_graphs g ON s.session_id = g.session_id
+        WHERE s.session_id = ?`
+      )
+      .bind(dbSessionId)
+      .first<McpSessionConsolidatedMeta>();
+
+    if (!row) return null;
+    return {
+      session_id: row.session_id,
+      tenant_id: row.tenant_id,
+      raw_session_id: row.raw_session_id,
+      status: row.status,
+      last_seq: Number(row.last_seq ?? 0),
+      expires_at: Number(row.expires_at ?? 0),
+      checkpoint_seq: Number(row.checkpoint_seq ?? 0),
+      storage_tier: row.storage_tier ?? null,
+      snapshot_r2_key: row.snapshot_r2_key ?? null,
+      byte_size: Number(row.byte_size ?? 0),
+      payload_sha256: row.payload_sha256 ?? null,
+    };
+  }
+
+  /**
+   * Fetches all WAL graph mutations for `dbSessionId` with `seq > afterSeq` in ascending order.
+   */
+  public static async fetchMutationsAfterSeq(
+    d1: CloudflareD1DatabaseLike,
+    dbSessionId: string,
+    afterSeq: number
+  ): Promise<McpGraphMutationRow[]> {
+    const res = await d1
+      .prepare(
+        `SELECT seq, delta_id, author_id, action, delta_json
+         FROM cangrejo_graph_mutations
+         WHERE session_id = ? AND seq > ?
+         ORDER BY seq ASC`
+      )
+      .bind(dbSessionId, afterSeq)
+      .all<McpGraphMutationRow>();
+    const rows = Array.isArray(res.results) ? res.results : [];
+    return rows.map((r) => ({
+      seq: Number(r.seq),
+      delta_id: r.delta_id,
+      author_id: r.author_id,
+      action: r.action,
+      delta_json: r.delta_json,
+    }));
+  }
+
+  /**
+   * Atomically appends a WAL mutation and advances `cangrejo_mcp_sessions.last_seq`
+   * using `d1.batch([insertMutationStmt, updateSessionStmt])` with Optimistic Concurrency Control (OCC).
+   * If a concurrent isolate wins the same `(session_id, seq)` slot (`SQLITE_CONSTRAINT_UNIQUE`),
+   * the batch rolls back, missed deltas are fetched and passed to `onReconcileMissedDeltas`,
+   * and the append retries at `max(seq) + 1` (up to `maxRetries` times).
+   */
+  public static async appendGraphMutationWithOcc(
+    d1: CloudflareD1DatabaseLike,
+    params: {
+      dbSessionId: string;
+      expectedNextSeq: number;
+      deltaId: string;
+      authorId?: string;
+      action: 'upsert' | 'remove' | 'clear' | 'paste_iocs' | 'delta' | 'layout' | 'undo' | 'redo';
+      deltaPayload: Record<string, unknown> | string;
+      maxRetries?: number;
+      onReconcileMissedDeltas?: (missed: McpGraphMutationRow[]) => Promise<void> | void;
+    }
+  ): Promise<{ committedSeq: number; retries: number; reconciledDeltas: McpGraphMutationRow[] }> {
+    const maxRetries = params.maxRetries ?? 3;
+    let nextSeq = Math.max(1, params.expectedNextSeq);
+    let retries = 0;
+    const reconciledDeltas: McpGraphMutationRow[] = [];
+    const deltaJson =
+      typeof params.deltaPayload === 'string'
+        ? params.deltaPayload
+        : JSON.stringify(params.deltaPayload);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const mutationId = `mut_${crypto.randomUUID()}`;
+      const insertMutationStmt = d1
+        .prepare(
+          `INSERT INTO cangrejo_graph_mutations (
+            id, session_id, seq, delta_id, author_id, action, delta_json, created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())`
+        )
+        .bind(
+          mutationId,
+          params.dbSessionId,
+          nextSeq,
+          params.deltaId,
+          params.authorId ?? 'mcp-agent',
+          params.action,
+          deltaJson
+        );
+
+      const updateSessionStmt = d1
+        .prepare(
+          `UPDATE cangrejo_mcp_sessions
+           SET last_seq = ?, last_active_at = unixepoch()
+           WHERE session_id = ?`
+        )
+        .bind(nextSeq, params.dbSessionId);
+
+      try {
+        if (typeof d1.batch === 'function') {
+          await d1.batch([insertMutationStmt, updateSessionStmt]);
+        } else {
+          await insertMutationStmt.run();
+          await updateSessionStmt.run();
+        }
+        return { committedSeq: nextSeq, retries, reconciledDeltas };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isUniqueConflict =
+          msg.includes('UNIQUE') ||
+          msg.includes('uq_session_seq') ||
+          msg.includes('SQLITE_CONSTRAINT');
+
+        if (!isUniqueConflict || attempt === maxRetries) {
+          throw err;
+        }
+
+        retries++;
+        // Fetch concurrent mutations starting from `nextSeq - 1` so our isolate reconciles them
+        const missed = await BunSqliteVault.fetchMutationsAfterSeq(
+          d1,
+          params.dbSessionId,
+          nextSeq - 1
+        );
+        if (missed.length > 0) {
+          reconciledDeltas.push(...missed);
+          if (params.onReconcileMissedDeltas) {
+            await params.onReconcileMissedDeltas(missed);
+          }
+          const highestSeen = Math.max(...missed.map((m) => m.seq));
+          nextSeq = highestSeen + 1;
+        } else {
+          nextSeq++;
+        }
+      }
+    }
+
+    throw new Error(`OCC retry limit exceeded for session ${params.dbSessionId}`);
+  }
+
+  /**
+   * Compresses a serialized graph snapshot with Gzip, computes its SHA-256 Daubert seal,
+   * stores it in D1 inline BLOB (`<= maxInlineBytes`) or offloads to Cloudflare R2 (`> maxInlineBytes`),
+   * and prunes compacted WAL mutations (`seq < checkpointSeq`).
+   */
+  public static async persistGraphSnapshotToD1OrR2(
+    d1: CloudflareD1DatabaseLike,
+    r2: CloudflareR2BucketLike | undefined,
+    params: {
+      tenantId: string;
+      dbSessionId: string;
+      checkpointSeq: number;
+      serializedGraph: Record<string, unknown> | string;
+      nodeCount: number;
+      edgeCount: number;
+      maxInlineBytes?: number;
+      pruneBeforeCheckpoint?: boolean;
+    }
+  ): Promise<{
+    storageTier: 'd1_inline' | 'r2_offload';
+    byteSize: number;
+    payloadSha256: string;
+    snapshotR2Key: string | null;
+  }> {
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const jsonText =
+      typeof params.serializedGraph === 'string'
+        ? params.serializedGraph
+        : JSON.stringify(params.serializedGraph);
+    const compressedBytes = await compressGraphSnapshot(jsonText);
+    const byteSize = compressedBytes.byteLength;
+    const payloadSha256 = crypto.createHash('sha256').update(compressedBytes).digest('hex');
+    const maxInline = params.maxInlineBytes ?? MAX_D1_INLINE_SNAPSHOT_BYTES;
+
+    let storageTier: 'd1_inline' | 'r2_offload' = 'd1_inline';
+    let snapshotR2Key: string | null = null;
+
+    if (byteSize <= maxInline) {
+      await d1
+        .prepare(
+          `INSERT INTO cangrejo_session_graphs (
+            session_id, checkpoint_seq, node_count, edge_count,
+            storage_tier, compression_codec, snapshot_payload, snapshot_r2_key,
+            byte_size, payload_sha256, updated_at
+          ) VALUES (?, ?, ?, ?, 'd1_inline', 'gzip', ?, NULL, ?, ?, unixepoch())
+          ON CONFLICT(session_id) DO UPDATE SET
+            checkpoint_seq = excluded.checkpoint_seq,
+            node_count = excluded.node_count,
+            edge_count = excluded.edge_count,
+            storage_tier = 'd1_inline',
+            compression_codec = 'gzip',
+            snapshot_payload = excluded.snapshot_payload,
+            snapshot_r2_key = NULL,
+            byte_size = excluded.byte_size,
+            payload_sha256 = excluded.payload_sha256,
+            updated_at = excluded.updated_at`
+        )
+        .bind(
+          params.dbSessionId,
+          params.checkpointSeq,
+          params.nodeCount,
+          params.edgeCount,
+          compressedBytes,
+          byteSize,
+          payloadSha256
+        )
+        .run();
+    } else {
+      if (!r2) {
+        throw new Error(
+          `R2 bucket binding CANGREJO_VAULT_R2 missing; cannot offload ${byteSize} byte snapshot.`
+        );
+      }
+      storageTier = 'r2_offload';
+      snapshotR2Key = `snapshots/${params.tenantId}/${params.dbSessionId}/chk_${params.checkpointSeq}.cgrj.gz`;
+      await r2.put(snapshotR2Key, compressedBytes, {
+        customMetadata: {
+          tenantId: params.tenantId,
+          sessionId: params.dbSessionId,
+          checkpointSeq: String(params.checkpointSeq),
+          sha256: payloadSha256,
+          nodeCount: String(params.nodeCount),
+          edgeCount: String(params.edgeCount),
+        },
+      });
+
+      await d1
+        .prepare(
+          `INSERT INTO cangrejo_session_graphs (
+            session_id, checkpoint_seq, node_count, edge_count,
+            storage_tier, compression_codec, snapshot_payload, snapshot_r2_key,
+            byte_size, payload_sha256, updated_at
+          ) VALUES (?, ?, ?, ?, 'r2_offload', 'gzip', NULL, ?, ?, ?, unixepoch())
+          ON CONFLICT(session_id) DO UPDATE SET
+            checkpoint_seq = excluded.checkpoint_seq,
+            node_count = excluded.node_count,
+            edge_count = excluded.edge_count,
+            storage_tier = 'r2_offload',
+            compression_codec = 'gzip',
+            snapshot_payload = NULL,
+            snapshot_r2_key = excluded.snapshot_r2_key,
+            byte_size = excluded.byte_size,
+            payload_sha256 = excluded.payload_sha256,
+            updated_at = excluded.updated_at`
+        )
+        .bind(
+          params.dbSessionId,
+          params.checkpointSeq,
+          params.nodeCount,
+          params.edgeCount,
+          snapshotR2Key,
+          byteSize,
+          payloadSha256
+        )
+        .run();
+    }
+
+    if (params.pruneBeforeCheckpoint !== false && params.checkpointSeq > 0) {
+      await d1
+        .prepare(`DELETE FROM cangrejo_graph_mutations WHERE session_id = ? AND seq <= ?`)
+        .bind(params.dbSessionId, params.checkpointSeq)
+        .run();
+    }
+
+    return {
+      storageTier,
+      byteSize,
+      payloadSha256,
+      snapshotR2Key,
+    };
+  }
+
+  /**
+   * Hydrates a session's compressed checkpoint snapshot (from D1 inline BLOB or Cloudflare R2),
+   * verifies its SHA-256 Daubert integrity seal, and returns the deserialized snapshot document
+   * plus any trailing WAL mutations (`seq > checkpoint_seq`).
+   */
+  public static async hydrateSessionSnapshotAndDeltas(
+    d1: CloudflareD1DatabaseLike,
+    r2: CloudflareR2BucketLike | undefined,
+    dbSessionId: string
+  ): Promise<{
+    snapshotDoc: Record<string, unknown> | null;
+    checkpointSeq: number;
+    lastSeq: number;
+    trailingMutations: McpGraphMutationRow[];
+  }> {
+    const meta = await BunSqliteVault.getMcpSessionMeta(d1, dbSessionId);
+    const d1LastSeq = meta?.last_seq ?? 0;
+
+    const graphRow = await d1
+      .prepare(
+        `SELECT checkpoint_seq, storage_tier, compression_codec, snapshot_payload, snapshot_r2_key, payload_sha256
+         FROM cangrejo_session_graphs
+         WHERE session_id = ?`
+      )
+      .bind(dbSessionId)
+      .first<{
+        checkpoint_seq: number;
+        storage_tier: 'd1_inline' | 'r2_offload';
+        compression_codec: string;
+        snapshot_payload: Uint8Array | ArrayBuffer | Buffer | null;
+        snapshot_r2_key: string | null;
+        payload_sha256: string;
+      }>();
+
+    let snapshotDoc: Record<string, unknown> | null = null;
+    let checkpointSeq = 0;
+
+    if (graphRow) {
+      checkpointSeq = Number(graphRow.checkpoint_seq ?? 0);
+      let compressedBytes: Uint8Array;
+
+      if (graphRow.storage_tier === 'd1_inline') {
+        const raw = graphRow.snapshot_payload;
+        if (!raw) {
+          throw new Error(`Missing inline snapshot_payload for session ${dbSessionId}`);
+        }
+        compressedBytes =
+          raw instanceof Uint8Array
+            ? new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength)
+            : new Uint8Array(raw as ArrayBuffer);
+      } else {
+        if (!r2) {
+          throw new Error(`Cannot hydrate from R2: CANGREJO_VAULT_R2 binding is undefined.`);
+        }
+        const r2Obj = await r2.get(graphRow.snapshot_r2_key as string);
+        if (!r2Obj) {
+          throw new Error(`Snapshot R2 object not found at key: ${graphRow.snapshot_r2_key}`);
+        }
+        compressedBytes = new Uint8Array(await r2Obj.arrayBuffer());
+      }
+
+      const computedSha = crypto.createHash('sha256').update(compressedBytes).digest('hex');
+      if (computedSha !== graphRow.payload_sha256) {
+        throw new Error(
+          `Daubert integrity violation: snapshot SHA-256 mismatch for session ${dbSessionId}`
+        );
+      }
+
+      const jsonText = await decompressGraphSnapshot(compressedBytes);
+      snapshotDoc = JSON.parse(jsonText) as Record<string, unknown>;
+    }
+
+    const trailingMutations =
+      checkpointSeq < d1LastSeq
+        ? await BunSqliteVault.fetchMutationsAfterSeq(d1, dbSessionId, checkpointSeq)
+        : [];
+
+    return {
+      snapshotDoc,
+      checkpointSeq,
+      lastSeq: d1LastSeq,
+      trailingMutations,
+    };
   }
 
   public close(): void {

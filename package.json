@@ -29,6 +29,7 @@
     "test:gate9": "bun test tests/gate9-cloudflare-workers-ai-forensics.test.ts",
     "test:gate10": "bun test tests/gate10-cloudflare-edge-dossier-daubert.test.ts",
     "test:gate11": "bun test tests/gate11-mcp-stix-import-mitre.test.ts",
+    "test:gate12": "bun test tests/gate12-multi-tenant-mcp-sessions.test.ts",
     "cf:dev": "wrangler dev",
     "cf:deploy": "wrangler deploy",
     "moon:projects": "moon projects",

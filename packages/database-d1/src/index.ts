@@ -6,11 +6,18 @@ export {
 
 export {
   BunSqliteVault,
+  MAX_D1_INLINE_SNAPSHOT_BYTES,
+  compressGraphSnapshot,
+  decompressGraphSnapshot,
   type CangrejoEditionState,
   type CangrejoEditionTier,
   type CloudflareD1DatabaseLike,
   type CloudflareD1PreparedStatementLike,
+  type CloudflareR2BucketLike,
+  type CloudflareR2ObjectBodyLike,
   type ExpedienteRecord,
+  type McpGraphMutationRow,
+  type McpSessionConsolidatedMeta,
   type PesquisaAuditEntry,
   type ProviderKeySummary,
   type RadarDriftAlertRecord,
