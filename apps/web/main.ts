@@ -3254,6 +3254,84 @@ function initAccountAuthController(): void {
   const lblUser = document.getElementById('lbl-account-user');
   const lblTenant = document.getElementById('lbl-account-tenant');
   const lblCredits = document.getElementById('lbl-account-credits');
+  const lblTeamMonogram = document.getElementById('lbl-team-monogram');
+  const lblUserInitials = document.getElementById('lbl-user-initials');
+  const lblUserCollabName = document.getElementById('lbl-user-collab-name');
+  const lblTeamMcpStatus = document.getElementById('lbl-team-mcp-status');
+  const registerFieldsEl = document.getElementById('auth-register-fields');
+  const btnModeLogin = document.getElementById('btn-mode-login');
+  const btnModeRegister = document.getElementById('btn-mode-register');
+  const btnAuthLogin = document.getElementById('btn-auth-login');
+  const btnAuthRegister = document.getElementById('btn-auth-register');
+
+  // Switch between the 3 modal tabs (Cuenta y equipo | Agentes MCP | Conectores y plan)
+  const switchWorkspaceTab = (targetTab: string): void => {
+    document.querySelectorAll('[data-ws-tab]').forEach((tabBtn) => {
+      const isMatch = tabBtn.getAttribute('data-ws-tab') === targetTab;
+      tabBtn.classList.toggle('active', isMatch);
+      tabBtn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-ws-panel]').forEach((panelEl) => {
+      const isMatch = panelEl.getAttribute('data-ws-panel') === targetTab;
+      (panelEl as HTMLElement).hidden = !isMatch;
+    });
+  };
+
+  document.querySelectorAll('[data-ws-tab]').forEach((tabBtn) => {
+    tabBtn.addEventListener('click', () => {
+      const targetTab = tabBtn.getAttribute('data-ws-tab') || 'team';
+      switchWorkspaceTab(targetTab);
+    });
+  });
+
+  // Switch between "Iniciar sesión" (2 fields) and "Nuevo equipo" (create team fields)
+  const setAuthMode = (mode: 'login' | 'register'): void => {
+    const isReg = mode === 'register';
+    btnModeLogin?.classList.toggle('active', !isReg);
+    btnModeLogin?.setAttribute('aria-selected', !isReg ? 'true' : 'false');
+    btnModeRegister?.classList.toggle('active', isReg);
+    btnModeRegister?.setAttribute('aria-selected', isReg ? 'true' : 'false');
+    if (registerFieldsEl) registerFieldsEl.hidden = !isReg;
+    if (btnAuthLogin) btnAuthLogin.hidden = isReg;
+    if (btnAuthRegister) btnAuthRegister.hidden = !isReg;
+    if (feedbackEl) feedbackEl.textContent = '';
+  };
+
+  btnModeLogin?.addEventListener('click', () => setAuthMode('login'));
+  btnModeRegister?.addEventListener('click', () => setAuthMode('register'));
+
+  document.getElementById('btn-continue-local')?.addEventListener('click', () => {
+    document.getElementById('edition-modal-backdrop')?.classList.add('hidden');
+  });
+
+  document.getElementById('btn-goto-mcp-tab')?.addEventListener('click', () => {
+    switchWorkspaceTab('mcp');
+  });
+
+  document.getElementById('btn-copy-collab-invite')?.addEventListener('click', (ev) => {
+    const btn = ev.currentTarget as HTMLButtonElement;
+    const presetVal = (document.getElementById('preset-select') as HTMLSelectElement | null)?.value || 'apt29';
+    const inviteUrl = `${window.location.origin}/?case=${encodeURIComponent(presetVal)}&room=expediente-${encodeURIComponent(presetVal)}`;
+    if (navigator.clipboard) {
+      void navigator.clipboard.writeText(inviteUrl);
+    }
+    const prevText = btn.textContent;
+    btn.textContent = 'Enlace de invitación copiado ✓';
+    setTimeout(() => {
+      btn.textContent = prevText;
+    }, 2000);
+  });
+
+  const computeInitials = (text: string, fallback: string): string => {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      return `${words[0]![0] ?? ''}${words[1]![0] ?? ''}`.toUpperCase();
+    }
+    if (words.length === 1 && words[0]!.length >= 2) {
+      return words[0]!.slice(0, 2).toUpperCase();
+    }
+    return fallback;
+  };
 
   const setFeedback = (msg: string): void => {
     if (feedbackEl) feedbackEl.textContent = msg;
@@ -3275,7 +3353,7 @@ function initAccountAuthController(): void {
       if (formEl) formEl.hidden = false;
       if (profileCardEl) profileCardEl.hidden = true;
       if (badgeModeEl) {
-        badgeModeEl.textContent = 'COMMUNITY LOCAL BYPASS';
+        badgeModeEl.textContent = 'Modo local sin cuenta activo (2 en sala)';
         badgeModeEl.removeAttribute('data-authenticated');
       }
       return;
@@ -3284,17 +3362,39 @@ function initAccountAuthController(): void {
     if (formEl) formEl.hidden = true;
     if (profileCardEl) profileCardEl.hidden = false;
     if (badgeModeEl) {
-      badgeModeEl.textContent = `CUENTA ACTIVA • ${payload.client.tenantId}`;
+      badgeModeEl.textContent = `Equipo activo · ${payload.client.organizationName}`;
       badgeModeEl.setAttribute('data-authenticated', 'true');
+    }
+    if (lblTeamMonogram) {
+      lblTeamMonogram.textContent = computeInitials(payload.client.organizationName, 'EQ');
+    }
+    if (lblUserInitials) {
+      lblUserInitials.textContent = computeInitials(payload.user.displayName, 'AN');
+    }
+    if (lblUserCollabName) {
+      lblUserCollabName.textContent = `${payload.user.displayName} (Tú) · Editando lienzo`;
     }
     if (lblUser) {
       lblUser.textContent = `${payload.user.displayName} (${payload.user.email})`;
     }
     if (lblTenant) {
-      lblTenant.textContent = `${payload.client.organizationName} [${payload.client.tenantId}]`;
+      lblTenant.textContent = payload.client.organizationName;
     }
+    const friendlyTier =
+      payload.client.tier === 'PLATINO_ENTERPRISE'
+        ? 'Plan Platino'
+        : payload.client.tier === 'ORO_PRO'
+          ? 'Plan Oro'
+          : 'Plan Community';
     if (lblCredits) {
-      lblCredits.textContent = `${payload.client.tier} • ${payload.client.creditsRemaining} Créditos`;
+      lblCredits.textContent = `${friendlyTier} · ${payload.client.creditsRemaining} créditos`;
+    }
+
+    const presetSelect = document.getElementById('preset-select') as HTMLSelectElement | null;
+    const collabTitleEl = document.getElementById('lbl-collab-case-title');
+    if (presetSelect && collabTitleEl) {
+      const selectedOption = presetSelect.options[presetSelect.selectedIndex];
+      if (selectedOption) collabTitleEl.textContent = selectedOption.text;
     }
 
     const tokenForMcp = payload.licenseToken || payload.authToken || null;
@@ -3449,6 +3549,12 @@ function initAccountAuthController(): void {
       if (data.ok && data.sessionToken) {
         if (typeof window !== 'undefined' && window.sessionStorage) {
           window.sessionStorage.setItem(MCP_STORAGE_TOKEN_KEY, data.sessionToken);
+        }
+        if (lblTeamMcpStatus) {
+          lblTeamMcpStatus.textContent = `Llave MCP del equipo activa (${data.sessionToken.slice(0, 14)}…)`;
+        }
+        if (navigator.clipboard) {
+          void navigator.clipboard.writeText(data.sessionToken);
         }
         updateMcpOnboardingView(mcpState.editionTier, data.sessionToken);
         appendLog(

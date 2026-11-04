@@ -1589,7 +1589,407 @@
     color: #0c4a6e;
   }
 
-  .account-header-row {
+  /* ==========================================================================
+     Minimalist Team Workspace & Account Modal (Hallmark v2.0 / Linear & Figma)
+     ========================================================================== */
+  .modal-card-workspace {
+    width: min(510px, calc(100vw - 32px));
+    max-width: 510px;
+    border-radius: 12px;
+    background: var(--surface-panel);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-popover);
+  }
+
+  .ws-modal-header {
+    padding: 18px 20px 0;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--surface-panel);
+  }
+
+  .ws-modal-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .ws-brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .ws-title-group {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ws-modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .ws-modal-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 2px 0 0;
+    line-height: 1.4;
+  }
+
+  .ws-close-btn {
+    margin-left: auto;
+  }
+
+  .ws-tabs-nav {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .ws-tab-btn {
+    padding: 8px 2px 10px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+
+  .ws-tab-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .ws-tab-btn.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent-primary);
+    font-weight: 600;
+  }
+
+  .ws-modal-body {
+    padding: 18px 20px 20px;
+    overflow-y: auto;
+    max-height: calc(100vh - 170px);
+  }
+
+  .ws-tab-panel[hidden] {
+    display: none !important;
+  }
+
+  .ws-auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .ws-mode-pill-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2px;
+  }
+
+  .ws-mode-pill {
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 8px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    gap: 2px;
+  }
+
+  .ws-mode-btn {
+    height: 26px;
+    padding: 0 14px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .ws-mode-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .ws-mode-btn.active {
+    background: var(--surface-panel-elevated);
+    color: var(--text-primary);
+    border-color: var(--border-default);
+    font-weight: 600;
+  }
+
+  .ws-register-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ws-register-fields[hidden] {
+    display: none !important;
+  }
+
+  .ws-field-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .ws-field-label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .ws-input {
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 7px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    font-size: 12.5px;
+    transition: border-color 120ms ease;
+  }
+
+  .ws-input:focus {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -1px;
+  }
+
+  .ws-submit-btn {
+    height: 36px;
+    width: 100%;
+    font-size: 12.5px;
+    border-radius: 7px;
+    margin-top: 2px;
+  }
+
+  .ws-submit-btn[hidden] {
+    display: none !important;
+  }
+
+  .ws-feedback-text {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    min-height: 16px;
+    text-align: center;
+  }
+
+  .ws-local-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 12px;
+    margin-top: 2px;
+    border-top: 1px solid var(--border-subtle);
+    font-size: 11.5px;
+    color: var(--text-secondary);
+  }
+
+  .ws-local-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .ws-link-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 120ms ease;
+  }
+
+  .ws-link-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .ws-link-accent {
+    color: var(--accent-primary);
+  }
+
+  /* Estado 2: Equipo Colaborativo Activo */
+  .ws-team-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .ws-team-workspace[hidden] {
+    display: none !important;
+  }
+
+  .ws-surface-card {
+    padding: 13px 14px;
+    border-radius: 9px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .ws-team-header-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .ws-team-identity {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .ws-team-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    background: var(--surface-panel-elevated);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    font-size: 12.5px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .ws-team-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .ws-team-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .ws-team-subrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .ws-plan-pill {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--brand-gold-bg);
+    color: var(--brand-gold-text);
+    border: 1px solid var(--brand-gold-border);
+  }
+
+  .ws-user-caption {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+  }
+
+  .ws-card-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  .ws-card-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .ws-live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--severity-ok);
+  }
+
+  .ws-live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--severity-ok);
+  }
+
+  .ws-collab-case-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+  }
+
+  .ws-collab-members-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .ws-member-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ws-member-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+  }
+
+  .ws-member-muted {
+    color: var(--text-secondary);
+  }
+
+  .ws-member-chip {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-panel-elevated);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+  }
+
+  .ws-mcp-quick-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1597,80 +1997,14 @@
     flex-wrap: wrap;
   }
 
-  .account-mode-badge {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: var(--radius-sm);
-    background: var(--surface-sunken);
-    border: 1px solid var(--border-strong);
-    color: var(--text-primary);
-  }
-
-  .account-mode-badge[data-authenticated='true'] {
-    background: rgba(16, 185, 129, 0.14);
-    border-color: rgba(16, 185, 129, 0.5);
-    color: #6ee7b7;
-  }
-
-  [data-theme='light'] .account-mode-badge[data-authenticated='true'] {
-    background: rgba(5, 150, 105, 0.12);
-    border-color: rgba(5, 150, 105, 0.45);
-    color: #064e3b;
-  }
-
-  .account-auth-grid {
-    display: grid;
-    gap: 10px;
-  }
-
-  .account-auth-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 10px;
-  }
-
-  .account-field-label {
+  .ws-mcp-quick-label {
     font-size: 12px;
-    display: grid;
-    gap: 4px;
-    color: var(--text-primary);
-  }
-
-  .account-auth-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .account-feedback-text {
-    font-size: 12px;
-    font-family: var(--font-mono);
-    color: var(--text-primary);
-  }
-
-  .account-profile-card {
-    margin-top: 8px;
-    padding: 12px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-default);
-    background: var(--surface-sunken);
-  }
-
-  .account-profile-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px;
-  }
-
-  .account-meta-label {
-    display: block;
-    font-size: 10px;
-    font-family: var(--font-mono);
     color: var(--text-secondary);
-    letter-spacing: 0.04em;
-    margin-bottom: 2px;
+  }
+
+  .ws-mcp-quick-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
   }
 }

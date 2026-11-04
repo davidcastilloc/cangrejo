@@ -743,7 +743,7 @@ AS13335</textarea>
         </div>
       </div>
 
-      <!-- Odoo-Style Open-Core Edition & Enterprise Cloud Hub Modal -->
+      <!-- Minimalist Team Workspace, Account & MCP Modal (Hallmark v2.0 / Linear & Figma Style) -->
       <div
         id="edition-modal-backdrop"
         class="modal-backdrop hidden"
@@ -751,191 +751,242 @@ AS13335</textarea>
         aria-modal="true"
         aria-labelledby="edition-modal-title"
       >
-        <div class="modal-card">
-          <div class="modal-header">
-            <div class="modal-brand-row">
-              <img src="/cangrejo_logo_emblem.png" alt="Emblema Cangrejo" class="modal-emblem" />
-              <div>
-                <h2 id="edition-modal-title" class="modal-title">
-                  CANGREJO — Arquitectura Open-Core (Community &amp; Enterprise Cloud)
-                </h2>
-                <p id="lbl-edition-subtitle" class="modal-subtitle">
-                  Edición Activa: Cangrejo Community Edition (Open-Core Apache-2.0)
+        <div class="modal-card modal-card-workspace">
+          <div class="ws-modal-header">
+            <div class="ws-modal-title-row">
+              <div class="ws-brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <ellipse cx="12" cy="12.5" rx="5.5" ry="4.2" />
+                  <circle cx="12" cy="12.5" r="1.4" fill="currentColor" stroke="none" />
+                  <path d="M6.5 9.5L4 6.5L6 4.5M17.5 9.5L20 6.5L18 4.5M6.2 12.5H2.5M17.8 12.5H21.5M6.8 15.5L3.5 18M17.2 15.5L20.5 18" />
+                </svg>
+              </div>
+              <div class="ws-title-group">
+                <h2 id="edition-modal-title" class="ws-modal-title">Espacio de trabajo y equipo</h2>
+                <p id="lbl-edition-subtitle" class="ws-modal-subtitle">
+                  Colabora en expedientes en tiempo real y sincroniza tus agentes MCP.
                 </p>
               </div>
+              <button id="btn-close-edition" type="button" class="btn btn-icon ws-close-btn" aria-label="Cerrar ventana">
+                ✕
+              </button>
             </div>
-            <button id="btn-close-edition" type="button" class="btn btn-icon" aria-label="Cerrar ventana">
-              ✕
-            </button>
+
+            <!-- Navegación limpia de 3 pestañas -->
+            <div class="ws-tabs-nav" role="tablist" aria-label="Secciones del espacio de trabajo">
+              <button
+                type="button"
+                data-ws-tab="team"
+                class="ws-tab-btn active"
+                role="tab"
+                aria-selected="true"
+              >
+                Cuenta y equipo
+              </button>
+              <button
+                type="button"
+                data-ws-tab="mcp"
+                class="ws-tab-btn"
+                role="tab"
+                aria-selected="false"
+              >
+                Agentes MCP
+              </button>
+              <button
+                type="button"
+                data-ws-tab="plan"
+                class="ws-tab-btn"
+                role="tab"
+                aria-selected="false"
+              >
+                Conectores y plan
+              </button>
+            </div>
           </div>
 
-          <div class="modal-body">
-            <div class="lore-section">
-              <h3>🏆 Comparativa de Ediciones (Modelo Open-Core + Cloud Intelligence)</h3>
-              <div class="tier-grid">
-                <div class="tier-card tier-bronce">
-                  <strong>Community Edition (Gratis / Repo GitHub)</strong>
-                  <span>Motor local 60 FPS • Pesquisas públicas (DNS, crt.sh, RDAP) • Dossier con sello Community</span>
-                </div>
-                <div class="tier-card tier-oro">
-                  <strong>Cangrejo de Oro Pro (500 Créditos OSINT)</strong>
-                  <span>Pool Cloud de APIs OSINT cacheadas • Dossier Pericial en Marca Blanca • 25,000 entidades</span>
-                </div>
-                <div class="tier-card tier-platino">
-                  <strong>Cangrejo de Platino Enterprise (5,000 Créditos)</strong>
-                  <span>Salas Colaborativas Multi-Analista en Vivo • Radar Continuo 24/7 • 100,000+ entidades</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="lore-section" id="account-client-section">
-              <div class="account-header-row">
-                <h3>👤 Cuenta de Usuario &amp; Organización Cliente (Multi-Tenant D1)</h3>
-                <span id="badge-account-mode" class="account-mode-badge">COMMUNITY LOCAL BYPASS</span>
-              </div>
-              <p class="modal-subtitle" style="margin: 4px 0 10px 0">
-                En modo local Community puedes operar sin login obligatorio, o registrar/iniciar sesión con tu Organización Cliente para aislar tus expedientes en Cloudflare D1 y emitir tokens MCP dedicados (<code>ses_sec_*</code>).
-              </p>
-
-              <form id="form-account-auth" class="account-auth-grid" novalidate>
-                <div class="account-auth-row">
-                  <label for="inp-auth-email" class="account-field-label">
-                    <span>Correo Electrónico (Analista / Cuenta):</span>
-                    <input
-                      id="inp-auth-email"
-                      name="email"
-                      type="email"
-                      autocomplete="username"
-                      spellcheck="false"
-                      required
-                      class="palette-search-input"
-                      placeholder="analista@unidad-forense.org"
-                    />
-                  </label>
-                  <label for="inp-auth-password" class="account-field-label">
-                    <span>Contraseña (PBKDF2-SHA256):</span>
-                    <input
-                      id="inp-auth-password"
-                      name="password"
-                      type="password"
-                      autocomplete="current-password"
-                      required
-                      class="palette-search-input"
-                      placeholder="Mínimo 8 caracteres"
-                    />
-                  </label>
+          <div class="ws-modal-body">
+            <!-- PESTAÑA 1: CUENTA Y EQUIPO COLABORATIVO -->
+            <div id="account-client-section" data-ws-panel="team" class="ws-tab-panel">
+              <!-- ESTADO 1: Acceso / Nuevo Equipo (Minimalista) -->
+              <form id="form-account-auth" class="ws-auth-form" novalidate>
+                <div class="ws-mode-pill-wrap">
+                  <div class="ws-mode-pill" role="tablist" aria-label="Modo de acceso">
+                    <button
+                      id="btn-mode-login"
+                      type="button"
+                      class="ws-mode-btn active"
+                      aria-selected="true"
+                    >
+                      Iniciar sesión
+                    </button>
+                    <button
+                      id="btn-mode-register"
+                      type="button"
+                      class="ws-mode-btn"
+                      aria-selected="false"
+                    >
+                      Nuevo equipo
+                    </button>
+                  </div>
                 </div>
 
-                <div class="account-auth-row">
-                  <label for="inp-auth-name" class="account-field-label">
-                    <span>Nombre del Analista (Para Registro):</span>
-                    <input
-                      id="inp-auth-name"
-                      name="name"
-                      type="text"
-                      autocomplete="name"
-                      class="palette-search-input"
-                      placeholder="Comisario L. Yerena"
-                    />
-                  </label>
-                  <label for="inp-auth-org" class="account-field-label">
-                    <span>Organización / Cliente (Tenant D1):</span>
-                    <input
-                      id="inp-auth-org"
-                      name="organization"
-                      type="text"
-                      autocomplete="organization"
-                      class="palette-search-input"
-                      placeholder="Unidad Especial CTI & Forense"
-                    />
-                  </label>
-                  <label for="sel-auth-tier" class="account-field-label">
-                    <span>Plan Inicial:</span>
-                    <select id="sel-auth-tier" name="tier" class="palette-search-input">
-                      <option value="ORO_PRO" selected>Cangrejo de Oro Pro (500 Créditos)</option>
-                      <option value="PLATINO_ENTERPRISE">Cangrejo de Platino Enterprise (5,000 Créditos)</option>
-                      <option value="COMMUNITY">Community Cloud (50 Créditos)</option>
+                <!-- Campos exclusivos de creación de equipo (ocultos al iniciar sesión) -->
+                <div id="auth-register-fields" class="ws-register-fields" hidden>
+                  <div class="ws-field-row-2">
+                    <label for="inp-auth-name" class="ws-field-label">
+                      <span>Tu nombre</span>
+                      <input
+                        id="inp-auth-name"
+                        name="name"
+                        type="text"
+                        autocomplete="name"
+                        class="ws-input"
+                        placeholder="Comisario L. Yerena"
+                      />
+                    </label>
+                    <label for="inp-auth-org" class="ws-field-label">
+                      <span>Nombre del equipo u organización</span>
+                      <input
+                        id="inp-auth-org"
+                        name="organization"
+                        type="text"
+                        autocomplete="organization"
+                        class="ws-input"
+                        placeholder="Unidad Especial CTI"
+                      />
+                    </label>
+                  </div>
+                  <label for="sel-auth-tier" class="ws-field-label">
+                    <span>Capacidad inicial del equipo</span>
+                    <select id="sel-auth-tier" name="tier" class="ws-input">
+                      <option value="ORO_PRO" selected>Plan Oro Pro · Hasta 25,000 entidades (500 créditos)</option>
+                      <option value="PLATINO_ENTERPRISE">Plan Platino · Salas ilimitadas y Radar 24/7 (5,000 créditos)</option>
+                      <option value="COMMUNITY">Equipo Community · Pesquisas públicas (50 créditos)</option>
                     </select>
                   </label>
                 </div>
 
-                <div class="account-auth-actions">
-                  <button id="btn-auth-login" type="submit" class="btn btn-primary">
-                    🔐 Iniciar Sesión
+                <label for="inp-auth-email" class="ws-field-label">
+                  <span>Correo de trabajo</span>
+                  <input
+                    id="inp-auth-email"
+                    name="email"
+                    type="email"
+                    autocomplete="username"
+                    spellcheck="false"
+                    required
+                    class="ws-input"
+                    placeholder="analista@equipo-forense.org"
+                  />
+                </label>
+
+                <label for="inp-auth-password" class="ws-field-label">
+                  <span>Contraseña</span>
+                  <input
+                    id="inp-auth-password"
+                    name="password"
+                    type="password"
+                    autocomplete="current-password"
+                    required
+                    class="ws-input"
+                    placeholder="••••••••••••"
+                  />
+                </label>
+
+                <button id="btn-auth-login" type="submit" class="btn btn-primary ws-submit-btn">
+                  Entrar al espacio de equipo
+                </button>
+                <button id="btn-auth-register" type="button" class="btn btn-primary ws-submit-btn" hidden>
+                  Crear espacio de equipo e iniciar sesión
+                </button>
+
+                <span id="lbl-auth-feedback" class="ws-feedback-text" aria-live="polite"></span>
+
+                <div class="ws-local-footer">
+                  <div class="ws-local-status">
+                    <span class="presence-dot" aria-hidden="true"></span>
+                    <span id="badge-account-mode">Modo local sin cuenta activo (2 en sala)</span>
+                  </div>
+                  <button id="btn-continue-local" type="button" class="ws-link-btn">
+                    Continuar en local →
                   </button>
-                  <button id="btn-auth-register" type="button" class="btn">
-                    ✨ Crear Cuenta &amp; Organización Cliente
-                  </button>
-                  <span id="lbl-auth-feedback" class="account-feedback-text" aria-live="polite"></span>
                 </div>
               </form>
 
-              <div id="card-account-profile" class="account-profile-card" hidden>
-                <div class="account-profile-grid">
-                  <div>
-                    <span class="account-meta-label">ANALISTA AUTENTICADO</span>
-                    <strong id="lbl-account-user">—</strong>
+              <!-- ESTADO 2: Espacio de Equipo Colaborativo Activo -->
+              <div id="card-account-profile" class="ws-team-workspace" hidden>
+                <!-- 1. Tarjeta del Equipo Activo -->
+                <div class="ws-surface-card ws-team-header-card">
+                  <div class="ws-team-identity">
+                    <div id="lbl-team-monogram" class="ws-team-avatar">UE</div>
+                    <div class="ws-team-meta">
+                      <div class="ws-team-name-row">
+                        <strong id="lbl-account-tenant" class="ws-team-title">Unidad Especial CTI</strong>
+                      </div>
+                      <div class="ws-team-subrow">
+                        <span id="lbl-account-credits" class="ws-plan-pill">Plan Oro · 500 créditos</span>
+                        <span id="lbl-account-user" class="ws-user-caption">analista@equipo.org</span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <span class="account-meta-label">ORGANIZACIÓN CLIENTE (TENANT ID)</span>
-                    <strong id="lbl-account-tenant">—</strong>
+                  <button id="btn-auth-logout" type="button" class="ws-link-btn ws-logout-link">
+                    Cerrar sesión
+                  </button>
+                </div>
+
+                <!-- 2. Sala Colaborativa en Vivo -->
+                <div class="ws-surface-card ws-collab-card">
+                  <div class="ws-card-top-row">
+                    <span class="ws-card-label">Sala colaborativa en vivo</span>
+                    <span class="ws-live-indicator">
+                      <span class="ws-live-dot" aria-hidden="true"></span>
+                      Live
+                    </span>
                   </div>
-                  <div>
-                    <span class="account-meta-label">NIVEL &amp; CRÉDITOS OSINT</span>
-                    <strong id="lbl-account-credits">—</strong>
+                  <div id="lbl-collab-case-title" class="ws-collab-case-name">
+                    Caso #01: APT29 CozyBear
+                  </div>
+                  <div class="ws-collab-members-row">
+                    <div class="ws-member-stack">
+                      <div class="ws-member-item">
+                        <span id="lbl-user-initials" class="ws-member-chip ws-chip-primary">LY</span>
+                        <span id="lbl-user-collab-name" class="ws-member-name">Analista principal · Activo</span>
+                      </div>
+                      <div class="ws-member-item">
+                        <span class="ws-member-chip ws-chip-peer">DC</span>
+                        <span class="ws-member-name ws-member-muted">Compañero en sala · Sincronizado</span>
+                      </div>
+                    </div>
+                    <button id="btn-copy-collab-invite" type="button" class="btn btn-quiet">
+                      Copiar enlace de invitación al expediente
+                    </button>
                   </div>
                 </div>
-                <div class="account-auth-actions" style="margin-top: 10px">
-                  <button id="btn-issue-mcp-session-token" type="button" class="btn btn-primary">
-                    🎟️ Emitir Token MCP Dedicado (ses_sec_*) para este Expediente
-                  </button>
-                  <button id="btn-auth-logout" type="button" class="btn">
-                    🚪 Cerrar Sesión (Volver a Community Local)
-                  </button>
+
+                <!-- 3. Acceso Rápido MCP del Equipo -->
+                <div class="ws-surface-card ws-mcp-quick-card">
+                  <div class="ws-mcp-quick-row">
+                    <span id="lbl-team-mcp-status" class="ws-mcp-quick-label">
+                      Llave MCP del equipo lista para emitir (<code>ses_sec_…</code>)
+                    </span>
+                    <button id="btn-issue-mcp-session-token" type="button" class="btn btn-quiet">
+                      Generar llave para compañero
+                    </button>
+                  </div>
+                  <div class="ws-mcp-quick-footer">
+                    <button id="btn-goto-mcp-tab" type="button" class="ws-link-btn ws-link-accent">
+                      Configurar Claude / Cursor →
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div class="lore-section">
-              <h3>🔑 Activación de Licencia Enterprise &amp; Marca Blanca (Dossiers Periciales)</h3>
-              <div style="display: grid; gap: 10px; margin-top: 8px">
-                <label style="font-size: 12px; display: grid; gap: 4px">
-                  <span>Organización / Firma Forense (Marca Blanca para Dossiers HTML5/PDF):</span>
-                  <input
-                    id="inp-edition-org"
-                    type="text"
-                    class="palette-search-input"
-                    value="Unidad Especial de Inteligencia Forense & CTI (Enterprise)"
-                  />
-                </label>
-                <label style="font-size: 12px; display: grid; gap: 4px">
-                  <span>Clave de Licencia (`CGRJ-ORO-...` o `CGRJ-PLATINO-...`):</span>
-                  <input
-                    id="inp-edition-key"
-                    type="text"
-                    class="palette-search-input"
-                    value="CGRJ-PLATINO-2026-ENTERPRISE"
-                  />
-                </label>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px">
-                  <button id="btn-activate-platino" type="button" class="btn btn-primary">
-                    🏆 Activar Platino Enterprise (5,000 CR)
-                  </button>
-                  <button id="btn-activate-oro" type="button" class="btn">
-                    🥇 Activar Oro Pro (500 CR)
-                  </button>
-                  <button id="btn-reset-community" type="button" class="btn">
-                    🦀 Volver a Community (Open-Source)
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Section: Model Context Protocol (MCP) Client Onboarding -->
-            <div class="lore-section" id="mcp-onboarding-section">
+            <!-- PESTAÑA 2: AGENTES MCP (Claude Desktop / Cursor / Claude Code) -->
+            <div id="mcp-onboarding-section" data-ws-panel="mcp" class="ws-tab-panel" hidden>
               <div class="mcp-section-header">
                 <div class="mcp-title-wrap">
-                  <h3>🤖 Conexión de Asistentes IA &amp; Clientes MCP (Model Context Protocol)</h3>
+                  <span class="ws-card-label">Conexión directa de agentes al expediente del equipo</span>
                   <span id="mcp-active-edition-tag" class="status-pill status-pill-community">COMMUNITY (LOCAL)</span>
                 </div>
                 <div class="mcp-health-badge" title="12 herramientas forenses listas para invocación">
@@ -944,18 +995,13 @@ AS13335</textarea>
                 </div>
               </div>
 
-              <p class="mcp-desc-text">
-                Conecta <strong>Claude Desktop</strong>, <strong>Cursor</strong> o <strong>Claude Code CLI</strong> para interactuar directamente con el grafo pericial activo. Los agentes pueden mutar entidades, desofuscar IOCs, mapear tácticas MITRE ATT&amp;CK y sintetizar dictámenes Daubert.
-              </p>
-
-              <!-- Interactive Controls: Transport & Session Parameters -->
               <div class="mcp-controls-grid">
                 <div class="mcp-field-group">
-                  <label for="inp-mcp-session-id" class="mcp-label">Expediente / Sala Activa (Session ID):</label>
+                  <label for="inp-mcp-session-id" class="mcp-label">Expediente compartido (Session ID)</label>
                   <input
                     id="inp-mcp-session-id"
                     type="text"
-                    class="palette-search-input"
+                    class="ws-input"
                     value="expediente-apt29"
                     placeholder="expediente-apt29"
                     aria-label="Identificador de sesión o expediente"
@@ -963,27 +1009,26 @@ AS13335</textarea>
                 </div>
 
                 <div id="mcp-token-container" class="mcp-field-group hidden">
-                  <label for="inp-mcp-auth-token" class="mcp-label">Token de Licencia (Bearer Auth):</label>
+                  <label for="inp-mcp-auth-token" class="mcp-label">Llave del equipo o sesión (Bearer Auth)</label>
                   <div class="mcp-input-action-row">
                     <input
                       id="inp-mcp-auth-token"
                       type="password"
-                      class="palette-search-input mcp-token-input"
-                      placeholder="CGRJ.ORO_PRO... o pega tu clave"
+                      class="ws-input mcp-token-input"
+                      placeholder="ses_sec_... o token de equipo"
                       value=""
                       aria-label="Token de autenticación Bearer"
                       autocomplete="off"
                       spellcheck="false"
                     />
-                    <button id="btn-mcp-toggle-token" type="button" class="btn btn-subtle" aria-label="Mostrar clave de licencia">
-                      👁️ Ver
+                    <button id="btn-mcp-toggle-token" type="button" class="btn btn-quiet" aria-label="Mostrar clave de licencia">
+                      Mostrar
                     </button>
                   </div>
                 </div>
 
-                <!-- Sub-transport toggle for Community edition -->
                 <div id="mcp-community-transport-toggle" class="mcp-field-group">
-                  <label class="mcp-label">Protocolo de Transporte:</label>
+                  <label class="mcp-label">Protocolo de transporte</label>
                   <div class="console-tabs" role="tablist">
                     <button id="btn-transport-stdio" type="button" class="tab-btn active" role="tab" aria-selected="true">Stdio (Local Bun)</button>
                     <button id="btn-transport-http" type="button" class="tab-btn" role="tab" aria-selected="false">HTTP / SSE (:3000)</button>
@@ -991,7 +1036,6 @@ AS13335</textarea>
                 </div>
               </div>
 
-              <!-- Client Selector Tabs -->
               <div class="mcp-client-tabs-bar">
                 <div class="console-tabs" role="tablist" aria-label="Clientes MCP compatibles">
                   <button id="tab-client-claude-desktop" type="button" class="tab-btn active" role="tab" aria-selected="true">
@@ -1009,12 +1053,47 @@ AS13335</textarea>
                 </span>
               </div>
 
-              <!-- Code Block with Copy Action -->
               <div class="mcp-code-container">
                 <pre id="mcp-snippet-output" class="console-output mcp-code-block"></pre>
                 <button id="btn-mcp-copy-snippet" type="button" class="btn btn-primary mcp-copy-btn" aria-label="Copiar configuración al portapapeles">
-                  📋 Copiar Configuración
+                  Copiar configuración
                 </button>
+              </div>
+            </div>
+
+            <!-- PESTAÑA 3: CONECTORES, MARCA BLANCA Y PLAN -->
+            <div id="ws-panel-plan" data-ws-panel="plan" class="ws-tab-panel" hidden>
+              <div class="ws-surface-card" style="display: grid; gap: 12px">
+                <span class="ws-card-label">Marca blanca del equipo y licencia</span>
+                <label class="ws-field-label">
+                  <span>Firma de la organización (para dossiers periciales PDF / Daubert)</span>
+                  <input
+                    id="inp-edition-org"
+                    type="text"
+                    class="ws-input"
+                    value="Unidad Especial de Inteligencia Forense & CTI"
+                  />
+                </label>
+                <label class="ws-field-label">
+                  <span>Clave de licencia corporativa</span>
+                  <input
+                    id="inp-edition-key"
+                    type="text"
+                    class="ws-input"
+                    value="CGRJ-PLATINO-2026-ENTERPRISE"
+                  />
+                </label>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px">
+                  <button id="btn-activate-platino" type="button" class="btn btn-primary">
+                    Activar Platino (5,000 créditos)
+                  </button>
+                  <button id="btn-activate-oro" type="button" class="btn btn-quiet">
+                    Activar Oro Pro (500 créditos)
+                  </button>
+                  <button id="btn-reset-community" type="button" class="btn btn-ghost">
+                    Modo Community local
+                  </button>
+                </div>
               </div>
             </div>
           </div>
