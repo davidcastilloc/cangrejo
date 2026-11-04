@@ -2186,7 +2186,7 @@ const lblEditionSubtitle = document.getElementById('lbl-edition-subtitle');
 const inpEditionOrg = document.getElementById('inp-edition-org') as HTMLInputElement | null;
 const inpEditionKey = document.getElementById('inp-edition-key') as HTMLInputElement | null;
 
-type McpClientType = 'claude-desktop' | 'cursor' | 'claude-code';
+type McpClientType = 'antigravity' | 'claude-desktop' | 'cursor' | 'claude-code';
 type McpTransportType = 'stdio' | 'http';
 
 interface McpUiState {
@@ -2200,8 +2200,8 @@ interface McpUiState {
 const MCP_STORAGE_TOKEN_KEY = 'cangrejo_mcp_auth_token';
 
 const mcpState: McpUiState = {
-  client: 'claude-desktop',
-  transport: 'stdio',
+  client: 'antigravity',
+  transport: 'http',
   editionTier: 'COMMUNITY',
   licenseKey: null,
   sessionId: 'expediente-apt29',
@@ -2230,7 +2230,7 @@ export function initMcpModalController(): void {
     if (!tokenInp) return;
     const isPassword = tokenInp.type === 'password';
     tokenInp.type = isPassword ? 'text' : 'password';
-    toggleBtn.textContent = isPassword ? '🙈 Ocultar' : '👁️ Ver';
+    toggleBtn.textContent = isPassword ? 'Ocultar' : 'Mostrar';
     toggleBtn.setAttribute(
       'aria-label',
       isPassword ? 'Ocultar clave de licencia' : 'Mostrar clave de licencia'
@@ -2238,6 +2238,7 @@ export function initMcpModalController(): void {
   });
 
   const clientTabs: Array<{ id: string; client: McpClientType }> = [
+    { id: 'tab-client-antigravity', client: 'antigravity' },
     { id: 'tab-client-claude-desktop', client: 'claude-desktop' },
     { id: 'tab-client-cursor', client: 'cursor' },
     { id: 'tab-client-claude-code', client: 'claude-code' },
@@ -2282,13 +2283,46 @@ export function initMcpModalController(): void {
     try {
       await navigator.clipboard.writeText(codeEl.textContent);
       const originalText = copyBtn.textContent;
-      copyBtn.textContent = '✅ ¡Copiado!';
+      copyBtn.textContent = 'Copiado ✓';
       setTimeout(() => {
         copyBtn.textContent = originalText;
       }, 2000);
     } catch {
       // Fallback
     }
+  });
+
+  const downloadBtn = document.getElementById('btn-mcp-download-config');
+  downloadBtn?.addEventListener('click', () => {
+    const codeEl = document.getElementById('mcp-snippet-output');
+    if (!codeEl?.textContent) return;
+    const blob = new Blob([codeEl.textContent], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = mcpState.client === 'antigravity' ? 'mcp_config.json' : 'mcp.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.querySelectorAll('.agy-mission-btn').forEach((missionBtn) => {
+    missionBtn.addEventListener('click', async () => {
+      const prompt = missionBtn.getAttribute('data-agy-prompt');
+      if (!prompt) return;
+      try {
+        await navigator.clipboard.writeText(prompt);
+        const tagEl = missionBtn.querySelector('.agy-mission-copy-tag');
+        if (tagEl) {
+          const prev = tagEl.textContent;
+          tagEl.textContent = 'Misión copiada ✓';
+          setTimeout(() => {
+            tagEl.textContent = prev;
+          }, 2000);
+        }
+      } catch {
+        // Fallback
+      }
+    });
   });
 
   if (typeof window !== 'undefined' && window.sessionStorage) {
@@ -2332,13 +2366,63 @@ function renderMcpSnippet(): void {
     host.includes('127.0.0.1') || host.includes('localhost')
       ? 'https://cangrejo.osint.network'
       : host;
-  const token = mcpState.licenseKey || 'CGRJ-LICENSE-TOKEN-AQUI';
+  const token = mcpState.licenseKey || 'ses_sec_TU_LLAVE_DEL_EQUIPO';
   const session = mcpState.sessionId.trim() || 'expediente-apt29';
 
   let snippet = '';
   let pathHint = '';
 
-  if (mcpState.client === 'claude-desktop') {
+  if (mcpState.client === 'antigravity') {
+    pathHint =
+      'Archivo: <code>~/.gemini/config/mcp_config.json</code> (global) o <code>.agents/plugins/cangrejo/mcp_config.json</code>';
+    if (!isCloud) {
+      if (mcpState.transport === 'http') {
+        snippet = JSON.stringify(
+          {
+            mcpServers: {
+              cangrejo: {
+                url: `${host}/api/mcp/${session}`,
+              },
+            },
+          },
+          null,
+          2
+        );
+      } else {
+        snippet = JSON.stringify(
+          {
+            mcpServers: {
+              cangrejo: {
+                command: 'bun',
+                args: ['run', 'apps/web/mcpStdioServer.ts'],
+                env: {
+                  CANGREJO_MCP_URL: `${host}/api/mcp`,
+                  CANGREJO_SESSION_ID: session,
+                },
+              },
+            },
+          },
+          null,
+          2
+        );
+      }
+    } else {
+      snippet = JSON.stringify(
+        {
+          mcpServers: {
+            'cangrejo-forensics': {
+              url: `${cloudHost}/api/mcp/${session}`,
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            },
+          },
+        },
+        null,
+        2
+      );
+    }
+  } else if (mcpState.client === 'claude-desktop') {
     pathHint =
       'Archivo: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (o <code>%APPDATA%\\Claude\\...</code>)';
     if (!isCloud) {
