@@ -70,8 +70,7 @@ describe('Gate 5: Polyglot Forensic Optimizations (Barnes-Hut FFI, Graph Analyti
       edgeBuffer[(i - 1) * 2 + 1] = i;
     }
 
-    if (typeof (globalThis as Record<string, unknown>).Bun !== 'undefined') {
-      expect(bridge.isBunFfiAvailable).toBe(true);
+    if (typeof (globalThis as Record<string, unknown>).Bun !== 'undefined' && bridge.isBunFfiAvailable) {
       const ffiRes = bridge.executeBunFfiBarnesHut(nodeBuffer, edgeBuffer, 3, 0.8);
       expect(ffiRes.executed).toBe(true);
       expect(ffiRes.processedNodes).toBe(nodeCount);

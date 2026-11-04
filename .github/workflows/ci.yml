@@ -1,16 +1,9 @@
 name: CANGREJO CI — Lightweight PR Verification (Gates 0-11)
 
+# Cloudflare Workers Builds handles automatic build & deploy on pushes to `main`.
+# GitHub Actions only runs lightweight typecheck + unit tests on Pull Requests (or manual dispatch).
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "public/**"
-      - "LICENSE"
-      - "CITATION.cff"
-      - ".editorconfig"
   pull_request:
     branches: [main]
     paths-ignore:
@@ -29,29 +22,22 @@ permissions:
   contents: read
 
 jobs:
-  moon-bun-dag:
-    name: "🚀 Bun 1.4 + Rust + moon 2.6 Polyglot DAG (Gates 0-11)"
+  verify:
+    name: "⚡ Bun Typecheck & Gates 0-11"
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Setup Rust Toolchain (Cargo + cdylib for bun:ffi)
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust Build Artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "packages/layout-rs -> target"
 
       - name: Setup Bun Runtime
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.3"
 
-      - name: Install Dependencies via Bun
+      - name: Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run Polyglot Verification (Typecheck + Build + Gates 0-11) via moon
-        run: bun run moon:check
+      - name: Typecheck & Run Gate Suites (0-11)
+        run: bun run typecheck && bun test
+
