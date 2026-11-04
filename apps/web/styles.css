@@ -170,18 +170,19 @@
     height: 100vh;
   }
 
-  /* Unified Single-Row 48px Investigator Command Bar */
+  /* macOS Sonoma / iPadOS Pro Categorized Investigator Command Bar */
   .ribbon {
-    height: 48px;
-    min-height: 48px;
-    max-height: 48px;
+    height: 58px;
+    min-height: 58px;
+    max-height: 58px;
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
-    padding: 0 8px;
+    gap: 5px;
+    padding: 3px 8px;
     background: var(--surface-panel);
+    backdrop-filter: blur(18px) saturate(180%);
     border-bottom: 1px solid var(--border-subtle);
     overflow-x: auto;
     overflow-y: hidden;
@@ -194,7 +195,7 @@
   .ribbon-right {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     flex-wrap: nowrap;
     flex-shrink: 0;
   }
@@ -267,28 +268,138 @@
 
   .ribbon-divider {
     width: 1px;
-    height: 20px;
+    height: 28px;
     background: var(--border-default);
-    margin: 0 2px;
+    margin: 0 1px;
     flex-shrink: 0;
+  }
+
+  /* macOS Sonoma / iPadOS Pro Categorized Toolbar Pods */
+  .macos-pod {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 3px 5px 4px;
+    border-radius: 8px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+
+  .macos-pod-label {
+    font-family: var(--font-sans);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    line-height: 1;
+    padding-left: 3px;
+    user-select: none;
+  }
+
+  .macos-pod-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  /* iOS / macOS System Squircle Icon Badges */
+  .ios-squircle {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+
+  .ios-squircle-sm {
+    width: 17px;
+    height: 17px;
+    border-radius: 4.5px;
+  }
+
+  .squircle-blue {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border-color: rgba(96, 165, 250, 0.35);
+  }
+
+  .squircle-emerald {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.35);
+  }
+
+  .squircle-amber {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.35);
+  }
+
+  .squircle-purple {
+    background: rgba(168, 85, 247, 0.22);
+    color: #c084fc;
+    border-color: rgba(192, 132, 252, 0.35);
+  }
+
+  .squircle-cyan {
+    background: rgba(6, 182, 212, 0.2);
+    color: #22d3ee;
+    border-color: rgba(34, 211, 238, 0.35);
+  }
+
+  html[data-theme='light'] .squircle-blue {
+    background: rgba(37, 99, 235, 0.12);
+    color: #1d4ed8;
+    border-color: rgba(37, 99, 235, 0.28);
+  }
+
+  html[data-theme='light'] .squircle-emerald {
+    background: rgba(5, 150, 105, 0.12);
+    color: #047857;
+    border-color: rgba(5, 150, 105, 0.28);
+  }
+
+  html[data-theme='light'] .squircle-amber {
+    background: rgba(217, 119, 6, 0.14);
+    color: #b45309;
+    border-color: rgba(217, 119, 6, 0.3);
+  }
+
+  html[data-theme='light'] .squircle-purple {
+    background: rgba(126, 34, 206, 0.12);
+    color: #6b21a8;
+    border-color: rgba(126, 34, 206, 0.28);
+  }
+
+  html[data-theme='light'] .squircle-cyan {
+    background: rgba(8, 145, 178, 0.12);
+    color: #0e7490;
+    border-color: rgba(8, 145, 178, 0.28);
   }
 
   .case-selector-group {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
   }
 
   .ribbon-select {
-    height: 28px;
+    height: 26px;
     background: var(--surface-panel-elevated);
     color: var(--text-primary);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
-    padding: 0 6px;
-    font-size: 11px;
+    padding: 0 5px;
+    font-size: 10.5px;
     font-weight: 500;
-    max-width: 135px;
+    max-width: 118px;
     text-overflow: ellipsis;
   }
 
@@ -296,28 +407,33 @@
   .segmented-group {
     display: inline-flex;
     align-items: center;
-    background: var(--surface-sunken);
+    background: var(--surface-panel);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    padding: 2px;
+    padding: 1.5px;
     gap: 1px;
   }
 
   .seg-btn {
-    height: 24px;
-    padding: 0 6px;
+    height: 23px;
+    padding: 0 5px;
     background: transparent;
     color: var(--text-secondary);
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 500;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 3.5px;
     white-space: nowrap;
     transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+
+  .seg-btn svg {
+    flex-shrink: 0;
+    opacity: 0.85;
   }
 
   .seg-btn:hover {
@@ -330,12 +446,18 @@
     color: var(--text-primary);
     border-color: var(--border-default);
     font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+
+  .seg-btn.active svg {
+    color: var(--accent-primary);
+    opacity: 1;
   }
 
   .btn-history {
-    padding: 0 6px;
+    padding: 0 5px;
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: 10px;
   }
 
   /* Compact Collection Pill (Inside Forensic Popover) */
@@ -380,19 +502,19 @@
   }
 
   .btn {
-    height: 28px;
-    padding: 0 8px;
+    height: 26px;
+    padding: 0 7px;
     background: var(--surface-panel-elevated);
     color: var(--text-primary);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 500;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 4px;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
     white-space: nowrap;
   }
@@ -434,7 +556,7 @@
     border-color: var(--accent-hover);
     color: var(--text-on-accent);
     font-weight: 600;
-    padding: 0 10px;
+    padding: 0 9px;
   }
 
   .btn-primary:hover {
@@ -445,24 +567,24 @@
   .ribbon-status-cluster {
     display: inline-flex;
     align-items: center;
-    height: 28px;
-    background: var(--surface-sunken);
+    height: 26px;
+    background: var(--surface-panel);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    padding: 2px;
+    padding: 1.5px;
     gap: 2px;
   }
 
   .status-pill {
     height: 22px;
-    padding: 0 7px;
+    padding: 0 6px;
     border-radius: var(--radius-sm);
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 600;
     color: var(--text-secondary);
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     white-space: nowrap;
     border: 1px solid transparent;
     background: transparent;
@@ -551,13 +673,13 @@
     border-radius: var(--radius-md);
     cursor: pointer;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 9px;
     text-align: left;
     transition: background-color 120ms ease, border-color 120ms ease;
   }
 
-  .popover-item svg {
+  .popover-item > svg {
     margin-top: 2px;
     color: var(--text-secondary);
     flex-shrink: 0;
@@ -568,7 +690,7 @@
     border-color: var(--border-subtle);
   }
 
-  .popover-item:hover svg {
+  .popover-item:hover > svg {
     color: var(--text-primary);
   }
 

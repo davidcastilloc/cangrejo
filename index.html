@@ -13,377 +13,456 @@
   </head>
   <body>
     <div id="app">
-      <!-- Unified 48px Single-Row Investigator Command Bar -->
+      <!-- macOS Sonoma / iPadOS Pro Categorized Studio Command Bar -->
       <header class="ribbon" role="banner" aria-label="Barra de control principal Cangrejo OSINT">
-        <div class="ribbon-left">
-          <button
-            id="btn-brand-lore"
-            type="button"
-            class="brand brand-btn"
-            title="Abrir Manifiesto: El Cangrejo de Oro (Criminalística Venezolana 1971) y Atajos"
-          >
-            <div class="brand-logo" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <ellipse cx="12" cy="12.5" rx="5.5" ry="4.2" fill="rgba(245, 158, 11, 0.22)" />
-                <circle cx="12" cy="12.5" r="1.6" fill="#22D3EE" stroke="none" />
-                <path d="M6.5 9.5L4 6.5L6 4.5" />
-                <path d="M17.5 9.5L20 6.5L18 4.5" />
-                <path d="M6.2 12.5H2.5" />
-                <path d="M17.8 12.5H21.5" />
-                <path d="M6.8 15.5L3.5 18" />
-                <path d="M17.2 15.5L20.5 18" />
-                <path d="M8.5 16.5L6.5 20" />
-                <path d="M15.5 16.5L17.5 20" />
-              </svg>
+        <!-- CATEGORÍA 1: IDENTIDAD & EXPEDIENTE -->
+        <div class="macos-pod">
+          <span class="macos-pod-label">EXPEDIENTE</span>
+          <div class="macos-pod-row">
+            <button
+              id="btn-brand-lore"
+              type="button"
+              class="brand brand-btn"
+              title="Abrir Manifiesto: El Cangrejo de Oro (Criminalística Venezolana 1971) y Atajos"
+            >
+              <div class="brand-logo" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <ellipse cx="12" cy="12.5" rx="5.5" ry="4.2" fill="rgba(245, 158, 11, 0.22)" />
+                  <circle cx="12" cy="12.5" r="1.6" fill="#22D3EE" stroke="none" />
+                  <path d="M6.5 9.5L4 6.5L6 4.5" />
+                  <path d="M17.5 9.5L20 6.5L18 4.5" />
+                  <path d="M6.2 12.5H2.5" />
+                  <path d="M17.8 12.5H21.5" />
+                  <path d="M6.8 15.5L3.5 18" />
+                  <path d="M17.2 15.5L20.5 18" />
+                  <path d="M8.5 16.5L6.5 20" />
+                  <path d="M15.5 16.5L17.5 20" />
+                </svg>
+              </div>
+              <span class="brand-title">CANGREJO</span>
+              <span class="brand-badge">ORO</span>
+            </button>
+
+            <div class="case-selector-group">
+              <label for="preset-select" class="sr-only">Seleccionar expediente</label>
+              <select id="preset-select" class="ribbon-select" aria-label="Expediente de investigación">
+                <option value="apt29">Caso #01: APT29 / Midnight Blizzard</option>
+                <option value="cloudflare">Caso #02: Superficie DNS (cloudflare.com)</option>
+                <option value="crypto">Caso #03: Ransomware BTC Treasury</option>
+                <option value="stress250">Caso #04: Benchmark 250 Nodos</option>
+              </select>
+              <button id="btn-load-preset" type="button" class="btn btn-subtle" title="Cargar expediente seleccionado">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5H12.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7Z" />
+                </svg>
+                <span>Cargar</span>
+              </button>
             </div>
-            <span class="brand-title">CANGREJO</span>
-            <span class="brand-badge">ORO v1.0</span>
-          </button>
+          </div>
+        </div>
 
-          <div class="ribbon-divider" aria-hidden="true"></div>
+        <!-- CATEGORÍA 2: DISPOSICIÓN DEL GRAFO (LAYOUT CON ICONOS DEMOSTRATIVOS) -->
+        <div class="macos-pod">
+          <span class="macos-pod-label">DISPOSICIÓN DEL GRAFO</span>
+          <div class="macos-pod-row">
+            <div class="segmented-group" role="group" aria-label="Algoritmo de Layout">
+              <button type="button" data-layout="organic" class="seg-btn btn-layout active" title="ForceAtlas2 Barnes-Hut Quadtree O(V log V)">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="8" cy="8" r="2" />
+                  <circle cx="3" cy="4" r="1.4" />
+                  <circle cx="13" cy="4" r="1.4" />
+                  <circle cx="8" cy="13.5" r="1.4" />
+                  <path d="M6.4 6.8 4.2 5M9.6 6.8 11.8 5M8 10v2" />
+                </svg>
+                <span>Orgánico</span>
+              </button>
+              <button type="button" data-layout="hierarchical" class="seg-btn btn-layout" title="Jerárquico Sugiyama DAG">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="6" y="1.8" width="4" height="3" rx="0.8" />
+                  <rect x="2" y="11" width="4" height="3" rx="0.8" />
+                  <rect x="10" y="11" width="4" height="3" rx="0.8" />
+                  <path d="M8 4.8v3.2M4 11V8h8v3" />
+                </svg>
+                <span>Jerárquico</span>
+              </button>
+              <button type="button" data-layout="circular" class="seg-btn btn-layout" title="Anillo Circular">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="8" cy="8" r="5" stroke-dasharray="2 2" />
+                  <circle cx="8" cy="3" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="8" r="1.5" fill="currentColor" />
+                  <circle cx="8" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="3" cy="8" r="1.5" fill="currentColor" />
+                </svg>
+                <span>Circular</span>
+              </button>
+              <button type="button" data-layout="block" class="seg-btn btn-layout" title="Cuadrícula en Bloques">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2.2" y="2.2" width="4.6" height="4.6" rx="1" />
+                  <rect x="9.2" y="2.2" width="4.6" height="4.6" rx="1" />
+                  <rect x="2.2" y="9.2" width="4.6" height="4.6" rx="1" />
+                  <rect x="9.2" y="9.2" width="4.6" height="4.6" rx="1" />
+                </svg>
+                <span>Bloques</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
-          <div class="case-selector-group">
-            <label for="preset-select" class="sr-only">Seleccionar expediente</label>
-            <select id="preset-select" class="ribbon-select" aria-label="Expediente de investigación">
-              <option value="apt29">Caso Cangrejo #01: APT29 / Midnight Blizzard Infrastructure</option>
-              <option value="cloudflare">Caso Cangrejo #02: Superficie DNS en Vivo (cloudflare.com / github.com)</option>
-              <option value="crypto">Caso Cangrejo #03: Ransomware BTC Treasury &amp; Mixer Trace</option>
-              <option value="stress250">Caso Cangrejo #04: Benchmark 250 Nodos (Barnes-Hut + Collection Nodes)</option>
-            </select>
-            <button id="btn-load-preset" type="button" class="btn btn-subtle" title="Cargar expediente seleccionado">
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5H12.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7Z" />
+        <!-- CATEGORÍA 3: HERRAMIENTAS DE LIENZO & TRAZO -->
+        <div class="macos-pod">
+          <span class="macos-pod-label">LIENZO &amp; SELECCIÓN</span>
+          <div class="macos-pod-row">
+            <div class="segmented-group" role="group" aria-label="Herramienta de Cursor">
+              <button type="button" data-tool="pointer" class="seg-btn btn-tool active" title="Puntero / Mover nodos">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m3.5 2.2 8.8 6.3-4.2.8 1.9 3.9-1.8.8-1.9-3.9-2.8 2.6V2.2Z" />
+                </svg>
+                <span>Puntero</span>
+              </button>
+              <button type="button" data-tool="marquee" class="seg-btn btn-tool" title="Selección por Caja (Marquee)">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke-dasharray="2.4 2.2" />
+                </svg>
+                <span>Caja</span>
+              </button>
+              <button type="button" data-tool="lasso" class="seg-btn btn-tool" title="Selección por Lazo Poligonal">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M8 3C4.5 3 2.5 5 2.5 7.5S5 11.8 8.5 11.8s5-1.8 5-4.3S11.5 3 8 3Z" />
+                  <path d="M6.5 11.6c-.5 1.4-1.8 2.2-3.2 2" />
+                </svg>
+                <span>Lazo</span>
+              </button>
+              <button type="button" data-tool="link" class="seg-btn btn-tool" title="Enlazar dos entidades">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="3.5" cy="12.5" r="2" />
+                  <circle cx="12.5" cy="3.5" r="2" />
+                  <path d="M5 11 11 5M7.8 4.8h3.4v3.4" />
+                </svg>
+                <span>Enlazar</span>
+              </button>
+            </div>
+
+            <div class="segmented-group history-group" role="group" aria-label="Historial de cambios">
+              <button id="btn-undo" type="button" class="seg-btn btn-history" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5.5 4.5 2.5 7.5l3 3" />
+                  <path d="M3 7.5h6.5a3.5 3.5 0 1 1 0 7H7" />
+                </svg>
+                <span id="cnt-undo" class="tabular">0</span>
+              </button>
+              <button id="btn-redo" type="button" class="seg-btn btn-history" title="Rehacer (Ctrl+Y)" aria-label="Rehacer">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m10.5 4.5 3 3-3 3" />
+                  <path d="M13 7.5H6.5a3.5 3.5 0 1 0 0 7H9" />
+                </svg>
+                <span id="cnt-redo" class="tabular">0</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CATEGORÍA 4: INTELIGENCIA OSINT, BÓVEDA & COMISARIO IA -->
+        <div class="macos-pod">
+          <span class="macos-pod-label">INTELIGENCIA &amp; BÓVEDA</span>
+          <div class="macos-pod-row">
+            <button
+              type="button"
+              class="btn btn-popover-trigger"
+              popovertarget="menu-forensic-tools"
+              title="Analítica Forense, Ingesta Masiva de IOCs, Radar 24/7 y Agrupación de Nodos"
+            >
+              <span class="ios-squircle ios-squircle-sm squircle-emerald" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="8" cy="8" r="6" />
+                  <circle cx="8" cy="8" r="2" />
+                  <path d="M8 2v2M8 12v2M2 8h2M12 8h2" />
+                </svg>
+              </span>
+              <span>Forense</span>
+              <svg class="chevron-icon" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m3 4.5 3 3 3-3" />
               </svg>
-              <span>Cargar</span>
+            </button>
+
+            <div id="menu-forensic-tools" popover="auto" class="ribbon-popover" aria-label="Herramientas Forenses e Ingesta">
+              <div class="popover-section-label">ANALÍTICA E INGESTA TÁCTICA</div>
+              <button
+                id="btn-forensic-analytics"
+                type="button"
+                class="popover-item"
+                title="Analítica Forense: Eslabón Dorado (Camino Más Corto), Centralidad PageRank y Detección de Anillos"
+              >
+                <span class="ios-squircle squircle-amber" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 1.5 3.5 9h4.5l-1 5.5L12.5 7H8l1-5.5Z" />
+                  </svg>
+                </span>
+                <div class="popover-item-text">
+                  <span class="popover-item-title">Eslabón Dorado &amp; PageRank</span>
+                  <span class="popover-item-desc">Camino más corto BFS, centralidad y ciclos</span>
+                </div>
+              </button>
+
+              <button
+                id="btn-paste-iocs"
+                type="button"
+                class="popover-item"
+                title="Ingesta Masiva: Pegar Reporte o Logs Crudos y Extraer IOCs al Grafo"
+              >
+                <span class="ios-squircle squircle-blue" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="3" width="8" height="11" rx="1.5" />
+                    <path d="M6 3V2h4v1M6.5 7h3M6.5 10h3" />
+                  </svg>
+                </span>
+                <div class="popover-item-text">
+                  <span class="popover-item-title">Pegar IOCs (Paste-to-Graph)</span>
+                  <span class="popover-item-desc">Extraer indicadores desde boletines o logs</span>
+                </div>
+              </button>
+
+              <button
+                id="btn-radar-watch"
+                type="button"
+                class="popover-item"
+                title="Radar Cangrejo 24/7: Monitorear Deriva de Infraestructura (DNS/CT)"
+              >
+                <span class="ios-squircle squircle-emerald" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 8 12.5 3.5" />
+                    <circle cx="8" cy="8" r="6" />
+                    <path d="M10.8 5.2a4 4 0 1 1-5.6 0" />
+                  </svg>
+                </span>
+                <div class="popover-item-text">
+                  <span class="popover-item-title">Radar 24/7 (Deriva DNS/CT)</span>
+                  <span class="popover-item-desc">Monitoreo continuo con huella SHA-256</span>
+                </div>
+              </button>
+
+              <div class="popover-divider" role="separator"></div>
+              <div class="popover-section-label">AGRUPACIÓN DE NODOS HOJA</div>
+              <div class="collection-pill" title="Agrupación automática de nodos hoja en Collection Nodes">
+                <label class="collection-toggle-label" for="chk-collect">
+                  <input id="chk-collect" type="checkbox" checked />
+                  <span>Collections (<strong id="lbl-collect-min">4</strong>)</span>
+                </label>
+                <input
+                  id="rng-collect-min"
+                  type="range"
+                  min="2"
+                  max="15"
+                  value="4"
+                  aria-label="Umbral mínimo de entidades por Collection Node"
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="btn btn-popover-trigger"
+              popovertarget="menu-vault-export"
+              title="Bóveda SQLite, STIX 2.1, Dossier Judicial y Cifrado Bóveda Cero (.cgrj)"
+            >
+              <span class="ios-squircle ios-squircle-sm squircle-amber" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 1.8 2.5 4v4.2c0 3.4 2.3 5.5 5.5 6.3 3.2-.8 5.5-2.9 5.5-6.3V4L8 1.8Z" />
+                  <path d="M6 8.2 7.4 9.6 10.2 6.8" />
+                </svg>
+              </span>
+              <span>Bóveda</span>
+              <svg class="chevron-icon" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m3 4.5 3 3 3-3" />
+              </svg>
+            </button>
+
+            <div id="menu-vault-export" popover="auto" class="ribbon-popover" aria-label="Bóveda, Custodia y Exportación">
+              <div class="popover-section-label">CUENTA MULTI-TENANT, LICENCIA &amp; MCP</div>
+              <button
+                id="btn-open-account-from-vault"
+                type="button"
+                class="popover-item"
+                title="Iniciar Sesión, Registrar Organización Cliente y Configurar MCP"
+              >
+                <span class="ios-squircle squircle-cyan" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="8" cy="5.5" r="2.8" />
+                    <path d="M2.8 13.5c0-2.5 2.3-4.2 5.2-4.2s5.2 1.7 5.2 4.2" />
+                  </svg>
+                </span>
+                <div class="popover-item-text">
+                  <span class="popover-item-title">Cuenta, Clientes &amp; MCP</span>
+                  <span class="popover-item-desc">Iniciar sesión, crear tenant D1 y tokens MCP</span>
+                </div>
+              </button>
+
+              <div class="popover-divider" role="separator"></div>
+              <div class="popover-section-label">PERSISTENCIA Y DICTAMEN PERICIAL</div>
+              <button
+                id="btn-vault-save"
+                type="button"
+                class="popover-item"
+                title="Persistir Expediente activo en la Bóveda SQLite (bun:sqlite)"
+              >
+                <span class="ios-squircle squircle-blue" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <ellipse cx="8" cy="4" rx="5" ry="2" />
+                    <path d="M3 4v4c0 1.1 2.2 2 5 2s5-.9 5-2V4" />
+                    <path d="M3 8v4c0 1.1 2.2 2 5 2s5-.9 5-2V8" />
+                  </svg>
+                </span>
+                <div class="popover-item-text">
+                  <span class="popover-item-title">Guardar en Bóveda SQLite</span>
+                  <span class="popover-item-desc">Persistencia transaccional WAL / D1</span>
+                </div>
+              </button>
+
+              <button
+                id="btn-export-dossier"
+                type="button"
+                class="popover-item"
+                title="Exportar Dossier Pericial Imprimible HTML5/PDF (Caso Cangrejo)"
+              >
+                <span class="ios-squircle squircle-amber" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" />
+                    <path d="M9 2v4h4M5.5 9.5h5M5.5 11.8h3.5" />
+                  </svg>
+                </span>
+                <div class="popover-item-text">
+                  <span class="popover-item-title">Dossier Pericial (Daubert / PDF)</span>
+                  <span class="popover-item-desc">Dictamen HTML5 con firma Ed25519</span>
+                </div>
+              </button>
+
+              <div class="popover-divider" role="separator"></div>
+              <div class="popover-section-label">INTERCAMBIO FORENSE (STIX 2.1 &amp; .CGRX)</div>
+              <div class="popover-grid-2">
+                <button
+                  id="btn-export-stix21"
+                  type="button"
+                  class="btn popover-grid-btn"
+                  title="Exportar Bundle OASIS STIX 2.1 con Manifiesto de Cadena de Custodia SHA-256"
+                >
+                  STIX 2.1 ↓
+                </button>
+                <button
+                  id="btn-import-stix21"
+                  type="button"
+                  class="btn popover-grid-btn"
+                  title="Importar Bundle OASIS STIX 2.1 y verificar Sello de Custodia SHA-256"
+                >
+                  STIX 2.1 ↑
+                </button>
+                <button
+                  id="btn-export-mtgx"
+                  type="button"
+                  class="btn popover-grid-btn"
+                  title="Exportar Expediente .cgrx (Archivo Forense PKZIP + GraphML)"
+                >
+                  .cgrx ↓
+                </button>
+                <label class="btn popover-grid-btn" title="Importar Expediente .cgrx / .mtgx" tabindex="0">
+                  .cgrx ↑
+                  <input id="inp-import-mtgx" type="file" accept=".cgrx,.mtgx,.zip" style="display: none" />
+                </label>
+              </div>
+
+              <div class="popover-divider" role="separator"></div>
+              <div class="popover-section-label">BÓVEDA CERO (ZERO-KNOWLEDGE AES-256-GCM)</div>
+              <div class="popover-grid-2">
+                <button
+                  id="btn-encrypt-mtgj"
+                  type="button"
+                  class="btn popover-grid-btn"
+                  title="Bóveda Cero: Cifrado Selectivo Zero-Knowledge AES-256-GCM + AES-GMAC"
+                >
+                  Cifrar .cgrj
+                </button>
+                <button
+                  id="btn-decrypt-mtgj"
+                  type="button"
+                  class="btn popover-grid-btn"
+                  title="Descifrar y verificar autenticidad topológica AES-GMAC de un sobre .cgrj"
+                >
+                  Descifrar .cgrj
+                </button>
+              </div>
+            </div>
+
+            <button
+              id="btn-ai-copilot"
+              type="button"
+              class="btn btn-copilot"
+              title="Comisario IA (Cloudflare Workers AI + Vectorize RRF + Síntesis Judicial Daubert)"
+            >
+              <span class="ios-squircle ios-squircle-sm squircle-purple" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 2v2.5M8 11.5V14M2 8h2.5M11.5 8H14M4.2 4.2l1.8 1.8M10 10l1.8 1.8M11.8 4.2 10 6M6 10l-1.8 1.8" />
+                  <circle cx="8" cy="8" r="2" />
+                </svg>
+              </span>
+              <span>Comisario IA</span>
+            </button>
+
+            <button
+              id="btn-primary-run-transforms"
+              type="button"
+              class="btn btn-primary"
+              title="Ejecutar Pesquisa OSINT en vivo sobre la entidad seleccionada"
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+                <path d="M4 2.8a.8.8 0 0 1 1.22-.68l8 5.2a.8.8 0 0 1 0 1.36l-8 5.2A.8.8 0 0 1 4 13.2V2.8Z" />
+              </svg>
+              <span>Pesquisa</span>
             </button>
           </div>
         </div>
 
-        <div class="ribbon-center">
-          <!-- Segmented Layout Controls -->
-          <div class="segmented-group" role="group" aria-label="Algoritmo de Layout">
-            <button type="button" data-layout="organic" class="seg-btn btn-layout active" title="ForceAtlas2 Barnes-Hut Quadtree O(V log V)">
-              Orgánico
-            </button>
-            <button type="button" data-layout="hierarchical" class="seg-btn btn-layout" title="Jerárquico Sugiyama DAG">
-              Jerárquico
-            </button>
-            <button type="button" data-layout="circular" class="seg-btn btn-layout" title="Anillo Circular">
-              Circular
-            </button>
-            <button type="button" data-layout="block" class="seg-btn btn-layout" title="Cuadrícula en Bloques">
-              Bloques
-            </button>
-          </div>
-
-          <!-- Segmented Cursor Tools -->
-          <div class="segmented-group" role="group" aria-label="Herramienta de Cursor">
-            <button type="button" data-tool="pointer" class="seg-btn btn-tool active" title="Puntero / Mover nodos">
-              Puntero
-            </button>
-            <button type="button" data-tool="marquee" class="seg-btn btn-tool" title="Selección por Caja (Marquee)">
-              Caja
-            </button>
-            <button type="button" data-tool="lasso" class="seg-btn btn-tool" title="Selección por Lazo Poligonal">
-              Lazo
-            </button>
-            <button type="button" data-tool="link" class="seg-btn btn-tool" title="Enlazar dos entidades">
-              Enlazar
-            </button>
-          </div>
-
-          <!-- Compact Undo / Redo History -->
-          <div class="segmented-group history-group" role="group" aria-label="Historial de cambios">
-            <button id="btn-undo" type="button" class="seg-btn btn-history" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M5.5 4.5 2.5 7.5l3 3" />
-                <path d="M3 7.5h6.5a3.5 3.5 0 1 1 0 7H7" />
-              </svg>
-              <span id="cnt-undo" class="tabular">0</span>
-            </button>
-            <button id="btn-redo" type="button" class="seg-btn btn-history" title="Rehacer (Ctrl+Y)" aria-label="Rehacer">
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="m10.5 4.5 3 3-3 3" />
-                <path d="M13 7.5H6.5a3.5 3.5 0 1 0 0 7H9" />
-              </svg>
-              <span id="cnt-redo" class="tabular">0</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="ribbon-right">
-          <!-- Progressive Disclosure 1: Forensic Analytics, IOC Ingest, Radar & Collection Threshold -->
-          <button
-            type="button"
-            class="btn btn-popover-trigger"
-            popovertarget="menu-forensic-tools"
-            title="Analítica Forense, Ingesta Masiva de IOCs, Radar 24/7 y Agrupación de Nodos"
-          >
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="8" cy="8" r="6" />
-              <circle cx="8" cy="8" r="2.2" />
-              <path d="M8 2v2M8 12v2M2 8h2M12 8h2" />
-            </svg>
-            <span>Forense</span>
-            <svg class="chevron-icon" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="m3 4.5 3 3 3-3" />
-            </svg>
-          </button>
-
-          <div id="menu-forensic-tools" popover="auto" class="ribbon-popover" aria-label="Herramientas Forenses e Ingesta">
-            <div class="popover-section-label">ANALÍTICA E INGESTA TÁCTICA</div>
-            <button
-              id="btn-forensic-analytics"
-              type="button"
-              class="popover-item"
-              title="Analítica Forense: Eslabón Dorado (Camino Más Corto), Centralidad PageRank y Detección de Anillos"
-            >
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M9 1.5 3.5 9h4.5l-1 5.5L12.5 7H8l1-5.5Z" />
-              </svg>
-              <div class="popover-item-text">
-                <span class="popover-item-title">Eslabón Dorado &amp; PageRank</span>
-                <span class="popover-item-desc">Camino más corto BFS, centralidad y ciclos</span>
-              </div>
-            </button>
-
-            <button
-              id="btn-paste-iocs"
-              type="button"
-              class="popover-item"
-              title="Ingesta Masiva: Pegar Reporte o Logs Crudos y Extraer IOCs al Grafo"
-            >
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="4" y="3" width="8" height="11" rx="1.5" />
-                <path d="M6 3V2h4v1M6.5 7h3M6.5 10h3" />
-              </svg>
-              <div class="popover-item-text">
-                <span class="popover-item-title">Pegar IOCs (Paste-to-Graph)</span>
-                <span class="popover-item-desc">Extraer indicadores desde boletines o logs</span>
-              </div>
-            </button>
-
-            <button
-              id="btn-radar-watch"
-              type="button"
-              class="popover-item"
-              title="Radar Cangrejo 24/7: Monitorear Deriva de Infraestructura (DNS/CT)"
-            >
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M8 8 12.5 3.5" />
-                <circle cx="8" cy="8" r="6" />
-                <path d="M10.8 5.2a4 4 0 1 1-5.6 0" />
-              </svg>
-              <div class="popover-item-text">
-                <span class="popover-item-title">Radar 24/7 (Deriva DNS/CT)</span>
-                <span class="popover-item-desc">Monitoreo continuo con huella SHA-256</span>
-              </div>
-            </button>
-
-            <div class="popover-divider" role="separator"></div>
-            <div class="popover-section-label">AGRUPACIÓN DE NODOS HOJA</div>
-            <div class="collection-pill" title="Agrupación automática de nodos hoja en Collection Nodes">
-              <label class="collection-toggle-label" for="chk-collect">
-                <input id="chk-collect" type="checkbox" checked />
-                <span>Collections (<strong id="lbl-collect-min">4</strong>)</span>
-              </label>
-              <input
-                id="rng-collect-min"
-                type="range"
-                min="2"
-                max="15"
-                value="4"
-                aria-label="Umbral mínimo de entidades por Collection Node"
-              />
-            </div>
-          </div>
-
-          <!-- Progressive Disclosure 2: Vault, STIX 2.1, .cgrx & Bóveda Cero .cgrj -->
-          <button
-            type="button"
-            class="btn btn-popover-trigger"
-            popovertarget="menu-vault-export"
-            title="Bóveda SQLite, STIX 2.1, Dossier Judicial y Cifrado Bóveda Cero (.cgrj)"
-          >
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M8 1.8 2.5 4v4.2c0 3.4 2.3 5.5 5.5 6.3 3.2-.8 5.5-2.9 5.5-6.3V4L8 1.8Z" />
-              <path d="M6 8.2 7.4 9.6 10.2 6.8" />
-            </svg>
-            <span>Bóveda</span>
-            <svg class="chevron-icon" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="m3 4.5 3 3 3-3" />
-            </svg>
-          </button>
-
-          <div id="menu-vault-export" popover="auto" class="ribbon-popover" aria-label="Bóveda, Custodia y Exportación">
-            <div class="popover-section-label">CUENTA MULTI-TENANT, LICENCIA &amp; MCP</div>
-            <button
-              id="btn-open-account-from-vault"
-              type="button"
-              class="popover-item"
-              title="Iniciar Sesión, Registrar Organización Cliente y Configurar MCP"
-            >
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="8" cy="5.5" r="2.8" />
-                <path d="M2.8 13.5c0-2.5 2.3-4.2 5.2-4.2s5.2 1.7 5.2 4.2" />
-              </svg>
-              <div class="popover-item-text">
-                <span class="popover-item-title">👤 Cuenta, Clientes &amp; MCP</span>
-                <span class="popover-item-desc">Iniciar sesión, crear tenant D1 y tokens MCP</span>
-              </div>
-            </button>
-
-            <div class="popover-divider" role="separator"></div>
-            <div class="popover-section-label">PERSISTENCIA Y DICTAMEN PERICIAL</div>
-            <button
-              id="btn-vault-save"
-              type="button"
-              class="popover-item"
-              title="Persistir Expediente activo en la Bóveda SQLite (bun:sqlite)"
-            >
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <ellipse cx="8" cy="4" rx="5" ry="2" />
-                <path d="M3 4v4c0 1.1 2.2 2 5 2s5-.9 5-2V4" />
-                <path d="M3 8v4c0 1.1 2.2 2 5 2s5-.9 5-2V8" />
-              </svg>
-              <div class="popover-item-text">
-                <span class="popover-item-title">Guardar en Bóveda SQLite</span>
-                <span class="popover-item-desc">Persistencia transaccional WAL / D1</span>
-              </div>
-            </button>
-
-            <button
-              id="btn-export-dossier"
-              type="button"
-              class="popover-item"
-              title="Exportar Dossier Pericial Imprimible HTML5/PDF (Caso Cangrejo)"
-            >
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" />
-                <path d="M9 2v4h4M5.5 9.5h5M5.5 11.8h3.5" />
-              </svg>
-              <div class="popover-item-text">
-                <span class="popover-item-title">Dossier Pericial (Daubert / PDF)</span>
-                <span class="popover-item-desc">Dictamen HTML5 con firma Ed25519</span>
-              </div>
-            </button>
-
-            <div class="popover-divider" role="separator"></div>
-            <div class="popover-section-label">INTERCAMBIO FORENSE (STIX 2.1 &amp; .CGRX)</div>
-            <div class="popover-grid-2">
+        <!-- CATEGORÍA 5: CUENTA DE USUARIO & CENTRO DE CONTROL -->
+        <div class="macos-pod">
+          <span class="macos-pod-label">CUENTA &amp; SISTEMA</span>
+          <div class="macos-pod-row">
+            <div class="ribbon-status-cluster" role="group" aria-label="Cuenta de usuario, sala y tema">
               <button
-                id="btn-export-stix21"
+                id="btn-edition-tier"
                 type="button"
-                class="btn popover-grid-btn"
-                title="Exportar Bundle OASIS STIX 2.1 con Manifiesto de Cadena de Custodia SHA-256"
+                class="status-pill status-pill-btn account-ribbon-btn"
+                title="Iniciar Sesión / Cuenta de Usuario, Organización Cliente y Configuración MCP"
               >
-                STIX 2.1 ↓
+                <span class="ios-squircle ios-squircle-sm squircle-cyan" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="8" cy="5.5" r="2.6" />
+                    <path d="M3 13.5c0-2.3 2.2-4 5-4s5 1.7 5 4" />
+                  </svg>
+                </span>
+                <span>Cuenta:</span>
+                <span id="lbl-edition-tier" class="tabular">COMMUNITY</span>
               </button>
-              <button
-                id="btn-import-stix21"
-                type="button"
-                class="btn popover-grid-btn"
-                title="Importar Bundle OASIS STIX 2.1 y verificar Sello de Custodia SHA-256"
-              >
-                STIX 2.1 ↑
-              </button>
-              <button
-                id="btn-export-mtgx"
-                type="button"
-                class="btn popover-grid-btn"
-                title="Exportar Expediente .cgrx (Archivo Forense PKZIP + GraphML)"
-              >
-                .cgrx ↓
-              </button>
-              <label class="btn popover-grid-btn" title="Importar Expediente .cgrx / .mtgx" tabindex="0">
-                .cgrx ↑
-                <input id="inp-import-mtgx" type="file" accept=".cgrx,.mtgx,.zip" style="display: none" />
-              </label>
-            </div>
 
-            <div class="popover-divider" role="separator"></div>
-            <div class="popover-section-label">BÓVEDA CERO (ZERO-KNOWLEDGE AES-256-GCM)</div>
-            <div class="popover-grid-2">
+              <span id="collab-presence-badge" class="status-pill" title="Sala Colaborativa en Vivo (expediente-apt29)">
+                <span class="presence-dot" aria-hidden="true"></span>
+                <span id="lbl-collab-count" class="tabular">2</span>
+              </span>
+
               <button
-                id="btn-encrypt-mtgj"
+                id="btn-theme-toggle"
                 type="button"
-                class="btn popover-grid-btn"
-                title="Bóveda Cero: Cifrado Selectivo Zero-Knowledge AES-256-GCM + AES-GMAC"
+                class="status-pill status-pill-btn btn-theme-icon"
+                title="Alternar tema: Obsidian Studio (Oscuro) / Daylight Report (Claro WCAG AAA)"
+                aria-label="Alternar tema claro u oscuro"
               >
-                Cifrar .cgrj
-              </button>
-              <button
-                id="btn-decrypt-mtgj"
-                type="button"
-                class="btn popover-grid-btn"
-                title="Descifrar y verificar autenticidad topológica AES-GMAC de un sobre .cgrj"
-              >
-                Descifrar .cgrj
+                <svg class="theme-icon-sun" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="8" cy="8" r="3.2" />
+                  <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3" />
+                </svg>
+                <svg class="theme-icon-moon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M13.2 9.8A5.5 5.5 0 0 1 6.2 2.8a5.5 5.5 0 1 0 7 7Z" />
+                </svg>
+                <span id="lbl-theme-mode" class="sr-only">Daylight</span>
               </button>
             </div>
           </div>
-
-          <!-- Comisario IA Trigger -->
-          <button
-            id="btn-ai-copilot"
-            type="button"
-            class="btn btn-copilot"
-            title="Comisario IA (Cloudflare Workers AI + Vectorize RRF + Síntesis Judicial Daubert)"
-          >
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M8 2v2.5M8 11.5V14M2 8h2.5M11.5 8H14M4.2 4.2l1.8 1.8M10 10l1.8 1.8M11.8 4.2 10 6M6 10l-1.8 1.8" />
-              <circle cx="8" cy="8" r="2.2" />
-            </svg>
-            <span>Comisario IA</span>
-          </button>
-
-          <!-- Compact Telemetry, Edition & Theme Cluster -->
-          <div class="ribbon-status-cluster" role="group" aria-label="Estado de sala, licencia y tema">
-            <span id="collab-presence-badge" class="status-pill" title="Sala Colaborativa en Vivo (expediente-apt29)">
-              <span class="presence-dot" aria-hidden="true"></span>
-              <span id="lbl-collab-count" class="tabular">2</span>
-            </span>
-
-            <button
-              id="btn-edition-tier"
-              type="button"
-              class="status-pill status-pill-btn account-ribbon-btn"
-              title="Iniciar Sesión / Cuenta de Usuario, Organización Cliente y Configuración MCP"
-            >
-              <span aria-hidden="true">👤 Cuenta •</span>
-              <span id="lbl-edition-tier" class="tabular">COMMUNITY</span>
-            </button>
-
-            <button
-              id="btn-theme-toggle"
-              type="button"
-              class="status-pill status-pill-btn btn-theme-icon"
-              title="Alternar tema: Obsidian Studio (Oscuro) / Daylight Report (Claro WCAG AAA)"
-              aria-label="Alternar tema claro u oscuro"
-            >
-              <svg class="theme-icon-sun" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="8" cy="8" r="3.2" />
-                <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3" />
-              </svg>
-              <svg class="theme-icon-moon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M13.2 9.8A5.5 5.5 0 0 1 6.2 2.8a5.5 5.5 0 1 0 7 7Z" />
-              </svg>
-              <span id="lbl-theme-mode" class="sr-only">Daylight</span>
-            </button>
-          </div>
-
-          <!-- Single Primary Cobalt CTA (Taste Color Consistency Lock) -->
-          <button
-            id="btn-primary-run-transforms"
-            type="button"
-            class="btn btn-primary"
-            title="Ejecutar Pesquisa OSINT en vivo sobre la entidad seleccionada"
-          >
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
-              <path d="M4 2.8a.8.8 0 0 1 1.22-.68l8 5.2a.8.8 0 0 1 0 1.36l-8 5.2A.8.8 0 0 1 4 13.2V2.8Z" />
-            </svg>
-            <span>Pesquisa</span>
-          </button>
         </div>
       </header>
 
