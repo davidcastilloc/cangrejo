@@ -1845,12 +1845,12 @@ function renderFrame(): void {
     if (cam.zoom >= 0.45 && edgeLabel) {
       const midX = (srcPos.x + dstPos.x) * 0.5;
       const midY = (srcPos.y + dstPos.y) * 0.5;
-      ctx.font = '500 10px "Geist Mono", "JetBrains Mono", monospace';
+      ctx.font = '500 10px "Atkinson Hyperlegible Mono", monospace';
       const textMetrics = ctx.measureText(edgeLabel);
       const pillW = textMetrics.width + 12;
       const pillH = 16;
 
-      drawRoundedRect(ctx, midX - pillW * 0.5, midY - pillH * 0.5, pillW, pillH, 4);
+      drawRoundedRect(ctx, midX - pillW * 0.5, midY - pillH * 0.5, pillW, pillH, 3);
       ctx.fillStyle = activeTokens.edgeLabelBg;
       ctx.fill();
       ctx.lineWidth = 1;
@@ -1953,14 +1953,14 @@ function renderFrame(): void {
     const tileX = x0 + 6;
     const tileY = y0 + 6;
     const tileSize = 30;
-    drawRoundedRect(ctx, tileX, tileY, tileSize, tileSize, 4);
+    drawRoundedRect(ctx, tileX, tileY, tileSize, tileSize, 3);
     ctx.fillStyle = `${catColor}22`;
     ctx.fill();
     ctx.lineWidth = 1;
     ctx.strokeStyle = `${catColor}66`;
     ctx.stroke();
 
-    ctx.font = '700 9.5px "Geist Mono", "JetBrains Mono", monospace';
+    ctx.font = '700 9.5px "Atkinson Hyperlegible Mono", monospace';
     ctx.fillStyle = catColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1981,11 +1981,11 @@ function renderFrame(): void {
     if (cam.zoom >= 0.25) {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.font = '600 11.5px "Geist Sans", "Inter", sans-serif';
+      ctx.font = '600 11.5px "Host Grotesk", sans-serif';
       ctx.fillStyle = activeTokens.textPrimary;
       ctx.fillText(displayTitle, tileX + tileSize + 8, y0 + 7);
 
-      ctx.font = '500 9.5px "Geist Mono", "JetBrains Mono", monospace';
+      ctx.font = '500 9.5px "Atkinson Hyperlegible Mono", monospace';
       ctx.fillStyle = activeTokens.textSecondary;
       ctx.fillText(
         subLabel.length > 20 ? subLabel.slice(0, 19) + '…' : subLabel,
@@ -1999,20 +1999,20 @@ function renderFrame(): void {
       const chipText = `${ve.underlyingEntities.size}`;
       const chipW = 24;
       const chipH = 16;
-      drawRoundedRect(ctx, x0 + cardW - chipW - 6, y0 + 6, chipW, chipH, 4);
+      drawRoundedRect(ctx, x0 + cardW - chipW - 6, y0 + 6, chipW, chipH, 3);
       ctx.fillStyle = activeTokens.accentPrimary;
       ctx.fill();
-      ctx.font = '700 9.5px "Geist Mono", monospace';
-      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '700 9.5px "Atkinson Hyperlegible Mono", monospace';
+      ctx.fillStyle = '#111315';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(chipText, x0 + cardW - chipW * 0.5 - 6, y0 + 14);
     } else if (ve.pinned || hasNotes) {
       const tag = ve.pinned ? 'PIN' : 'DOC';
-      drawRoundedRect(ctx, x0 + cardW - 26, y0 + 5, 21, 13, 3);
+      drawRoundedRect(ctx, x0 + cardW - 26, y0 + 5, 21, 13, 2);
       ctx.fillStyle = activeTokens.surfacePanelElevated;
       ctx.fill();
-      ctx.font = '600 8px "Geist Mono", monospace';
+      ctx.font = '600 8px "Atkinson Hyperlegible Mono", monospace';
       ctx.fillStyle = activeTokens.textSecondary;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -2025,7 +2025,7 @@ function renderFrame(): void {
   // 4. Draw Marquee Box or Polygon Lasso Overlay
   if (marqueeStartWorld && marqueeCurrentWorld) {
     ctx.save();
-    ctx.fillStyle = 'rgba(37, 99, 235, 0.14)';
+    ctx.fillStyle = 'rgba(234, 179, 8, 0.12)';
     ctx.strokeStyle = activeTokens.borderFocus;
     ctx.lineWidth = 1.5 / cam.zoom;
     const rx = Math.min(marqueeStartWorld.x, marqueeCurrentWorld.x);
@@ -2039,7 +2039,7 @@ function renderFrame(): void {
 
   if (lassoPolygonWorld.length >= 2) {
     ctx.save();
-    ctx.fillStyle = 'rgba(37, 99, 235, 0.14)';
+    ctx.fillStyle = 'rgba(234, 179, 8, 0.12)';
     ctx.strokeStyle = activeTokens.borderFocus;
     ctx.lineWidth = 1.8 / cam.zoom;
     ctx.beginPath();
@@ -2524,15 +2524,15 @@ function renderMcpSnippet(): void {
     tokenBox?.classList.remove('hidden');
     transportToggle?.classList.add('hidden');
     if (editionTag) {
-      editionTag.textContent = `${mcpState.editionTier} (CLOUD SAAS)`;
-      editionTag.className = 'status-pill status-pill-cloud sr-only';
+      editionTag.textContent = `[ ${mcpState.editionTier} · CLOUD ]`;
+      editionTag.className = 'status-pill status-pill-cloud';
     }
   } else {
     tokenBox?.classList.add('hidden');
     transportToggle?.classList.remove('hidden');
     if (editionTag) {
-      editionTag.textContent = 'COMMUNITY (LOCAL)';
-      editionTag.className = 'status-pill status-pill-community sr-only';
+      editionTag.textContent = '[ COMUNIDAD · LOCAL ]';
+      editionTag.className = 'status-pill status-pill-community';
     }
   }
 }

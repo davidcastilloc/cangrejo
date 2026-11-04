@@ -4,10 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CANGREJO — Open-Source OSINT &amp; Forensic Link-Analysis Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;600;700&family=Host+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link
       rel="icon"
       type="image/svg+xml"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0F17' stroke='%23F59E0B' stroke-width='2'/%3E%3Cpath d='M16 9c-3.5 0-6 2.2-6 5s2.5 5 6 5 6-2.2 6-5-2.5-5-6-5zm-7 1l-3-3m17 3l3-3M8 15H4m24 0h-4M9 19l-3 3m17-3l3 3' stroke='%23FBBF24' stroke-width='2.2' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='16' cy='14' r='2.2' fill='%2322D3EE'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23111317' stroke='%23EAB308' stroke-width='2'/%3E%3Cpath d='M16 9c-3.5 0-6 2.2-6 5s2.5 5 6 5 6-2.2 6-5-2.5-5-6-5zm-7 1l-3-3m17 3l3-3M8 15H4m24 0h-4M9 19l-3 3m17-3l3 3' stroke='%23EAB308' stroke-width='2.2' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='16' cy='14' r='2.2' fill='%23FACC15'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="/apps/web/styles.css" />
   </head>
@@ -760,7 +766,7 @@ AS13335</textarea>
           <div class="ws-modal-header">
             <div class="ws-modal-title-row">
               <div class="ws-brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <ellipse cx="12" cy="12.5" rx="5.5" ry="4.2" />
                   <circle cx="12" cy="12.5" r="1.4" fill="currentColor" stroke="none" />
                   <path d="M6.5 9.5L4 6.5L6 4.5M17.5 9.5L20 6.5L18 4.5M6.2 12.5H2.5M17.8 12.5H21.5M6.8 15.5L3.5 18M17.2 15.5L20.5 18" />
@@ -772,6 +778,7 @@ AS13335</textarea>
                   Sincroniza agentes autónomos y comparte expedientes en vivo.
                 </p>
               </div>
+              <span id="mcp-active-edition-tag" class="status-pill status-pill-community">[ COMUNIDAD · LOCAL ]</span>
               <button id="btn-close-edition" type="button" class="btn btn-icon ws-close-btn" aria-label="Cerrar ventana">
                 ✕
               </button>
@@ -989,32 +996,35 @@ AS13335</textarea>
 
             <!-- PESTAÑA 2: AGENTES MCP (Vista 1 Estabilizada — Cero Desbordes) -->
             <div id="mcp-onboarding-section" data-ws-panel="mcp" class="ws-tab-panel" hidden>
-              <!-- Banner Horizontal Compacto: Google Antigravity (agy) -->
+              <!-- Bloque Arquitectónico de Especificación: Google Antigravity (agy) — Cero Card-in-Card -->
               <div id="agy-featured-banner" class="agy-hero-card">
                 <div class="agy-hero-top">
-                  <div class="agy-identity">
-                    <div class="agy-logo-mark" aria-hidden="true">A</div>
-                    <div class="agy-head-text">
-                      <div class="agy-title-row">
-                        <strong class="agy-title">Google Antigravity (agy)</strong>
-                        <span class="agy-partner-badge">Socio agéntico</span>
-                        <span id="mcp-active-edition-tag" class="status-pill status-pill-community sr-only">COMMUNITY (LOCAL)</span>
-                      </div>
-                      <p class="agy-subtitle">
-                        Despliega enjambres de subagentes en paralelo y cacerías autónomas sobre el grafo.
-                      </p>
-                    </div>
+                  <div class="agy-logo-mark" aria-hidden="true">
+                    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M10 2.5 3.2 17.5h3.1l1.4-3.4h4.6l1.4 3.4h3.1L10 2.5Z" />
+                      <path d="M8.5 11.2h3L10 7.4l-1.5 3.8Z" />
+                    </svg>
                   </div>
                   <div class="mcp-health-badge" title="12 herramientas forenses listas para invocación">
                     <span class="presence-dot" aria-hidden="true"></span>
-                    <span id="lbl-mcp-tool-count" class="tabular">12 herramientas MCP</span>
+                    <span id="lbl-mcp-tool-count" class="tabular">12 HERRAMIENTAS MCP · ACTIVO</span>
                   </div>
                 </div>
 
-                <!-- 3 Píldoras Horizontales en 1 sola línea (sin columnas estrechas que corten texto) -->
+                <div class="agy-spec-main">
+                  <div class="agy-title-row">
+                    <strong class="agy-title">Google Antigravity (agy)</strong>
+                    <span class="agy-partner-badge">AGENTE NATIVO</span>
+                  </div>
+                  <p class="agy-subtitle">
+                    Despliega enjambres de subagentes en paralelo y cacerías autónomas sobre el grafo.
+                  </p>
+                </div>
+
+                <!-- Rejilla Continua de 3 Columnas Separadas por Filetes de 1px (Cero Cajas Flotantes) -->
                 <div class="agy-chips-row">
-                  <span class="agy-feature-chip"><code>/teamwork</code> · Enjambre paralelo</span>
-                  <span class="agy-feature-chip"><code>/goal</code> · Peritaje autónomo</span>
+                  <span class="agy-feature-chip"><code>/teamwork</code> · Enjambre OSINT</span>
+                  <span class="agy-feature-chip"><code>/goal</code> · Cacería autónoma</span>
                   <span class="agy-feature-chip">Streamable HTTP nativo</span>
                 </div>
               </div>
@@ -1089,7 +1099,7 @@ AS13335</textarea>
                       Descargar .json
                     </button>
                     <button id="btn-mcp-copy-snippet" type="button" class="btn btn-primary btn-xs" aria-label="Copiar configuración al portapapeles">
-                      Copiar
+                      Copiar JSON para Antigravity
                     </button>
                   </div>
                 </div>
