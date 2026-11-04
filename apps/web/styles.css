@@ -1461,4 +1461,89 @@
     border: 1px solid rgba(2, 132, 199, 0.40);
     color: #0c4a6e;
   }
+
+  .account-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .account-mode-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .account-mode-badge[data-authenticated='true'] {
+    background: rgba(16, 185, 129, 0.14);
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #6ee7b7;
+  }
+
+  [data-theme='light'] .account-mode-badge[data-authenticated='true'] {
+    background: rgba(5, 150, 105, 0.12);
+    border-color: rgba(5, 150, 105, 0.45);
+    color: #064e3b;
+  }
+
+  .account-auth-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .account-auth-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+  }
+
+  .account-field-label {
+    font-size: 12px;
+    display: grid;
+    gap: 4px;
+    color: var(--text-primary);
+  }
+
+  .account-auth-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .account-feedback-text {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+  }
+
+  .account-profile-card {
+    margin-top: 8px;
+    padding: 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-default);
+    background: var(--surface-sunken);
+  }
+
+  .account-profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+  }
+
+  .account-meta-label {
+    display: block;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+  }
 }

@@ -15,6 +15,48 @@ export interface SignedLicenseClaims {
   credits: number;
   issuedAt: number;
   expiresAt: number;
+  tenantId?: string;
+}
+
+export interface CangrejoUserAccount {
+  userId: string;
+  tenantId: string;
+  email: string;
+  displayName: string;
+  role: 'OWNER' | 'ADMIN' | 'ANALYST';
+  status: 'active' | 'suspended';
+  createdAt: number;
+  lastLoginAt: number;
+}
+
+export interface CangrejoClientOrganization {
+  tenantId: string;
+  organizationName: string;
+  tier: CangrejoEditionTier;
+  creditsRemaining: number;
+  maxActiveMcpSessions: number;
+  maxEntitiesPerSession: number;
+  licenseKeyMasked: string | null;
+  createdAt: number;
+}
+
+export interface CangrejoMcpSessionSummary {
+  sessionId: string;
+  rawSessionId: string;
+  title: string;
+  caseTier: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
+  status: string;
+  lastSeq: number;
+  expiresAt: number;
+  hasDedicatedToken: boolean;
+}
+
+export interface CangrejoAuthenticatedAccountResult {
+  user: CangrejoUserAccount;
+  client: CangrejoClientOrganization;
+  authToken: string;
+  licenseToken: string;
+  mcpSessions: CangrejoMcpSessionSummary[];
 }
 
 export interface RadarWatchRecord {
@@ -638,6 +680,35 @@ export class BunSqliteVault {
       BEGIN
         UPDATE cangrejo_tenant_metadata SET updated_at = unixepoch() WHERE tenant_id = OLD.tenant_id;
       END;
+
+      CREATE TABLE IF NOT EXISTS cangrejo_users (
+        user_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES cangrejo_tenant_metadata(tenant_id) ON DELETE CASCADE,
+        email TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'OWNER'
+          CHECK (role IN ('OWNER', 'ADMIN', 'ANALYST')),
+        password_hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK (status IN ('active', 'suspended')),
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        last_login_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_users_tenant
+        ON cangrejo_users(tenant_id, status);
+
+      CREATE TABLE IF NOT EXISTS cangrejo_auth_sessions (
+        auth_session_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES cangrejo_users(user_id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL REFERENCES cangrejo_tenant_metadata(tenant_id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        expires_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_auth_sessions_user
+        ON cangrejo_auth_sessions(user_id, expires_at);
     `);
   }
 
@@ -970,6 +1041,7 @@ export class BunSqliteVault {
     credits?: number;
     ttlMs?: number;
     secret?: string;
+    tenantId?: string;
   }): string {
     const secret = params.secret ?? getDefaultLicenseHmacSecret();
     const now = Date.now();
@@ -986,6 +1058,7 @@ export class BunSqliteVault {
       credits: params.credits ?? defaultCredits,
       issuedAt: now,
       expiresAt: now + (params.ttlMs ?? 365 * 24 * 60 * 60 * 1000),
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
     };
     const payloadB64 = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
     const signingInput = `CGRJ.${params.tier}.${payloadB64}`;
@@ -1815,6 +1888,35 @@ export class BunSqliteVault {
           )`
         )
         .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_users (
+            user_id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL REFERENCES cangrejo_tenant_metadata(tenant_id) ON DELETE CASCADE,
+            email TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'OWNER'
+              CHECK (role IN ('OWNER', 'ADMIN', 'ANALYST')),
+            password_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active'
+              CHECK (status IN ('active', 'suspended')),
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            last_login_at INTEGER NOT NULL DEFAULT (unixepoch())
+          )`
+        )
+        .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_auth_sessions (
+            auth_session_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES cangrejo_users(user_id) ON DELETE CASCADE,
+            tenant_id TEXT NOT NULL REFERENCES cangrejo_tenant_metadata(tenant_id) ON DELETE CASCADE,
+            token_hash TEXT NOT NULL UNIQUE,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            expires_at INTEGER NOT NULL
+          )`
+        )
+        .run();
     } catch {
       // Ignore on pre-migrated D1 databases
     }
@@ -2271,6 +2373,525 @@ export class BunSqliteVault {
       checkpointSeq,
       lastSeq: d1LastSeq,
       trailingMutations,
+    };
+  }
+
+  /**
+   * Hashes a password with PBKDF2-HMAC-SHA256 (100,000 iterations, 16-byte random salt).
+   */
+  public static hashPasswordPbkdf2(password: string): string {
+    const iterations = 100_000;
+    const saltHex = crypto.randomBytes(16).toString('hex');
+    const hashHex = crypto
+      .pbkdf2Sync(password, saltHex, iterations, 32, 'sha256')
+      .toString('hex');
+    return `pbkdf2_sha256$${iterations}$${saltHex}$${hashHex}`;
+  }
+
+  /**
+   * Verifies a password against a `pbkdf2_sha256$<iterations>$<saltHex>$<hashHex>` digest
+   * using constant-time comparison (`crypto.timingSafeEqual`).
+   */
+  public static verifyPasswordPbkdf2(password: string, storedHash: string): boolean {
+    const parts = storedHash.split('$');
+    if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false;
+    const iterations = Number.parseInt(parts[1], 10);
+    const saltHex = parts[2];
+    const expectedHex = parts[3];
+    if (!Number.isFinite(iterations) || iterations < 1_000 || !saltHex || !expectedHex) {
+      return false;
+    }
+    const derivedHex = crypto
+      .pbkdf2Sync(password, saltHex, iterations, 32, 'sha256')
+      .toString('hex');
+    const bufA = Buffer.from(derivedHex, 'utf8');
+    const bufB = Buffer.from(expectedHex, 'utf8');
+    return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+  }
+
+  /**
+   * Lists all active MCP sessions belonging to a Client Organization (`tenantId`).
+   */
+  public static async listTenantMcpSessions(
+    d1: CloudflareD1DatabaseLike,
+    tenantId: string
+  ): Promise<CangrejoMcpSessionSummary[]> {
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const res = await d1
+      .prepare(
+        `SELECT session_id, raw_session_id, title, case_tier, status, last_seq, expires_at, session_token_hash
+         FROM cangrejo_mcp_sessions
+         WHERE tenant_id = ?
+         ORDER BY last_active_at DESC`
+      )
+      .bind(tenantId)
+      .all<{
+        session_id: string;
+        raw_session_id: string;
+        title: string;
+        case_tier: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
+        status: string;
+        last_seq: number;
+        expires_at: number;
+        session_token_hash: string | null;
+      }>();
+
+    const rows = Array.isArray(res.results) ? res.results : [];
+    return rows.map((r) => ({
+      sessionId: r.session_id,
+      rawSessionId: r.raw_session_id,
+      title: r.title,
+      caseTier: r.case_tier,
+      status: r.status,
+      lastSeq: Number(r.last_seq ?? 0),
+      expiresAt: Number(r.expires_at ?? 0),
+      hasDedicatedToken: Boolean(r.session_token_hash),
+    }));
+  }
+
+  /**
+   * Registers a new User (`cangrejo_users`), creates their isolated Client Organization (`cangrejo_tenant_metadata`),
+   * provisions a default MCP investigation session (`expediente-apt29`), and issues both a `cgrj_usr_*` session token
+   * and an HMAC-signed `CGRJ.<TIER>.*` license token.
+   */
+  public static async registerUserAndClient(
+    d1: CloudflareD1DatabaseLike,
+    params: {
+      email: string;
+      password: string;
+      displayName: string;
+      organizationName?: string;
+      requestedTier?: CangrejoEditionTier;
+    }
+  ): Promise<CangrejoAuthenticatedAccountResult> {
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const cleanEmail = params.email.trim().toLowerCase();
+    const cleanName = params.displayName.trim();
+    const tier: CangrejoEditionTier = params.requestedTier ?? 'ORO_PRO';
+    const cleanOrg =
+      params.organizationName?.trim() || `${cleanName} — Unidad Forense & OSINT`;
+
+    const existing = await d1
+      .prepare(`SELECT user_id FROM cangrejo_users WHERE email = ?`)
+      .bind(cleanEmail)
+      .first<{ user_id: string }>();
+    if (existing) {
+      const err = new Error('Ya existe una cuenta registrada con este correo electrónico.') as Error & {
+        code?: string;
+      };
+      err.code = 'EMAIL_EXISTS';
+      throw err;
+    }
+
+    const nowEpoch = Math.floor(Date.now() / 1000);
+    const tenantHash = crypto
+      .createHash('sha256')
+      .update(`${cleanEmail}:${cleanOrg}:${crypto.randomUUID()}`)
+      .digest('hex')
+      .slice(0, 12);
+    const tenantId = `org_${tenantHash}`;
+    const userId = `usr_${crypto.randomBytes(8).toString('hex')}`;
+    const creditsRemaining =
+      tier === 'PLATINO_ENTERPRISE' ? 5_000 : tier === 'ORO_PRO' ? 500 : 50;
+    const maxActiveMcpSessions =
+      tier === 'PLATINO_ENTERPRISE' ? 25 : tier === 'ORO_PRO' ? 10 : 3;
+    const maxEntitiesPerSession = tier === 'PLATINO_ENTERPRISE' ? 100_000 : 25_000;
+
+    const licenseToken = BunSqliteVault.issueSignedLicenseToken({
+      tier,
+      organizationName: cleanOrg,
+      credits: creditsRemaining,
+      tenantId,
+    });
+    const licenseKeyMasked = `${licenseToken.slice(0, 12)}••••${licenseToken.slice(-4)}`;
+    const sigHex = licenseToken.split('.')[3] ?? '';
+    const sigHash = crypto.createHash('sha256').update(sigHex).digest('hex');
+
+    const passwordHash = BunSqliteVault.hashPasswordPbkdf2(params.password);
+    const authToken = `cgrj_usr_${crypto.randomBytes(24).toString('hex')}`;
+    const authTokenHash = crypto.createHash('sha256').update(authToken).digest('hex');
+    const authSessionId = `asess_${crypto.randomBytes(8).toString('hex')}`;
+    const expiresEpoch = nowEpoch + 30 * 86400;
+
+    const defaultRawSessionId = 'expediente-apt29';
+    const defaultDbSessionId = `${tenantId}:${defaultRawSessionId}`;
+    const defaultCaseTier = tier === 'PLATINO_ENTERPRISE' ? 'PLATINO' : 'ORO';
+
+    const insertTenantStmt = d1
+      .prepare(
+        `INSERT INTO cangrejo_tenant_metadata (
+          tenant_id, tier, license_key_masked, license_signature_hash, organization_name,
+          max_active_mcp_sessions, max_entities_per_session, credits_remaining, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        tenantId,
+        tier,
+        licenseKeyMasked,
+        sigHash,
+        cleanOrg,
+        maxActiveMcpSessions,
+        maxEntitiesPerSession,
+        creditsRemaining,
+        nowEpoch,
+        nowEpoch
+      );
+
+    const insertUserStmt = d1
+      .prepare(
+        `INSERT INTO cangrejo_users (
+          user_id, tenant_id, email, display_name, role, password_hash, status, created_at, last_login_at
+        ) VALUES (?, ?, ?, ?, 'OWNER', ?, 'active', ?, ?)`
+      )
+      .bind(userId, tenantId, cleanEmail, cleanName, passwordHash, nowEpoch, nowEpoch);
+
+    const insertAuthSessionStmt = d1
+      .prepare(
+        `INSERT INTO cangrejo_auth_sessions (
+          auth_session_id, user_id, tenant_id, token_hash, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .bind(authSessionId, userId, tenantId, authTokenHash, nowEpoch, expiresEpoch);
+
+    const insertDefaultMcpSessionStmt = d1
+      .prepare(
+        `INSERT INTO cangrejo_mcp_sessions (
+          session_id, tenant_id, raw_session_id, user_id, title, case_tier,
+          status, last_seq, created_at, last_active_at, expires_at
+        ) VALUES (?, ?, ?, ?, 'Expediente Inicial APT29', ?, 'active', 0, ?, ?, ?)`
+      )
+      .bind(
+        defaultDbSessionId,
+        tenantId,
+        defaultRawSessionId,
+        userId,
+        defaultCaseTier,
+        nowEpoch,
+        nowEpoch,
+        nowEpoch + 365 * 86400
+      );
+
+    if (typeof d1.batch === 'function') {
+      await d1.batch([
+        insertTenantStmt,
+        insertUserStmt,
+        insertAuthSessionStmt,
+        insertDefaultMcpSessionStmt,
+      ]);
+    } else {
+      await insertTenantStmt.run();
+      await insertUserStmt.run();
+      await insertAuthSessionStmt.run();
+      await insertDefaultMcpSessionStmt.run();
+    }
+
+    const mcpSessions = await BunSqliteVault.listTenantMcpSessions(d1, tenantId);
+
+    return {
+      user: {
+        userId,
+        tenantId,
+        email: cleanEmail,
+        displayName: cleanName,
+        role: 'OWNER',
+        status: 'active',
+        createdAt: nowEpoch,
+        lastLoginAt: nowEpoch,
+      },
+      client: {
+        tenantId,
+        organizationName: cleanOrg,
+        tier,
+        creditsRemaining,
+        maxActiveMcpSessions,
+        maxEntitiesPerSession,
+        licenseKeyMasked,
+        createdAt: nowEpoch,
+      },
+      authToken,
+      licenseToken,
+      mcpSessions,
+    };
+  }
+
+  /**
+   * Authenticates an existing User (`email + password`), issues a new `cgrj_usr_*` session token,
+   * and returns the User + Client Organization profile.
+   */
+  public static async loginUser(
+    d1: CloudflareD1DatabaseLike,
+    params: { email: string; password: string }
+  ): Promise<CangrejoAuthenticatedAccountResult> {
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const cleanEmail = params.email.trim().toLowerCase();
+
+    const row = await d1
+      .prepare(
+        `SELECT
+          u.user_id, u.tenant_id, u.email, u.display_name, u.role, u.password_hash, u.status, u.created_at,
+          t.organization_name, t.tier, t.credits_remaining, t.max_active_mcp_sessions,
+          t.max_entities_per_session, t.license_key_masked, t.created_at AS tenant_created_at
+         FROM cangrejo_users u
+         JOIN cangrejo_tenant_metadata t ON u.tenant_id = t.tenant_id
+         WHERE u.email = ?`
+      )
+      .bind(cleanEmail)
+      .first<{
+        user_id: string;
+        tenant_id: string;
+        email: string;
+        display_name: string;
+        role: 'OWNER' | 'ADMIN' | 'ANALYST';
+        password_hash: string;
+        status: 'active' | 'suspended';
+        created_at: number;
+        organization_name: string;
+        tier: CangrejoEditionTier;
+        credits_remaining: number;
+        max_active_mcp_sessions: number;
+        max_entities_per_session: number;
+        license_key_masked: string | null;
+        tenant_created_at: number;
+      }>();
+
+    if (
+      !row ||
+      row.status !== 'active' ||
+      !BunSqliteVault.verifyPasswordPbkdf2(params.password, row.password_hash)
+    ) {
+      const err = new Error('Credenciales inválidas o cuenta suspendida.') as Error & {
+        code?: string;
+      };
+      err.code = 'INVALID_CREDENTIALS';
+      throw err;
+    }
+
+    const nowEpoch = Math.floor(Date.now() / 1000);
+    const expiresEpoch = nowEpoch + 30 * 86400;
+    const authToken = `cgrj_usr_${crypto.randomBytes(24).toString('hex')}`;
+    const authTokenHash = crypto.createHash('sha256').update(authToken).digest('hex');
+    const authSessionId = `asess_${crypto.randomBytes(8).toString('hex')}`;
+
+    const insertSessionStmt = d1
+      .prepare(
+        `INSERT INTO cangrejo_auth_sessions (
+          auth_session_id, user_id, tenant_id, token_hash, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .bind(authSessionId, row.user_id, row.tenant_id, authTokenHash, nowEpoch, expiresEpoch);
+
+    const updateUserStmt = d1
+      .prepare(`UPDATE cangrejo_users SET last_login_at = ? WHERE user_id = ?`)
+      .bind(nowEpoch, row.user_id);
+
+    if (typeof d1.batch === 'function') {
+      await d1.batch([insertSessionStmt, updateUserStmt]);
+    } else {
+      await insertSessionStmt.run();
+      await updateUserStmt.run();
+    }
+
+    const licenseToken = BunSqliteVault.issueSignedLicenseToken({
+      tier: row.tier,
+      organizationName: row.organization_name,
+      credits: Number(row.credits_remaining ?? 0),
+      tenantId: row.tenant_id,
+    });
+    const mcpSessions = await BunSqliteVault.listTenantMcpSessions(d1, row.tenant_id);
+
+    return {
+      user: {
+        userId: row.user_id,
+        tenantId: row.tenant_id,
+        email: row.email,
+        displayName: row.display_name,
+        role: row.role,
+        status: row.status,
+        createdAt: Number(row.created_at ?? nowEpoch),
+        lastLoginAt: nowEpoch,
+      },
+      client: {
+        tenantId: row.tenant_id,
+        organizationName: row.organization_name,
+        tier: row.tier,
+        creditsRemaining: Number(row.credits_remaining ?? 0),
+        maxActiveMcpSessions: Number(row.max_active_mcp_sessions ?? 5),
+        maxEntitiesPerSession: Number(row.max_entities_per_session ?? 25_000),
+        licenseKeyMasked: row.license_key_masked,
+        createdAt: Number(row.tenant_created_at ?? nowEpoch),
+      },
+      authToken,
+      licenseToken,
+      mcpSessions,
+    };
+  }
+
+  /**
+   * Verifies a `cgrj_usr_*` session bearer token and returns the authenticated User + Client Organization.
+   */
+  public static async verifyUserSessionToken(
+    d1: CloudflareD1DatabaseLike,
+    rawToken: string
+  ): Promise<Omit<CangrejoAuthenticatedAccountResult, 'authToken'> | null> {
+    if (!rawToken || !rawToken.startsWith('cgrj_usr_')) return null;
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const tokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
+    const nowEpoch = Math.floor(Date.now() / 1000);
+
+    const row = await d1
+      .prepare(
+        `SELECT
+          a.expires_at,
+          u.user_id, u.tenant_id, u.email, u.display_name, u.role, u.status, u.created_at, u.last_login_at,
+          t.organization_name, t.tier, t.credits_remaining, t.max_active_mcp_sessions,
+          t.max_entities_per_session, t.license_key_masked, t.created_at AS tenant_created_at
+         FROM cangrejo_auth_sessions a
+         JOIN cangrejo_users u ON a.user_id = u.user_id
+         JOIN cangrejo_tenant_metadata t ON u.tenant_id = t.tenant_id
+         WHERE a.token_hash = ?`
+      )
+      .bind(tokenHash)
+      .first<{
+        expires_at: number;
+        user_id: string;
+        tenant_id: string;
+        email: string;
+        display_name: string;
+        role: 'OWNER' | 'ADMIN' | 'ANALYST';
+        status: 'active' | 'suspended';
+        created_at: number;
+        last_login_at: number;
+        organization_name: string;
+        tier: CangrejoEditionTier;
+        credits_remaining: number;
+        max_active_mcp_sessions: number;
+        max_entities_per_session: number;
+        license_key_masked: string | null;
+        tenant_created_at: number;
+      }>();
+
+    if (!row || row.status !== 'active' || Number(row.expires_at ?? 0) < nowEpoch) {
+      return null;
+    }
+
+    const licenseToken = BunSqliteVault.issueSignedLicenseToken({
+      tier: row.tier,
+      organizationName: row.organization_name,
+      credits: Number(row.credits_remaining ?? 0),
+      tenantId: row.tenant_id,
+    });
+    const mcpSessions = await BunSqliteVault.listTenantMcpSessions(d1, row.tenant_id);
+
+    return {
+      user: {
+        userId: row.user_id,
+        tenantId: row.tenant_id,
+        email: row.email,
+        displayName: row.display_name,
+        role: row.role,
+        status: row.status,
+        createdAt: Number(row.created_at ?? nowEpoch),
+        lastLoginAt: Number(row.last_login_at ?? nowEpoch),
+      },
+      client: {
+        tenantId: row.tenant_id,
+        organizationName: row.organization_name,
+        tier: row.tier,
+        creditsRemaining: Number(row.credits_remaining ?? 0),
+        maxActiveMcpSessions: Number(row.max_active_mcp_sessions ?? 5),
+        maxEntitiesPerSession: Number(row.max_entities_per_session ?? 25_000),
+        licenseKeyMasked: row.license_key_masked,
+        createdAt: Number(row.tenant_created_at ?? nowEpoch),
+      },
+      licenseToken,
+      mcpSessions,
+    };
+  }
+
+  /**
+   * Revokes a `cgrj_usr_*` session token on logout.
+   */
+  public static async logoutUserSession(
+    d1: CloudflareD1DatabaseLike,
+    rawToken: string
+  ): Promise<boolean> {
+    if (!rawToken || !rawToken.startsWith('cgrj_usr_')) return false;
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const tokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
+    await d1
+      .prepare(`DELETE FROM cangrejo_auth_sessions WHERE token_hash = ?`)
+      .bind(tokenHash)
+      .run();
+    return true;
+  }
+
+  /**
+   * Issues a dedicated per-session MCP token (`ses_sec_<hex>`) scoped to `${tenantId}:${rawSessionId}`.
+   */
+  public static async issueDedicatedMcpSessionToken(
+    d1: CloudflareD1DatabaseLike,
+    params: {
+      tenantId: string;
+      userId?: string | null;
+      rawSessionId: string;
+      title?: string;
+      caseTier?: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE';
+      ttlSeconds?: number;
+    }
+  ): Promise<{
+    sessionToken: string;
+    sessionId: string;
+    dbSessionId: string;
+    expiresAt: number;
+  }> {
+    await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
+    const cleanRaw =
+      params.rawSessionId
+        .trim()
+        .replace(/[^a-zA-Z0-9._-]/g, '-')
+        .slice(0, 96) || 'expediente-apt29';
+    const dbSessionId = `${params.tenantId}:${cleanRaw}`;
+    const sessionToken = `ses_sec_${crypto.randomBytes(24).toString('hex')}`;
+    const tokenHash = crypto.createHash('sha256').update(sessionToken).digest('hex');
+    const nowEpoch = Math.floor(Date.now() / 1000);
+    const expiresAt = nowEpoch + (params.ttlSeconds ?? 30 * 86400);
+    const title = params.title?.trim() || `Expediente ${cleanRaw}`;
+    const caseTier = params.caseTier ?? 'ORO';
+
+    await d1
+      .prepare(
+        `INSERT INTO cangrejo_mcp_sessions (
+          session_id, tenant_id, raw_session_id, user_id, session_token_hash,
+          title, case_tier, status, last_seq, created_at, last_active_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET
+          user_id = COALESCE(excluded.user_id, cangrejo_mcp_sessions.user_id),
+          session_token_hash = excluded.session_token_hash,
+          title = excluded.title,
+          case_tier = excluded.case_tier,
+          status = 'active',
+          last_active_at = excluded.last_active_at,
+          expires_at = excluded.expires_at`
+      )
+      .bind(
+        dbSessionId,
+        params.tenantId,
+        cleanRaw,
+        params.userId ?? null,
+        tokenHash,
+        title,
+        caseTier,
+        nowEpoch,
+        nowEpoch,
+        expiresAt
+      )
+      .run();
+
+    return {
+      sessionToken,
+      sessionId: cleanRaw,
+      dbSessionId,
+      expiresAt,
     };
   }
 

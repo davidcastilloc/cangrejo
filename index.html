@@ -634,6 +634,114 @@ AS13335</textarea>
               </div>
             </div>
 
+            <div class="lore-section" id="account-client-section">
+              <div class="account-header-row">
+                <h3>👤 Cuenta de Usuario &amp; Organización Cliente (Multi-Tenant D1)</h3>
+                <span id="badge-account-mode" class="account-mode-badge">COMMUNITY LOCAL BYPASS</span>
+              </div>
+              <p class="modal-subtitle" style="margin: 4px 0 10px 0">
+                En modo local Community puedes operar sin login obligatorio, o registrar/iniciar sesión con tu Organización Cliente para aislar tus expedientes en Cloudflare D1 y emitir tokens MCP dedicados (<code>ses_sec_*</code>).
+              </p>
+
+              <form id="form-account-auth" class="account-auth-grid" novalidate>
+                <div class="account-auth-row">
+                  <label for="inp-auth-email" class="account-field-label">
+                    <span>Correo Electrónico (Analista / Cuenta):</span>
+                    <input
+                      id="inp-auth-email"
+                      name="email"
+                      type="email"
+                      autocomplete="username"
+                      spellcheck="false"
+                      required
+                      class="palette-search-input"
+                      placeholder="analista@unidad-forense.org"
+                    />
+                  </label>
+                  <label for="inp-auth-password" class="account-field-label">
+                    <span>Contraseña (PBKDF2-SHA256):</span>
+                    <input
+                      id="inp-auth-password"
+                      name="password"
+                      type="password"
+                      autocomplete="current-password"
+                      required
+                      class="palette-search-input"
+                      placeholder="Mínimo 8 caracteres"
+                    />
+                  </label>
+                </div>
+
+                <div class="account-auth-row">
+                  <label for="inp-auth-name" class="account-field-label">
+                    <span>Nombre del Analista (Para Registro):</span>
+                    <input
+                      id="inp-auth-name"
+                      name="name"
+                      type="text"
+                      autocomplete="name"
+                      class="palette-search-input"
+                      placeholder="Comisario L. Yerena"
+                    />
+                  </label>
+                  <label for="inp-auth-org" class="account-field-label">
+                    <span>Organización / Cliente (Tenant D1):</span>
+                    <input
+                      id="inp-auth-org"
+                      name="organization"
+                      type="text"
+                      autocomplete="organization"
+                      class="palette-search-input"
+                      placeholder="Unidad Especial CTI & Forense"
+                    />
+                  </label>
+                  <label for="sel-auth-tier" class="account-field-label">
+                    <span>Plan Inicial:</span>
+                    <select id="sel-auth-tier" name="tier" class="palette-search-input">
+                      <option value="ORO_PRO" selected>Cangrejo de Oro Pro (500 Créditos)</option>
+                      <option value="PLATINO_ENTERPRISE">Cangrejo de Platino Enterprise (5,000 Créditos)</option>
+                      <option value="COMMUNITY">Community Cloud (50 Créditos)</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="account-auth-actions">
+                  <button id="btn-auth-login" type="submit" class="btn btn-primary">
+                    🔐 Iniciar Sesión
+                  </button>
+                  <button id="btn-auth-register" type="button" class="btn">
+                    ✨ Crear Cuenta &amp; Organización Cliente
+                  </button>
+                  <span id="lbl-auth-feedback" class="account-feedback-text" aria-live="polite"></span>
+                </div>
+              </form>
+
+              <div id="card-account-profile" class="account-profile-card" hidden>
+                <div class="account-profile-grid">
+                  <div>
+                    <span class="account-meta-label">ANALISTA AUTENTICADO</span>
+                    <strong id="lbl-account-user">—</strong>
+                  </div>
+                  <div>
+                    <span class="account-meta-label">ORGANIZACIÓN CLIENTE (TENANT ID)</span>
+                    <strong id="lbl-account-tenant">—</strong>
+                  </div>
+                  <div>
+                    <span class="account-meta-label">NIVEL &amp; CRÉDITOS OSINT</span>
+                    <strong id="lbl-account-credits">—</strong>
+                  </div>
+                </div>
+                <div class="account-auth-actions" style="margin-top: 10px">
+                  <button id="btn-issue-mcp-session-token" type="button" class="btn btn-primary">
+                    🎟️ Emitir Token MCP Dedicado (ses_sec_*) para este Expediente
+                  </button>
+                  <button id="btn-auth-logout" type="button" class="btn">
+                    🚪 Cerrar Sesión (Volver a Community Local)
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div class="lore-section">
               <h3>🔑 Activación de Licencia Enterprise &amp; Marca Blanca (Dossiers Periciales)</h3>
               <div style="display: grid; gap: 10px; margin-top: 8px">

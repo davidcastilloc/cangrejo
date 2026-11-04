@@ -486,3 +486,71 @@ export const AiVisionIngestResponseSchema = z
     aiMeta: AiExecutionMetaSchema,
   })
   .passthrough();
+
+/**
+ * Gate 13 Schemas: Native Accounts, Users & Client Organizations (Tenants).
+ * Strictly enforces `.passthrough()` at all boundaries.
+ */
+export const AuthRegisterRequestSchema = z
+  .object({
+    email: z.string().email(),
+    password: z.string().min(8),
+    displayName: z.string().min(1).optional(),
+    organizationName: z.string().min(1).optional(),
+    tier: CangrejoEditionTierSchema.optional(),
+    requestedTier: CangrejoEditionTierSchema.optional(),
+  })
+  .passthrough();
+
+export const AuthLoginRequestSchema = z
+  .object({
+    email: z.string().email(),
+    password: z.string().min(1),
+  })
+  .passthrough();
+
+export const AuthMcpTokenIssueRequestSchema = z
+  .object({
+    sessionId: z.string().min(1).default('expediente-apt29'),
+    title: z.string().optional(),
+    caseTier: z.enum(['PLATINO', 'ORO', 'PLATA', 'BRONCE']).optional(),
+    ttlDays: z.number().int().min(1).max(365).optional(),
+  })
+  .passthrough();
+
+export const AuthUserProfileSchema = z
+  .object({
+    userId: z.string(),
+    tenantId: z.string(),
+    email: z.string().email(),
+    displayName: z.string(),
+    role: z.enum(['OWNER', 'ADMIN', 'ANALYST']),
+    status: z.enum(['active', 'suspended']),
+    createdAt: z.number().int(),
+  })
+  .passthrough();
+
+export const AuthClientOrganizationSchema = z
+  .object({
+    tenantId: z.string(),
+    organizationName: z.string(),
+    tier: CangrejoEditionTierSchema,
+    creditsRemaining: z.number().int().min(0),
+    maxActiveMcpSessions: z.number().int().min(1),
+    maxEntitiesPerSession: z.number().int().min(1),
+  })
+  .passthrough();
+
+export const AuthAccountProfileResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    authenticated: z.boolean(),
+    mode: z.enum(['CLOUD_AUTHENTICATED', 'COMMUNITY_LOCAL_BYPASS']),
+    user: AuthUserProfileSchema.nullable(),
+    client: AuthClientOrganizationSchema.nullable(),
+    authToken: z.string().optional(),
+    licenseToken: z.string().nullable().optional(),
+    mcpSessions: z.array(z.record(z.string(), z.unknown())).optional(),
+  })
+  .passthrough();
+

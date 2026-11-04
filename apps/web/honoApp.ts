@@ -39,6 +39,9 @@ import {
   AiUnpackIocsResponseSchema,
   AiVisionIngestRequestSchema,
   AiVisionIngestResponseSchema,
+  AuthLoginRequestSchema,
+  AuthMcpTokenIssueRequestSchema,
+  AuthRegisterRequestSchema,
   BillingWebhookPayloadSchema,
   CangrejoEditionStatusResponseSchema,
   LicenseActivationRequestSchema,
@@ -345,6 +348,21 @@ cangrejoHonoApp.get('/api/openapi.json', (c) => {
       '/api/mcp/{sessionId}': {
         get: { summary: 'Multi-tenant Isolated MCP Session capabilities & tool catalog' },
         post: { summary: 'Multi-tenant Isolated MCP Session JSON-RPC 2.0 endpoint with Bearer License / Session Token Auth' },
+      },
+      '/api/auth/register': {
+        post: { summary: 'Register native D1 User Account & isolated Client Organization (Tenant)' },
+      },
+      '/api/auth/login': {
+        post: { summary: 'Authenticate User Account (PBKDF2-SHA256) and issue cgrj_usr_* session token' },
+      },
+      '/api/auth/me': {
+        get: { summary: 'Get current User Account, Client Organization, or Community Local Bypass status' },
+      },
+      '/api/auth/logout': {
+        post: { summary: 'Revoke cgrj_usr_* authenticated session token' },
+      },
+      '/api/auth/mcp-tokens': {
+        post: { summary: 'Issue dedicated per-expediente MCP token (ses_sec_*) for the authenticated Client' },
       },
     },
   });
@@ -2187,6 +2205,225 @@ cangrejoHonoApp.post('/api/billing/webhook', async (c) => {
 });
 
 /**
+ * Native D1 / SQLite Accounts, Users & Client Organizations (`POST/GET /api/auth/*`).
+ */
+cangrejoHonoApp.post('/api/auth/register', async (c) => {
+  try {
+    const rawBody = await c.req.json();
+    const parsed = AuthRegisterRequestSchema.parse(rawBody);
+    const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+    const registered = await BunSqliteVault.registerUserAndClient(activeD1, {
+      email: parsed.email,
+      password: parsed.password,
+      displayName: parsed.displayName ?? (parsed.email.split('@')[0] || 'Analista Forense'),
+      organizationName: parsed.organizationName,
+      requestedTier: parsed.requestedTier ?? parsed.tier,
+    });
+
+    // Also synchronize local singleton edition state for workstation continuity
+    sqliteVault.activateLicenseOrUpdateEdition({
+      licenseKey: registered.licenseToken,
+      organizationName: registered.client.organizationName,
+    });
+
+    return c.json(
+      {
+        ok: true,
+        authenticated: true,
+        mode: 'AUTHENTICATED_CLIENT',
+        user: registered.user,
+        client: registered.client,
+        authToken: registered.authToken,
+        licenseToken: registered.licenseToken,
+        mcpSessions: registered.mcpSessions,
+      },
+      201
+    );
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    const status = code === 'EMAIL_EXISTS' ? 409 : 400;
+    return c.json(
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      status
+    );
+  }
+});
+
+cangrejoHonoApp.post('/api/auth/login', async (c) => {
+  try {
+    const rawBody = await c.req.json();
+    const parsed = AuthLoginRequestSchema.parse(rawBody);
+    const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+    const loggedIn = await BunSqliteVault.loginUser(activeD1, {
+      email: parsed.email,
+      password: parsed.password,
+    });
+
+    sqliteVault.activateLicenseOrUpdateEdition({
+      licenseKey: loggedIn.licenseToken,
+      organizationName: loggedIn.client.organizationName,
+    });
+
+    return c.json({
+      ok: true,
+      authenticated: true,
+      mode: 'AUTHENTICATED_CLIENT',
+      user: loggedIn.user,
+      client: loggedIn.client,
+      authToken: loggedIn.authToken,
+      licenseToken: loggedIn.licenseToken,
+      mcpSessions: loggedIn.mcpSessions,
+    });
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    const status = code === 'INVALID_CREDENTIALS' ? 401 : 400;
+    return c.json(
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      status
+    );
+  }
+});
+
+cangrejoHonoApp.get('/api/auth/me', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const queryToken = c.req.query('token')?.trim();
+  const rawToken = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : queryToken;
+
+  if (!rawToken) {
+    return c.json({
+      ok: true,
+      authenticated: false,
+      mode: 'COMMUNITY_LOCAL_BYPASS',
+      user: null,
+      client: null,
+      mcpSessions: [],
+    });
+  }
+
+  const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+  const verified = await BunSqliteVault.verifyUserSessionToken(activeD1, rawToken);
+  if (!verified) {
+    return c.json(
+      {
+        ok: false,
+        authenticated: false,
+        mode: 'COMMUNITY_LOCAL_BYPASS',
+        error: 'Sesión inválida o expirada.',
+        user: null,
+        client: null,
+      },
+      401
+    );
+  }
+
+  return c.json({
+    ok: true,
+    authenticated: true,
+    mode: 'AUTHENTICATED_CLIENT',
+    user: verified.user,
+    client: verified.client,
+    licenseToken: verified.licenseToken,
+    mcpSessions: verified.mcpSessions,
+  });
+});
+
+cangrejoHonoApp.post('/api/auth/logout', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const rawToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+  const revoked = rawToken ? await BunSqliteVault.logoutUserSession(activeD1, rawToken) : false;
+  return c.json({
+    ok: true,
+    revoked,
+    mode: 'COMMUNITY_LOCAL_BYPASS',
+  });
+});
+
+cangrejoHonoApp.post('/api/auth/mcp-tokens', async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    const rawToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!rawToken) {
+      return c.json({ ok: false, error: 'Se requiere autenticación Bearer para emitir tokens MCP.' }, 401);
+    }
+
+    const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+    let tenantId: string | null = null;
+    let userId: string | null = null;
+    let defaultCaseTier: 'PLATINO' | 'ORO' | 'PLATA' | 'BRONCE' = 'ORO';
+
+    if (rawToken.startsWith('cgrj_usr_')) {
+      const verified = await BunSqliteVault.verifyUserSessionToken(activeD1, rawToken);
+      if (!verified) {
+        return c.json({ ok: false, error: 'Token de sesión de usuario inválido o expirado.' }, 401);
+      }
+      tenantId = verified.client.tenantId;
+      userId = verified.user.userId;
+      defaultCaseTier = verified.client.tier === 'PLATINO_ENTERPRISE' ? 'PLATINO' : 'ORO';
+    } else if (rawToken.startsWith('CGRJ.')) {
+      const verified = BunSqliteVault.verifySignedLicenseToken(rawToken);
+      if (!verified.valid || !verified.claims) {
+        return c.json({ ok: false, error: verified.reason ?? 'Licencia inválida.' }, 403);
+      }
+      const orgDigest = crypto
+        .createHash('sha256')
+        .update(verified.claims.organizationName)
+        .digest('hex')
+        .slice(0, 12);
+      tenantId = verified.claims.tenantId || `org_${orgDigest}`;
+      defaultCaseTier = verified.claims.tier === 'PLATINO_ENTERPRISE' ? 'PLATINO' : 'ORO';
+      await BunSqliteVault.provisionMcpSessionJit(activeD1, {
+        tenantId,
+        tier: verified.claims.tier,
+        organizationName: verified.claims.organizationName,
+        licenseSignatureHash: null,
+        creditsRemaining: verified.claims.credits ?? 0,
+        dbSessionId: `${tenantId}:expediente-apt29`,
+        rawSessionId: 'expediente-apt29',
+        expiresEpoch: Math.floor(Date.now() / 1000) + 30 * 86400,
+      });
+    } else {
+      return c.json({ ok: false, error: 'Formato de token Bearer no soportado.' }, 401);
+    }
+
+    const rawBody = await c.req.json();
+    const parsed = AuthMcpTokenIssueRequestSchema.parse(rawBody);
+    const issued = await BunSqliteVault.issueDedicatedMcpSessionToken(activeD1, {
+      tenantId,
+      userId,
+      rawSessionId: parsed.sessionId,
+      title: parsed.title,
+      caseTier: parsed.caseTier ?? defaultCaseTier,
+      ttlSeconds: (parsed.ttlDays ?? 30) * 86400,
+    });
+    const mcpSessions = await BunSqliteVault.listTenantMcpSessions(activeD1, tenantId);
+
+    return c.json(
+      {
+        ok: true,
+        tenantId,
+        ...issued,
+        mcpSessions,
+      },
+      201
+    );
+  } catch (err) {
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+/**
  * Radar Cangrejo 24/7 Continuous Infrastructure Drift Monitoring (`GET / POST /api/radar/*`).
  */
 async function collectLiveDomainBaseline(targetValue: string): Promise<string[]> {
@@ -3228,7 +3465,7 @@ export async function mcpAuthMiddleware(c: Context, next: Next): Promise<Respons
       .update(claims.organizationName)
       .digest('hex')
       .slice(0, 12);
-    const tenantId = `org_${orgDigest}`;
+    const tenantId = claims.tenantId || `org_${orgDigest}`;
     const dbSessionId = `${tenantId}:${rawSessionId}`;
     const scopedRoomKey = `tenant:${tenantId}:session:${rawSessionId}`;
     const expiresEpoch =
@@ -3255,6 +3492,46 @@ export async function mcpAuthMiddleware(c: Context, next: Next): Promise<Respons
       dbSessionId,
       scopedRoomKey,
       tier: claims.tier,
+      token,
+    });
+    return next();
+  }
+
+  // Type C: Authenticated User Session Token (cgrj_usr_<hex>)
+  if (token.startsWith('cgrj_usr_')) {
+    const verifiedUser = await BunSqliteVault.verifyUserSessionToken(activeD1, token);
+    if (!verifiedUser) {
+      return c.json(
+        {
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32001, message: 'Invalid or expired user account session token.' },
+        },
+        403
+      );
+    }
+    const tenantId = verifiedUser.client.tenantId;
+    const dbSessionId = `${tenantId}:${rawSessionId}`;
+    const scopedRoomKey = `tenant:${tenantId}:session:${rawSessionId}`;
+    await BunSqliteVault.provisionMcpSessionJit(activeD1, {
+      tenantId,
+      tier: verifiedUser.client.tier,
+      organizationName: verifiedUser.client.organizationName,
+      licenseSignatureHash: null,
+      creditsRemaining: verifiedUser.client.creditsRemaining,
+      dbSessionId,
+      rawSessionId,
+      expiresEpoch: Math.floor(Date.now() / 1000) + 30 * 86400,
+    });
+
+    setMcpContext(c, {
+      isCloudScoped: true,
+      hasUrlSessionId: Boolean(sessionId && sessionId.trim()),
+      tenantId,
+      rawSessionId,
+      dbSessionId,
+      scopedRoomKey,
+      tier: verifiedUser.client.tier,
       token,
     });
     return next();

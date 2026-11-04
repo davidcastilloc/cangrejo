@@ -3200,8 +3200,289 @@ document.getElementById('btn-ai-mitre')?.addEventListener('click', async () => {
   }
 });
 
+const AUTH_SESSION_STORAGE_KEY = 'cangrejo_auth_session_token';
+
+function initAccountAuthController(): void {
+  const formEl = document.getElementById('form-account-auth') as HTMLFormElement | null;
+  const profileCardEl = document.getElementById('card-account-profile');
+  const badgeModeEl = document.getElementById('badge-account-mode');
+  const feedbackEl = document.getElementById('lbl-auth-feedback');
+  const inpEmail = document.getElementById('inp-auth-email') as HTMLInputElement | null;
+  const inpPassword = document.getElementById('inp-auth-password') as HTMLInputElement | null;
+  const inpName = document.getElementById('inp-auth-name') as HTMLInputElement | null;
+  const inpOrg = document.getElementById('inp-auth-org') as HTMLInputElement | null;
+  const selTier = document.getElementById('sel-auth-tier') as HTMLSelectElement | null;
+  const lblUser = document.getElementById('lbl-account-user');
+  const lblTenant = document.getElementById('lbl-account-tenant');
+  const lblCredits = document.getElementById('lbl-account-credits');
+
+  const setFeedback = (msg: string): void => {
+    if (feedbackEl) feedbackEl.textContent = msg;
+  };
+
+  const renderAuthenticatedAccount = (payload: {
+    authenticated: boolean;
+    user?: { displayName: string; email: string; role: string } | null;
+    client?: {
+      tenantId: string;
+      organizationName: string;
+      tier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+      creditsRemaining: number;
+    } | null;
+    authToken?: string;
+    licenseToken?: string;
+  }): void => {
+    if (!payload.authenticated || !payload.user || !payload.client) {
+      if (formEl) formEl.hidden = false;
+      if (profileCardEl) profileCardEl.hidden = true;
+      if (badgeModeEl) {
+        badgeModeEl.textContent = 'COMMUNITY LOCAL BYPASS';
+        badgeModeEl.removeAttribute('data-authenticated');
+      }
+      return;
+    }
+
+    if (formEl) formEl.hidden = true;
+    if (profileCardEl) profileCardEl.hidden = false;
+    if (badgeModeEl) {
+      badgeModeEl.textContent = `CUENTA ACTIVA • ${payload.client.tenantId}`;
+      badgeModeEl.setAttribute('data-authenticated', 'true');
+    }
+    if (lblUser) {
+      lblUser.textContent = `${payload.user.displayName} (${payload.user.email})`;
+    }
+    if (lblTenant) {
+      lblTenant.textContent = `${payload.client.organizationName} [${payload.client.tenantId}]`;
+    }
+    if (lblCredits) {
+      lblCredits.textContent = `${payload.client.tier} • ${payload.client.creditsRemaining} Créditos`;
+    }
+
+    const tokenForMcp = payload.licenseToken || payload.authToken || null;
+    if (tokenForMcp && typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(MCP_STORAGE_TOKEN_KEY, tokenForMcp);
+    }
+    updateMcpOnboardingView(payload.client.tier, tokenForMcp);
+  };
+
+  formEl?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const email = inpEmail?.value.trim() || '';
+    const password = inpPassword?.value || '';
+    if (!email || !password) {
+      setFeedback('Ingresa correo y contraseña para iniciar sesión.');
+      return;
+    }
+    try {
+      setFeedback('Autenticando…');
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        authenticated?: boolean;
+        error?: string;
+        authToken?: string;
+        licenseToken?: string;
+        user?: { displayName: string; email: string; role: string };
+        client?: {
+          tenantId: string;
+          organizationName: string;
+          tier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+          creditsRemaining: number;
+        };
+      };
+      if (!data.ok || !data.authenticated) {
+        setFeedback(data.error || 'Error al iniciar sesión.');
+        return;
+      }
+      if (data.authToken && typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, data.authToken);
+      }
+      setFeedback('');
+      renderAuthenticatedAccount({
+        authenticated: true,
+        user: data.user,
+        client: data.client,
+        authToken: data.authToken,
+        licenseToken: data.licenseToken,
+      });
+      await syncEditionBadge();
+      appendLog(
+        `[Cuenta Autenticada]: ${data.user?.displayName} • Cliente ${data.client?.organizationName} (${data.client?.tenantId})`
+      );
+    } catch (err) {
+      setFeedback(`Error: ${String(err)}`);
+    }
+  });
+
+  document.getElementById('btn-auth-register')?.addEventListener('click', async () => {
+    const email = inpEmail?.value.trim() || '';
+    const password = inpPassword?.value || '';
+    const displayName = inpName?.value.trim() || email.split('@')[0] || 'Analista Forense';
+    const organizationName = inpOrg?.value.trim() || undefined;
+    const requestedTier =
+      (selTier?.value as 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE' | undefined) || 'ORO_PRO';
+
+    if (!email || password.length < 8) {
+      setFeedback('Para registrarte ingresa un correo válido y contraseña de al menos 8 caracteres.');
+      return;
+    }
+
+    try {
+      setFeedback('Creando cuenta y organización cliente en D1…');
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          displayName,
+          organizationName,
+          requestedTier,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        authenticated?: boolean;
+        error?: string;
+        authToken?: string;
+        licenseToken?: string;
+        user?: { displayName: string; email: string; role: string };
+        client?: {
+          tenantId: string;
+          organizationName: string;
+          tier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+          creditsRemaining: number;
+        };
+      };
+      if (!data.ok || !data.authenticated) {
+        setFeedback(data.error || 'No se pudo crear la cuenta.');
+        return;
+      }
+      if (data.authToken && typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, data.authToken);
+      }
+      setFeedback('');
+      renderAuthenticatedAccount({
+        authenticated: true,
+        user: data.user,
+        client: data.client,
+        authToken: data.authToken,
+        licenseToken: data.licenseToken,
+      });
+      await syncEditionBadge();
+      appendLog(
+        `[Nueva Organización Cliente Registrada]: ${data.client?.organizationName} (${data.client?.tenantId}) • Analista: ${data.user?.displayName}`
+      );
+    } catch (err) {
+      setFeedback(`Error: ${String(err)}`);
+    }
+  });
+
+  document.getElementById('btn-issue-mcp-session-token')?.addEventListener('click', async () => {
+    const savedAuthToken =
+      typeof window !== 'undefined' && window.localStorage
+        ? window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY)
+        : null;
+    if (!savedAuthToken) return;
+    try {
+      const sessionId = mcpState.sessionId.trim() || 'expediente-apt29';
+      const res = await fetch('/api/auth/mcp-tokens', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${savedAuthToken}`,
+        },
+        body: JSON.stringify({
+          sessionId,
+          title: `Expediente ${sessionId}`,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        sessionToken?: string;
+        sessionId?: string;
+        error?: string;
+      };
+      if (data.ok && data.sessionToken) {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          window.sessionStorage.setItem(MCP_STORAGE_TOKEN_KEY, data.sessionToken);
+        }
+        updateMcpOnboardingView(mcpState.editionTier, data.sessionToken);
+        appendLog(
+          `[Token MCP Dedicado Emitido]: ${data.sessionToken.slice(0, 16)}… para el expediente "${data.sessionId}". Inyectado automáticamente en el snippet MCP.`
+        );
+      }
+    } catch (err) {
+      appendLog(`Error emitiendo token MCP dedicado: ${String(err)}`);
+    }
+  });
+
+  document.getElementById('btn-auth-logout')?.addEventListener('click', async () => {
+    const savedAuthToken =
+      typeof window !== 'undefined' && window.localStorage
+        ? window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY)
+        : null;
+    if (savedAuthToken) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${savedAuthToken}` },
+        });
+      } catch {
+        // Non-fatal
+      }
+      window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    }
+    renderAuthenticatedAccount({ authenticated: false });
+    appendLog('[Sesión Cerrada]: Operando en modo Community Local Bypass.');
+  });
+
+  // Restore active session on startup if present
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const savedAuthToken = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    if (savedAuthToken) {
+      void fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${savedAuthToken}` },
+      })
+        .then((r) => r.json())
+        .then(
+          (data: {
+            ok: boolean;
+            authenticated?: boolean;
+            licenseToken?: string;
+            user?: { displayName: string; email: string; role: string };
+            client?: {
+              tenantId: string;
+              organizationName: string;
+              tier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+              creditsRemaining: number;
+            };
+          }) => {
+            if (data.ok && data.authenticated) {
+              renderAuthenticatedAccount({
+                authenticated: true,
+                user: data.user,
+                client: data.client,
+                authToken: savedAuthToken,
+                licenseToken: data.licenseToken,
+              });
+            } else {
+              window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+            }
+          }
+        )
+        .catch(() => {});
+    }
+  }
+}
+
 resizeCanvas();
 initMcpModalController();
+initAccountAuthController();
 void syncEditionBadge();
 loadPreset('apt29');
 requestAnimationFrame(renderFrame);
