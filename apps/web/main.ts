@@ -1128,11 +1128,37 @@ document.getElementById('btn-load-preset')!.addEventListener('click', () => {
   loadPreset(val);
 });
 
+document.getElementById('btn-ribbon-quick-search')?.addEventListener('click', () => {
+  const inp = document.getElementById('inp-palette-search') as HTMLInputElement | null;
+  if (inp) {
+    inp.focus();
+    inp.select();
+  }
+});
+
+const dockCaptionEl = document.getElementById('dock-active-caption');
+let defaultDockCaption = 'Disposición orgánica · ⌘1';
+
+document.querySelectorAll('#canvas-floating-dock [data-caption]').forEach((btn) => {
+  btn.addEventListener('mouseenter', () => {
+    const cap = btn.getAttribute('data-caption');
+    if (dockCaptionEl && cap) dockCaptionEl.textContent = cap;
+  });
+  btn.addEventListener('mouseleave', () => {
+    if (dockCaptionEl) dockCaptionEl.textContent = defaultDockCaption;
+  });
+});
+
 document.querySelectorAll('.btn-layout').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.btn-layout').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     currentLayout = (btn as HTMLElement).getAttribute('data-layout') as LayoutMode;
+    const cap = btn.getAttribute('data-caption');
+    if (cap) {
+      defaultDockCaption = cap;
+      if (dockCaptionEl) dockCaptionEl.textContent = cap;
+    }
     syncSceneAndUi(true);
     appendLog(`Ejecutado layout [${currentLayout}] en ${lastLayoutElapsedMs.toFixed(2)} ms.`);
   });
@@ -1143,6 +1169,11 @@ document.querySelectorAll('.btn-tool').forEach((btn) => {
     document.querySelectorAll('.btn-tool').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     currentTool = (btn as HTMLElement).getAttribute('data-tool') as CursorTool;
+    const cap = btn.getAttribute('data-caption');
+    if (cap) {
+      defaultDockCaption = cap;
+      if (dockCaptionEl) dockCaptionEl.textContent = cap;
+    }
   });
 });
 
