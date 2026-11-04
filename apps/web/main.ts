@@ -2509,6 +2509,14 @@ document.getElementById('btn-edition-tier')?.addEventListener('click', () => {
   void syncEditionBadge();
   editionModalBackdrop?.classList.remove('hidden');
 });
+document.getElementById('btn-open-account-from-vault')?.addEventListener('click', () => {
+  const vaultPopover = document.getElementById('menu-vault-export') as HTMLElement & {
+    hidePopover?: () => void;
+  } | null;
+  vaultPopover?.hidePopover?.();
+  void syncEditionBadge();
+  editionModalBackdrop?.classList.remove('hidden');
+});
 document.getElementById('btn-close-edition')?.addEventListener('click', () => {
   editionModalBackdrop?.classList.add('hidden');
 });

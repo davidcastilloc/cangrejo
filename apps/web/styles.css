@@ -179,18 +179,14 @@
     flex-wrap: nowrap;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    padding: 0 12px;
+    gap: 6px;
+    padding: 0 8px;
     background: var(--surface-panel);
     border-bottom: 1px solid var(--border-subtle);
     overflow-x: auto;
     overflow-y: hidden;
-    scrollbar-width: none;
+    scrollbar-width: thin;
     z-index: 20;
-  }
-
-  .ribbon::-webkit-scrollbar {
-    display: none;
   }
 
   .ribbon-left,
@@ -198,7 +194,7 @@
   .ribbon-right {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     flex-wrap: nowrap;
     flex-shrink: 0;
   }
@@ -289,10 +285,10 @@
     color: var(--text-primary);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
-    padding: 0 8px;
-    font-size: 11.5px;
+    padding: 0 6px;
+    font-size: 11px;
     font-weight: 500;
-    max-width: 195px;
+    max-width: 135px;
     text-overflow: ellipsis;
   }
 
@@ -309,12 +305,12 @@
 
   .seg-btn {
     height: 24px;
-    padding: 0 8px;
+    padding: 0 6px;
     background: transparent;
     color: var(--text-secondary);
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 500;
     cursor: pointer;
     display: inline-flex;
@@ -481,6 +477,12 @@
     color: var(--text-primary);
     background: var(--surface-panel-elevated);
     border-color: var(--border-subtle);
+  }
+
+  .account-ribbon-btn {
+    color: var(--text-primary);
+    background: var(--surface-panel-elevated);
+    border-color: var(--brand-gold-border);
   }
 
   .presence-dot {

@@ -216,6 +216,24 @@
           </button>
 
           <div id="menu-vault-export" popover="auto" class="ribbon-popover" aria-label="Bóveda, Custodia y Exportación">
+            <div class="popover-section-label">CUENTA MULTI-TENANT, LICENCIA &amp; MCP</div>
+            <button
+              id="btn-open-account-from-vault"
+              type="button"
+              class="popover-item"
+              title="Iniciar Sesión, Registrar Organización Cliente y Configurar MCP"
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="8" cy="5.5" r="2.8" />
+                <path d="M2.8 13.5c0-2.5 2.3-4.2 5.2-4.2s5.2 1.7 5.2 4.2" />
+              </svg>
+              <div class="popover-item-text">
+                <span class="popover-item-title">👤 Cuenta, Clientes &amp; MCP</span>
+                <span class="popover-item-desc">Iniciar sesión, crear tenant D1 y tokens MCP</span>
+              </div>
+            </button>
+
+            <div class="popover-divider" role="separator"></div>
             <div class="popover-section-label">PERSISTENCIA Y DICTAMEN PERICIAL</div>
             <button
               id="btn-vault-save"
@@ -329,9 +347,10 @@
             <button
               id="btn-edition-tier"
               type="button"
-              class="status-pill status-pill-btn"
-              title="Edición Open-Core / Activar Licencia Enterprise &amp; Cloud (Modelo Odoo)"
+              class="status-pill status-pill-btn account-ribbon-btn"
+              title="Iniciar Sesión / Cuenta de Usuario, Organización Cliente y Configuración MCP"
             >
+              <span aria-hidden="true">👤 Cuenta •</span>
               <span id="lbl-edition-tier" class="tabular">COMMUNITY</span>
             </button>
 
@@ -363,7 +382,7 @@
             <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
               <path d="M4 2.8a.8.8 0 0 1 1.22-.68l8 5.2a.8.8 0 0 1 0 1.36l-8 5.2A.8.8 0 0 1 4 13.2V2.8Z" />
             </svg>
-            <span>Ejecutar Pesquisa</span>
+            <span>Pesquisa</span>
           </button>
         </div>
       </header>
