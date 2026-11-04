@@ -695,7 +695,7 @@
     }
   }
 
-  /* Panel Headers */
+  /* Panel Headers (Hallmark v2.0 sentence-case) */
   .panel-header {
     height: 34px;
     min-height: 34px;
@@ -703,10 +703,10 @@
     background: var(--surface-sunken);
     border-bottom: 1px solid var(--border-subtle);
     border-top: 1px solid var(--border-subtle);
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--text-secondary);
+    letter-spacing: -0.005em;
+    color: var(--text-primary);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -968,10 +968,10 @@
   }
 
   .minimap-header {
-    padding: 3px 8px;
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
+    padding: 4px 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0;
     color: var(--text-secondary);
     border-bottom: 1px solid var(--border-subtle);
   }
@@ -1116,11 +1116,10 @@
   }
 
   .insp-field label {
-    font-size: 10.5px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 500;
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0;
   }
 
   .insp-field input,
@@ -1479,29 +1478,36 @@
     font-size: 11px;
     font-family: var(--font-mono);
     color: var(--text-subtle);
-    background: var(--surface-sunken);
-    padding: 3px 8px;
-    border-radius: var(--radius-sm);
+    background: var(--surface-panel);
+    padding: 3px 9px;
+    border-radius: 999px;
     border: 1px solid var(--border-subtle);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .mcp-controls-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: 1fr 1fr;
     gap: 10px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
+    align-items: end;
   }
 
   .mcp-field-group {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
   }
 
   .mcp-label {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 11.5px;
+    font-weight: 500;
     color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .mcp-input-action-row {
@@ -1513,66 +1519,106 @@
     flex: 1;
     font-family: var(--font-mono);
     font-size: 11px;
+    min-width: 0;
+  }
+
+  .mcp-transport-tabs {
+    height: 34px;
+    padding: 3px;
+    border-radius: 7px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-default);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+  }
+
+  .mcp-transport-tabs .tab-btn {
+    height: 100%;
+    font-size: 11px;
+    border-radius: 5px;
+  }
+
+  .mcp-transport-tabs .tab-btn.active {
+    background: var(--accent-primary);
+    color: #ffffff;
+    border-color: transparent;
   }
 
   .mcp-client-tabs-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 6px;
     gap: 8px;
+    margin-bottom: 8px;
     flex-wrap: wrap;
+  }
+
+  .mcp-client-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
   }
 
   .mcp-filepath-hint {
     font-size: 11px;
+    font-family: var(--font-mono);
     color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .mcp-filepath-hint code {
     font-family: var(--font-mono);
-    font-size: 10.5px;
-    background: var(--surface-sunken);
-    padding: 1px 5px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-subtle);
+    font-size: 11px;
     color: var(--text-primary);
   }
 
   .mcp-code-container {
     position: relative;
     border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
+    border-radius: 8px;
     overflow: hidden;
     background: var(--surface-sunken);
   }
 
+  .mcp-code-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--surface-panel);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
   /* Controlled scrollable code block preventing modal blowout */
   .mcp-code-block {
-    max-height: 180px;
-    min-height: 100px;
+    max-height: 128px;
+    min-height: 84px;
     overflow-y: auto;
     overflow-x: auto;
-    padding: 12px 14px;
+    padding: 10px 12px;
     margin: 0;
     font-size: 11px;
     font-family: var(--font-mono);
-    line-height: 1.45;
+    line-height: 1.42;
     user-select: text;
   }
 
   .mcp-code-actions {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 2;
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    flex-shrink: 0;
   }
 
-  .mcp-copy-btn {
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  .btn-xs {
+    height: 24px;
+    padding: 0 8px;
+    font-size: 11px;
+    border-radius: 5px;
+    white-space: nowrap;
   }
 
   /* ==========================================================================
@@ -1581,9 +1627,9 @@
   .agy-hero-card {
     background: var(--surface-sunken);
     border: 1px solid rgba(59, 130, 246, 0.28);
-    border-radius: 10px;
-    padding: 12px 14px;
-    margin-bottom: 12px;
+    border-radius: 9px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
   }
 
   .agy-hero-top {
@@ -1591,22 +1637,31 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
 
   .agy-identity {
     display: flex;
     align-items: flex-start;
     gap: 10px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .agy-head-text {
+    min-width: 0;
+    flex: 1;
   }
 
   .agy-logo-mark {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    background: rgba(37, 99, 235, 0.14);
-    border: 1px solid rgba(59, 130, 246, 0.35);
-    color: var(--accent-primary-hover);
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    background: rgba(37, 99, 235, 0.16);
+    border: 1px solid rgba(59, 130, 246, 0.38);
+    color: #60a5fa;
+    font-weight: 700;
+    font-size: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1616,99 +1671,89 @@
   .agy-title-row {
     display: flex;
     align-items: center;
+    gap: 7px;
+    margin-bottom: 2px;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 3px;
   }
 
   .agy-title {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
+    white-space: nowrap;
   }
 
   .agy-partner-badge {
     font-size: 10px;
     font-weight: 600;
-    padding: 2px 7px;
+    padding: 1px 7px;
     border-radius: 999px;
     background: rgba(37, 99, 235, 0.14);
     border: 1px solid rgba(59, 130, 246, 0.32);
     color: var(--text-primary);
-    letter-spacing: 0.01em;
+    white-space: nowrap;
   }
 
   .agy-subtitle {
     margin: 0;
-    font-size: 11px;
-    color: var(--text-secondary);
-    line-height: 1.45;
-  }
-
-  .agy-pillars-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .agy-pillar {
-    background: var(--surface-panel);
-    border: 1px solid var(--border-subtle);
-    border-radius: 7px;
-    padding: 8px 9px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .agy-pillar-cmd {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .agy-pillar-desc {
-    font-size: 10px;
+    font-size: 11.5px;
     color: var(--text-secondary);
     line-height: 1.38;
   }
 
-  .agy-missions-box {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-subtle);
-  }
-
-  .agy-missions-header {
+  .agy-chips-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .agy-feature-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    background: var(--surface-panel);
+    border: 1px solid var(--border-subtle);
     font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .agy-feature-chip code {
+    font-family: var(--font-mono);
     font-weight: 600;
     color: var(--text-primary);
   }
 
-  .agy-missions-hint {
-    font-size: 10px;
-    font-weight: 400;
-    color: var(--text-muted);
+  .agy-missions-box {
+    margin-top: 10px;
+  }
+
+  .agy-missions-header {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
   }
 
   .agy-missions-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
   }
 
   .agy-mission-btn {
     width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     text-align: left;
     background: var(--surface-sunken);
     border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 8px 10px;
+    border-radius: 7px;
+    padding: 6px 9px;
     cursor: pointer;
     transition: border-color 120ms ease, background 120ms ease;
     color: var(--text-primary);
@@ -1716,39 +1761,41 @@
 
   .agy-mission-btn:hover {
     border-color: var(--accent-primary);
-    background: var(--surface-elevated);
-  }
-
-  .agy-mission-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 3px;
+    background: var(--surface-panel-elevated);
   }
 
   .agy-mission-cmd {
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
     font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .agy-mission-copy-tag {
-    font-size: 10px;
-    font-weight: 500;
-    padding: 1px 6px;
+    padding: 2px 6px;
     border-radius: 4px;
     background: var(--surface-panel);
     border: 1px solid var(--border-subtle);
-    color: var(--text-secondary);
+    color: var(--text-primary);
+    flex-shrink: 0;
   }
 
-  .agy-mission-prompt {
-    margin: 0;
-    font-size: 11px;
+  .agy-mission-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 11.5px;
     color: var(--text-secondary);
-    line-height: 1.4;
-    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .agy-mission-copy-tag {
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: var(--surface-panel);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .status-pill-community {
@@ -1775,12 +1822,17 @@
      Minimalist Team Workspace & Account Modal (Hallmark v2.0 / Linear & Figma)
      ========================================================================== */
   .modal-card-workspace {
-    width: min(510px, calc(100vw - 32px));
-    max-width: 510px;
+    width: min(560px, calc(100vw - 32px));
+    max-width: 560px;
     border-radius: 12px;
     background: var(--surface-panel);
     border: 1px solid var(--border-default);
     box-shadow: var(--shadow-popover);
+  }
+
+  .modal-card-ai {
+    width: min(600px, calc(100vw - 32px));
+    max-width: 600px;
   }
 
   .ws-modal-header {
@@ -2188,5 +2240,226 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 6px;
+  }
+
+  /* ==========================================================================
+     Vista 2: Conectores y Plan (Tiers + Marca Blanca + BYOK Connectors)
+     ========================================================================== */
+  .ws-plan-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .ws-plan-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ws-section-heading {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .ws-tier-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .ws-tier-card {
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 10px 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ws-tier-card-featured {
+    border-color: rgba(59, 130, 246, 0.45);
+    background: rgba(37, 99, 235, 0.06);
+  }
+
+  .ws-tier-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .ws-tier-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .ws-tier-meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.35;
+  }
+
+  .ws-connectors-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ws-connector-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 7px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .ws-connector-id {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 138px;
+  }
+
+  .ws-connector-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  .ws-dot-shodan {
+    background: #ef4444;
+  }
+
+  .ws-dot-vt {
+    background: #3b82f6;
+  }
+
+  .ws-dot-abuse {
+    background: #f59e0b;
+  }
+
+  .ws-connector-name {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+
+  .ws-connector-badge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    color: var(--text-primary);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .ws-connector-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    max-width: 220px;
+  }
+
+  .ws-input-sm {
+    height: 26px;
+    font-size: 11px;
+    padding: 0 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ==========================================================================
+     Vista 3: Comisario IA Studio Modal (Raycast AI / Linear 2x3 Grid)
+     ========================================================================== */
+  .ai-studio-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .ai-prompt-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ai-prompt-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ai-modules-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ai-modules-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .ai-module-card {
+    text-align: left;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 9px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    cursor: pointer;
+    transition: border-color 120ms ease, background 120ms ease;
+    color: var(--text-primary);
+  }
+
+  .ai-module-card:hover {
+    border-color: var(--accent-primary);
+    background: var(--surface-panel-elevated);
+  }
+
+  .ai-module-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ai-module-head svg {
+    color: var(--accent-primary-hover);
+    flex-shrink: 0;
+  }
+
+  .ai-module-head strong {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ai-module-card span {
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    line-height: 1.35;
+  }
+
+  .ai-console-output {
+    max-height: 165px;
+    min-height: 110px;
   }
 }

@@ -579,8 +579,8 @@ function renderInspector(): void {
   if (viewSelected.length === 0) {
     container.innerHTML = `
       <div class="inspector-empty">
-        Selecciona cualquier nodo del grafo para inspeccionar o editar sus propiedades dinámicas, peso, color de marcador, notas y jerarquía ontológica.<br/><br/>
-        Haz clic derecho sobre un nodo o pulsa <strong>Run OSINT Transforms</strong> en la barra superior.
+        Selecciona cualquier nodo del grafo para inspeccionar o editar sus propiedades dinámicas, peso, clasificación forense, notas y jerarquía ontológica.<br/><br/>
+        Haz clic derecho sobre un nodo o pulsa <strong>Ejecutar pesquisa</strong> en la barra superior.
       </div>
     `;
     return;
@@ -600,24 +600,24 @@ function renderInspector(): void {
 
     container.innerHTML = `
       <div class="insp-field">
-        <label>Collection Plinth (${viewEntity.ruleName ?? 'Neighbour'} Rule)</label>
-        <input type="text" readonly value="${escapeHtml(viewEntity.typeName)} [${viewEntity.underlyingEntities.size} entities]" />
+        <label>Nodo de colección (${viewEntity.ruleName ?? 'Vecindad'})</label>
+        <input type="text" readonly value="${escapeHtml(viewEntity.typeName)} [${viewEntity.underlyingEntities.size} entidades]" />
       </div>
       <div class="insp-field">
-        <label>Entidades Físicas Contenidas (Primeras 12)</label>
+        <label>Entidades agrupadas (primeras 12)</label>
         <div class="insp-ancestry">
           ${memberNames.map((m) => `<span class="ancestry-chip">${escapeHtml(m)}</span>`).join('')}
         </div>
       </div>
       <button id="btn-uncollect-node" class="btn btn-primary btn-block">
-        Expandir / Desagrupar Collection Node
+        Expandir colección de nodos
       </button>
     `;
     document.getElementById('btn-uncollect-node')?.addEventListener('click', () => {
       collectionView.uncollectNode(viewEntity.id);
       syncSceneAndUi(false);
       appendLog(
-        `Collection Node expandido (${viewEntity.underlyingEntities.size} entidades individuales).`
+        `Colección expandida (${viewEntity.underlyingEntities.size} entidades individuales).`
       );
     });
     return;
@@ -655,50 +655,50 @@ function renderInspector(): void {
 
   const swatchesHtml = SWATCH_HEX.map(
     (hex, idx) =>
-      `<button type="button" data-bm="${idx}" class="swatch-dot ${entity.bookmark === idx ? 'active' : ''}" style="background:${hex}" title="Bookmark #${idx}" aria-label="Bookmark color ${idx}"></button>`
+      `<button type="button" data-bm="${idx}" class="swatch-dot ${entity.bookmark === idx ? 'active' : ''}" style="background:${hex}" title="Marcador #${idx}" aria-label="Color de marcador ${idx}"></button>`
   ).join('');
 
   container.innerHTML = `
     <div class="insp-field">
-      <label>Valor Principal (${escapeHtml(resolvedDisplayName)})</label>
+      <label>Valor principal (${escapeHtml(resolvedDisplayName)})</label>
       <input id="insp-val" type="text" value="${escapeHtml(primaryValue)}" />
     </div>
     <div class="insp-field">
-      <label>Jerarquía Ontológica (${Math.max(1, ancestry.length)} niveles)</label>
+      <label>Jerarquía ontológica (${Math.max(1, ancestry.length)} niveles)</label>
       <div class="insp-ancestry">
         ${ancestryChips}
       </div>
     </div>
     <div class="insp-field">
-      <label class="tabular">Weight (<span id="lbl-insp-weight">${entity.weight}</span>) • Coord (${Math.round(pos.x)}, ${Math.round(pos.y)})</label>
+      <label class="tabular">Peso (<span id="lbl-insp-weight">${entity.weight}</span>) · Coord (${Math.round(pos.x)}, ${Math.round(pos.y)})</label>
       <input id="insp-weight" type="range" min="1" max="100" value="${Math.min(100, entity.weight)}" />
     </div>
     <div class="insp-field">
-      <label>Clasificación Forense (Los Cuatro Cangrejos) &amp; Pin Lock</label>
+      <label>Clasificación forense</label>
       <div class="forensic-tier-pills">
-        <button type="button" data-bm="1" class="tier-pill-btn ${entity.bookmark === 1 ? 'active' : ''}" title="Cangrejo de Platino — Joya / C2 Maestro">PLATINO</button>
-        <button type="button" data-bm="3" class="tier-pill-btn ${entity.bookmark === 3 ? 'active' : ''}" title="Cangrejo de Oro — Eslabón Pivote">ORO</button>
-        <button type="button" data-bm="2" class="tier-pill-btn ${entity.bookmark === 2 ? 'active' : ''}" title="Cangrejo de Plata — Evidencia Corroborada">PLATA</button>
-        <button type="button" data-bm="4" class="tier-pill-btn ${entity.bookmark === 4 ? 'active' : ''}" title="Cangrejo de Bronce — Rastro Inicial">BRONCE</button>
+        <button type="button" data-bm="1" class="tier-pill-btn ${entity.bookmark === 1 ? 'active' : ''}" title="Cangrejo de Platino — C2 Maestro">Platino</button>
+        <button type="button" data-bm="3" class="tier-pill-btn ${entity.bookmark === 3 ? 'active' : ''}" title="Cangrejo de Oro — Eslabón Pivote">Oro</button>
+        <button type="button" data-bm="2" class="tier-pill-btn ${entity.bookmark === 2 ? 'active' : ''}" title="Cangrejo de Plata — Evidencia Corroborada">Plata</button>
+        <button type="button" data-bm="4" class="tier-pill-btn ${entity.bookmark === 4 ? 'active' : ''}" title="Cangrejo de Bronce — Rastro Inicial">Bronce</button>
       </div>
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:4px;">
         <div class="swatch-row">${swatchesHtml}</div>
-        <button id="insp-pin-btn" class="btn ${isPinned ? 'btn-primary' : ''}">${isPinned ? 'Pinned' : 'Pin'}</button>
+        <button id="insp-pin-btn" class="btn btn-xs ${isPinned ? 'btn-primary' : 'btn-quiet'}">${isPinned ? 'Fijado' : 'Fijar posición'}</button>
       </div>
     </div>
     <div class="insp-field">
-      <label>Notas del Investigador</label>
+      <label>Notas del investigador</label>
       <textarea id="insp-notes" rows="2">${escapeHtml(entity.notes.value)}</textarea>
     </div>
     <div class="insp-field">
-      <label>Propiedades Dinámicas (${entity.properties.values.size})</label>
+      <label>Propiedades dinámicas (${entity.properties.values.size})</label>
       <table class="props-table">
         <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
         <tbody>${propsRows || '<tr><td colspan="2">Sin propiedades</td></tr>'}</tbody>
       </table>
     </div>
     <button id="insp-run-all-btn" class="btn btn-primary btn-block">
-      Ejecutar Pesquisa OSINT en Entidad
+      Ejecutar pesquisa en entidad
     </button>
   `;
 
@@ -2182,7 +2182,6 @@ loreModalBackdrop?.addEventListener('click', (e) => {
 // Wire Odoo-Style Open-Core Edition & Enterprise Cloud Modal + MCP Client Onboarding
 const editionModalBackdrop = document.getElementById('edition-modal-backdrop');
 const lblEditionTier = document.getElementById('lbl-edition-tier');
-const lblEditionSubtitle = document.getElementById('lbl-edition-subtitle');
 const inpEditionOrg = document.getElementById('inp-edition-org') as HTMLInputElement | null;
 const inpEditionKey = document.getElementById('inp-edition-key') as HTMLInputElement | null;
 
@@ -2373,8 +2372,7 @@ function renderMcpSnippet(): void {
   let pathHint = '';
 
   if (mcpState.client === 'antigravity') {
-    pathHint =
-      'Archivo: <code>~/.gemini/config/mcp_config.json</code> (global) o <code>.agents/plugins/cangrejo/mcp_config.json</code>';
+    pathHint = '~/.gemini/config/mcp_config.json';
     if (!isCloud) {
       if (mcpState.transport === 'http') {
         snippet = JSON.stringify(
@@ -2423,8 +2421,7 @@ function renderMcpSnippet(): void {
       );
     }
   } else if (mcpState.client === 'claude-desktop') {
-    pathHint =
-      'Archivo: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (o <code>%APPDATA%\\Claude\\...</code>)';
+    pathHint = '~/Library/Application Support/Claude/claude_desktop_config.json';
     if (!isCloud) {
       snippet = JSON.stringify(
         {
@@ -2460,7 +2457,7 @@ function renderMcpSnippet(): void {
       );
     }
   } else if (mcpState.client === 'cursor') {
-    pathHint = 'Archivo: <code>.cursor/mcp.json</code> en la raíz de tu proyecto';
+    pathHint = '.cursor/mcp.json';
     if (!isCloud) {
       if (mcpState.transport === 'stdio') {
         snippet = JSON.stringify(
@@ -2502,7 +2499,7 @@ function renderMcpSnippet(): void {
       );
     }
   } else if (mcpState.client === 'claude-code') {
-    pathHint = 'Ejecuta directamente en tu terminal:';
+    pathHint = 'Terminal CLI (claude mcp add)';
     if (!isCloud) {
       if (mcpState.transport === 'stdio') {
         snippet = `claude mcp add cangrejo bun run --cwd /path/to/cangrejo mcp:stdio`;
@@ -2517,7 +2514,7 @@ function renderMcpSnippet(): void {
   const outEl = document.getElementById('mcp-snippet-output');
   if (outEl) outEl.textContent = snippet;
   const hintEl = document.getElementById('lbl-mcp-filepath');
-  if (hintEl) hintEl.innerHTML = pathHint;
+  if (hintEl) hintEl.textContent = pathHint;
 
   const tokenBox = document.getElementById('mcp-token-container');
   const transportToggle = document.getElementById('mcp-community-transport-toggle');
@@ -2528,14 +2525,14 @@ function renderMcpSnippet(): void {
     transportToggle?.classList.add('hidden');
     if (editionTag) {
       editionTag.textContent = `${mcpState.editionTier} (CLOUD SAAS)`;
-      editionTag.className = 'status-pill status-pill-cloud';
+      editionTag.className = 'status-pill status-pill-cloud sr-only';
     }
   } else {
     tokenBox?.classList.add('hidden');
     transportToggle?.classList.remove('hidden');
     if (editionTag) {
       editionTag.textContent = 'COMMUNITY (LOCAL)';
-      editionTag.className = 'status-pill status-pill-community';
+      editionTag.className = 'status-pill status-pill-community sr-only';
     }
   }
 }
@@ -2556,13 +2553,10 @@ async function syncEditionBadge(): Promise<void> {
     if (lblEditionTier) {
       lblEditionTier.textContent =
         data.editionTier === 'PLATINO_ENTERPRISE'
-          ? `PLATINO • ${data.creditsRemaining} CR`
+          ? `Platino · ${data.creditsRemaining} cr`
           : data.editionTier === 'ORO_PRO'
-            ? `ORO PRO • ${data.creditsRemaining} CR`
-            : 'COMMUNITY';
-    }
-    if (lblEditionSubtitle) {
-      lblEditionSubtitle.textContent = `Edición Activa: ${data.editionLabel} (${data.creditsRemaining} créditos OSINT disponibles)`;
+            ? `Oro Pro · ${data.creditsRemaining} cr`
+            : 'Community';
     }
     if (inpEditionOrg && data.whiteLabel?.organizationName) {
       inpEditionOrg.value = data.whiteLabel.organizationName;
@@ -2648,6 +2642,32 @@ document.getElementById('btn-activate-oro')?.addEventListener('click', () => {
 });
 document.getElementById('btn-reset-community')?.addEventListener('click', () => {
   void activateEditionTier('COMMUNITY', 'COMMUNITY');
+});
+
+document.querySelectorAll('[data-byok-save]').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const provider = btn.getAttribute('data-byok-save') as 'shodan' | 'virustotal' | 'abuseipdb' | null;
+    if (!provider) return;
+    const inp = document.getElementById(`inp-byok-${provider}`) as HTMLInputElement | null;
+    const apiKey = inp?.value.trim() || '';
+    if (!apiKey) return;
+    try {
+      const res = await fetch('/api/edition/provider-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, apiKey }),
+      });
+      const data = (await res.json()) as { ok: boolean };
+      if (data.ok) {
+        const badge = document.getElementById(`lbl-byok-status-${provider}`);
+        if (badge) badge.textContent = 'BYOK activo ✓';
+        if (inp) inp.value = '';
+        appendLog(`[Conector BYOK]: Llave propia registrada para ${provider.toUpperCase()}.`);
+      }
+    } catch (err) {
+      appendLog(`Error guardando llave BYOK (${provider}): ${String(err)}`);
+    }
+  });
 });
 
 // Wire Smart IOC Paste-to-Graph (`#btn-paste-iocs`)

@@ -341,38 +341,38 @@
 
       <!-- Main 3-Column Workstation -->
       <main class="workstation">
-        <!-- Left Docked 320px Tool Drawer: Entity Catalog + IOC Regex Extraction Tray -->
-        <aside class="sidebar-left" aria-label="Catálogo de Entidades y Extracción Regex">
+        <!-- Left Docked Tool Drawer: Catálogo de entidades + Extracción rápida de IOCs -->
+        <aside class="sidebar-left" aria-label="Catálogo de entidades y extracción de IOCs">
           <div class="panel-header">
-            <span>ENTITY CATALOG (<span id="lbl-entity-catalog-count" class="tabular">107</span>)</span>
-            <span class="kbd-hint">Ctrl+K</span>
+            <span>Catálogo de entidades (<span id="lbl-entity-catalog-count" class="tabular">107</span>)</span>
+            <span class="kbd-hint">⌘K</span>
           </div>
 
           <div class="palette-controls">
             <input
               id="inp-palette-search"
               type="text"
-              placeholder="Buscar entidad (DNS, IPv4, BTC, CVE...)"
+              placeholder="Buscar entidad (DNS, IPv4, BTC, CVE…)"
               aria-label="Buscar entidad en el catálogo"
             />
             <select id="sel-palette-category" aria-label="Filtrar por categoría de entidad">
-              <option value="ALL">Todas las Categorías (12)</option>
+              <option value="ALL">Todas las categorías (12)</option>
             </select>
           </div>
 
           <div id="palette-list" class="palette-list" role="list"></div>
 
-          <!-- IOC Regex Extraction Tray (12 + Extended OSINT Converters) -->
+          <!-- Extracción rápida de IOCs (17 reglas determinísticas) -->
           <div class="smart-paste-box">
             <div class="panel-header">
-              <span>IOC REGEX EXTRACTION TRAY</span>
-              <span class="meta-tag">17 Rules</span>
+              <span>Extracción rápida de IOCs</span>
+              <span class="meta-tag">17 reglas</span>
             </div>
             <textarea
               id="txt-smart-paste"
               rows="4"
               aria-label="Pegar indicadores OSINT para detección automática"
-              placeholder="Pega IPs, dominios, URLs, emails, CVEs, hashes SHA-256, direcciones BTC o ASNs..."
+              placeholder="Pega IPs, dominios, URLs, correos, CVEs, hashes SHA-256, billeteras BTC o ASNs…"
             >104.21.16.1
 api.cloudflare.com
 security@cloudflare.com
@@ -380,7 +380,7 @@ CVE-2024-21412
 bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh
 AS13335</textarea>
             <button id="btn-smart-paste" class="btn btn-primary btn-block">
-              Detectar y Crear Entidades
+              Detectar y crear entidades
             </button>
           </div>
         </aside>
@@ -584,8 +584,8 @@ AS13335</textarea>
           <canvas id="graph-canvas"></canvas>
 
           <!-- Bottom-Right Overview Radar Minimap -->
-          <div class="minimap-container" title="Mapa de navegación general (Radar Overview)">
-            <div class="minimap-header">OVERVIEW RADAR</div>
+          <div class="minimap-container" title="Mapa de navegación general del expediente">
+            <div class="minimap-header">Radar general</div>
             <canvas id="minimap-canvas" width="180" height="116"></canvas>
           </div>
 
@@ -593,150 +593,155 @@ AS13335</textarea>
           <div id="context-menu" class="context-menu hidden" role="menu">
             <div class="context-menu-header" id="ctx-entity-title">Entidad</div>
             <button data-transform="dns-to-ip" class="ctx-item" role="menuitem">
-              <span class="ctx-code">DNS A</span> To IPv4 Address [Live DNS]
+              <span class="ctx-code">DNS A</span> Resolver dirección IPv4
             </button>
             <button data-transform="dns-to-mx" class="ctx-item" role="menuitem">
-              <span class="ctx-code">DNS MX</span> To Mail Servers [Live DNS]
+              <span class="ctx-code">DNS MX</span> Servidores de correo MX
             </button>
             <button data-transform="dns-to-ns" class="ctx-item" role="menuitem">
-              <span class="ctx-code">DNS NS</span> To Name Servers [Live DNS]
+              <span class="ctx-code">DNS NS</span> Servidores de nombres NS
             </button>
             <button data-transform="ct-subdomains" class="ctx-item" role="menuitem">
-              <span class="ctx-code">CT SAN</span> Subdomains &amp; X.509 Certificate
+              <span class="ctx-code">CT SAN</span> Subdominios y certificado X.509
             </button>
             <button data-transform="ip-to-asn" class="ctx-item" role="menuitem">
-              <span class="ctx-code">BGP</span> To Netblock, ASN, Port &amp; GeoIP
+              <span class="ctx-code">BGP</span> Ruta ASN, bloque de red y GeoIP
             </button>
             <button data-transform="threat-intel" class="ctx-item" role="menuitem">
-              <span class="ctx-code">CTI</span> Threat Actor, CVE &amp; SHA-256
+              <span class="ctx-code">CTI</span> Actor de amenaza, CVE y SHA-256
             </button>
             <button data-transform="whois-identity" class="ctx-item" role="menuitem">
-              <span class="ctx-code">RDAP</span> WHOIS Registrant, Email &amp; Phone
+              <span class="ctx-code">RDAP</span> Identidad WHOIS, correo y teléfono
             </button>
             <button data-transform="crypto-trace" class="ctx-item" role="menuitem">
-              <span class="ctx-code">UTXO</span> Crypto Hop &amp; On-Chain Tx
+              <span class="ctx-code">UTXO</span> Rastreo cripto y transacción on-chain
             </button>
             <button data-transform="shodan-host-intel" class="ctx-item" role="menuitem">
-              <span class="ctx-code">SHODAN</span> Host Ports, Banners &amp; JARM [BYOK/Cloud]
+              <span class="ctx-code">SHODAN</span> Puertos expuestos, banners y JARM
             </button>
             <button data-transform="virustotal-domain-ip" class="ctx-item" role="menuitem">
-              <span class="ctx-code">VT v3</span> Multi-Engine CTI Verdict [BYOK/Cloud]
+              <span class="ctx-code">VT v3</span> Veredicto multi-motor VirusTotal
             </button>
             <button data-transform="abuseipdb-reputation" class="ctx-item" role="menuitem">
-              <span class="ctx-code">ABUSE</span> AbuseIPDB Confidence Score [BYOK/Cloud]
+              <span class="ctx-code">ABUSE</span> Reputación y confianza AbuseIPDB
             </button>
             <div class="ctx-divider"></div>
             <button data-transform="all" class="ctx-item ctx-item-highlight" role="menuitem">
-              Run All OSINT Transforms
+              Ejecutar todas las pesquisas
             </button>
             <div class="ctx-divider"></div>
             <button id="ctx-pin-toggle" class="ctx-item" role="menuitem">
-              Toggle Position Pin Lock
+              Fijar o soltar posición
             </button>
             <button id="ctx-delete-entity" class="ctx-item ctx-item-danger" role="menuitem">
-              Delete Entity (Cascade)
+              Eliminar entidad en cascada
             </button>
           </div>
 
           <!-- Disciplined 26px Bottom Telemetry Strip (Tabular Numerics) -->
           <footer class="canvas-hud" aria-label="Telemetría del grafo en tiempo real">
-            <div class="hud-stat">Entities: <strong id="hud-entities">0</strong></div>
-            <span class="hud-sep">•</span>
-            <div class="hud-stat">Links: <strong id="hud-links">0</strong></div>
-            <span class="hud-sep">•</span>
-            <div class="hud-stat">Visible ViewEntities: <strong id="hud-view-entities">0</strong></div>
-            <span class="hud-sep">•</span>
-            <div class="hud-stat">Collections: <strong id="hud-collections">0</strong></div>
-            <span class="hud-sep">•</span>
-            <div class="hud-stat">Selected: <strong id="hud-selected">0</strong></div>
-            <span class="hud-sep">•</span>
-            <div class="hud-stat">Draw Calls: <strong id="hud-draw-calls">4</strong></div>
-            <span class="hud-sep">•</span>
+            <div class="hud-stat">Entidades: <strong id="hud-entities">0</strong></div>
+            <span class="hud-sep">·</span>
+            <div class="hud-stat">Enlaces: <strong id="hud-links">0</strong></div>
+            <span class="hud-sep">·</span>
+            <div class="hud-stat">Visibles: <strong id="hud-view-entities">0</strong></div>
+            <span class="hud-sep">·</span>
+            <div class="hud-stat">Colecciones: <strong id="hud-collections">0</strong></div>
+            <span class="hud-sep">·</span>
+            <div class="hud-stat">Seleccionados: <strong id="hud-selected">0</strong></div>
+            <span class="hud-sep">·</span>
+            <div class="hud-stat">Draw calls: <strong id="hud-draw-calls">4</strong></div>
+            <span class="hud-sep">·</span>
             <div class="hud-stat">Layout: <strong id="hud-layout-ms">0.0 ms</strong></div>
           </footer>
         </section>
 
-        <!-- Right Docked 340px Inspector & Syntax-Highlighted Protocol Console -->
-        <aside class="sidebar-right" aria-label="Inspector de Entidad y Consola de Protocolo">
+        <!-- Right Docked Inspector & Protocol Console -->
+        <aside class="sidebar-right" aria-label="Inspector de entidad y bitácora de protocolo">
           <div class="panel-header">
-            <span>ENTITY INSPECTOR &amp; ONTOLOGY</span>
+            <span>Inspector de entidad</span>
             <span id="insp-latency-badge" class="latency-badge">0.70 ms</span>
           </div>
 
           <div id="inspector-content" class="inspector-content">
             <div class="inspector-empty">
-              Selecciona cualquier nodo del grafo para inspeccionar o editar sus propiedades dinámicas, peso, color de marcador, notas y jerarquía ontológica.
+              Selecciona cualquier nodo del grafo para inspeccionar o editar sus propiedades dinámicas, peso, clasificación forense, notas y jerarquía ontológica.
             </div>
           </div>
 
           <div class="protocol-console">
             <div class="panel-header">
-              <span>PESQUISA TELEMETRY &amp; PROTOCOL</span>
+              <span>Bitácora y protocolo</span>
               <div class="console-tabs" role="tablist">
                 <button data-tab="log" class="tab-btn active" role="tab">Bitácora</button>
                 <button data-tab="xml" class="tab-btn" role="tab">XML v2</button>
-                <button data-tab="json" class="tab-btn" role="tab">JSON v3 / .cgrj</button>
+                <button data-tab="json" class="tab-btn" role="tab">JSON v3</button>
               </div>
             </div>
-            <pre id="console-output" class="console-output">CANGREJO v1.0 listo. Haz clic derecho sobre cualquier nodo del expediente o pulsa "Ejecutar Pesquisa OSINT" para iniciar el análisis de vínculos en vivo.</pre>
+            <pre id="console-output" class="console-output">Cangrejo v1.0 listo. Haz clic derecho sobre cualquier nodo del expediente o pulsa «Ejecutar pesquisa» para iniciar el análisis de vínculos en vivo.</pre>
           </div>
         </aside>
       </main>
 
-      <!-- Interactive Cangrejo de Oro Heritage & Architecture Modal -->
+      <!-- Manifiesto Cangrejo de Oro y Atajos de Teclado (Hallmark v2.0) -->
       <div id="lore-modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="lore-modal-title">
-        <div class="modal-card">
-          <div class="modal-header">
-            <div class="modal-brand-row">
-              <img src="/cangrejo_logo_emblem.png" alt="Emblema Cangrejo de Oro" class="modal-emblem" />
-              <div>
-                <h2 id="lore-modal-title" class="modal-title">CANGREJO — El Cangrejo de Oro</h2>
-                <p class="modal-subtitle">Open-Source OSINT, Threat Intelligence &amp; Forensic Link-Analysis Platform (Apache-2.0)</p>
+        <div class="modal-card modal-card-workspace">
+          <div class="ws-modal-header" style="padding-bottom: 14px">
+            <div class="ws-modal-title-row" style="margin-bottom: 0">
+              <div class="ws-brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <ellipse cx="12" cy="12.5" rx="5.5" ry="4.2" />
+                  <circle cx="12" cy="12.5" r="1.4" fill="currentColor" stroke="none" />
+                  <path d="M6.5 9.5L4 6.5L6 4.5M17.5 9.5L20 6.5L18 4.5M6.2 12.5H2.5M17.8 12.5H21.5M6.8 15.5L3.5 18M17.2 15.5L20.5 18" />
+                </svg>
               </div>
+              <div class="ws-title-group">
+                <h2 id="lore-modal-title" class="ws-modal-title">Cangrejo — El Cangrejo de Oro</h2>
+                <p class="ws-modal-subtitle">Plataforma abierta de inteligencia OSINT y análisis forense de vínculos (Apache-2.0)</p>
+              </div>
+              <button id="btn-close-lore" type="button" class="btn btn-icon ws-close-btn" aria-label="Cerrar ventana">✕</button>
             </div>
-            <button id="btn-close-lore" type="button" class="btn btn-icon" aria-label="Cerrar ventana">✕</button>
           </div>
 
-          <div class="modal-body">
-            <div class="lore-section">
-              <h3>🇻🇪 Origen Venezolano: ¿Qué es un «Caso Cangrejo»?</h3>
-              <p>
+          <div class="ws-modal-body" style="display: grid; gap: 14px">
+            <div class="ws-surface-card">
+              <div class="ws-card-label" style="margin-bottom: 6px">Origen histórico · ¿Qué es un «Caso Cangrejo»?</div>
+              <p style="margin: 0; font-size: 12px; color: var(--text-secondary); line-height: 1.5">
                 Desde <strong>1971–1972</strong> en la criminalística científica venezolana (antigua <em>PTJ</em>, hoy <em>CICPC</em>), se denomina
-                <strong>«Caso Cangrejo»</strong> a toda investigación de altísima complejidad cuyas pistas, actores y estructuras fachada parecen caminar
-                hacia los lados y hacia atrás en una red laberíntica. Para premiar a los investigadores que logran desentrañar estos casos mediante el rigor
-                científico y el análisis de vínculos, se instituyó el legendario <strong>Premio Cangrejo de Oro</strong>.
+                <strong>«Caso Cangrejo»</strong> a toda investigación de alta complejidad cuyas pistas, actores y estructuras fachada parecen retroceder
+                o moverse de lado en una red laberíntica. Para reconocer a los investigadores que resuelven estos casos mediante el análisis científico de vínculos, se instituyó el <strong>Premio Cangrejo de Oro</strong>.
               </p>
             </div>
 
-            <div class="lore-section">
-              <h3>🏆 Clasificación Forense de Hallazgos (Los Cuatro Cangrejos)</h3>
+            <div class="ws-surface-card">
+              <div class="ws-card-label" style="margin-bottom: 8px">Clasificación forense de hallazgos (Los cuatro cangrejos)</div>
               <div class="tier-grid">
                 <div class="tier-card tier-platino">
                   <strong>Cangrejo de Platino</strong>
-                  <span>Joya de la Corona / Servidor C2 Maestro / Atribución Primaria</span>
+                  <span>Servidor C2 maestro y atribución primaria</span>
                 </div>
                 <div class="tier-card tier-oro">
                   <strong>Cangrejo de Oro</strong>
-                  <span>Eslabón Pivote Crítico que conecta clústeres aislados</span>
+                  <span>Eslabón pivote crítico entre clústeres</span>
                 </div>
                 <div class="tier-card tier-plata">
                   <strong>Cangrejo de Plata</strong>
-                  <span>Evidencia Secundaria Corroborada (DNS pasivo, RDAP, UTXO)</span>
+                  <span>Evidencia secundaria corroborada (DNS, RDAP, UTXO)</span>
                 </div>
                 <div class="tier-card tier-bronce">
                   <strong>Cangrejo de Bronce</strong>
-                  <span>Rastro Inicial / Indicador extraído por Regex o Subdominios</span>
+                  <span>Rastro inicial extraído por reglas o subdominios</span>
                 </div>
               </div>
             </div>
 
-            <div class="lore-section">
-              <h3>⚡ Arquitectura `@cangrejo/*` &amp; Atajos de Teclado</h3>
+            <div class="ws-surface-card">
+              <div class="ws-card-label" style="margin-bottom: 8px">Atajos rápidos de estación</div>
               <div class="shortcut-grid">
-                <div><kbd>Ctrl+K</kbd> Buscar en catálogo de 107 entidades</div>
-                <div><kbd>Clic Derecho</kbd> Ejecutar Pesquisa OSINT en vivo</div>
-                <div><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> Deshacer / Rehacer atómico</div>
-                <div><kbd>Supr</kbd> Eliminación en cascada de entidad y aristas</div>
+                <div><kbd>⌘K</kbd> Buscar en catálogo de 107 entidades</div>
+                <div><kbd>Clic derecho</kbd> Menú contextual de pesquisas</div>
+                <div><kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd> Deshacer y rehacer atómico</div>
+                <div><kbd>Supr</kbd> Eliminar entidad y aristas en cascada</div>
               </div>
             </div>
           </div>
@@ -764,7 +769,7 @@ AS13335</textarea>
               <div class="ws-title-group">
                 <h2 id="edition-modal-title" class="ws-modal-title">Espacio de trabajo y equipo</h2>
                 <p id="lbl-edition-subtitle" class="ws-modal-subtitle">
-                  Colabora en expedientes en tiempo real y sincroniza tus agentes MCP.
+                  Sincroniza agentes autónomos y comparte expedientes en vivo.
                 </p>
               </div>
               <button id="btn-close-edition" type="button" class="btn btn-icon ws-close-btn" aria-label="Cerrar ventana">
@@ -982,51 +987,39 @@ AS13335</textarea>
               </div>
             </div>
 
-            <!-- PESTAÑA 2: AGENTES MCP (Antigravity First + Claude / Cursor) -->
+            <!-- PESTAÑA 2: AGENTES MCP (Vista 1 Estabilizada — Cero Desbordes) -->
             <div id="mcp-onboarding-section" data-ws-panel="mcp" class="ws-tab-panel" hidden>
-              <!-- Hero Card: Google Antigravity (agy) -->
+              <!-- Banner Horizontal Compacto: Google Antigravity (agy) -->
               <div id="agy-featured-banner" class="agy-hero-card">
                 <div class="agy-hero-top">
                   <div class="agy-identity">
-                    <div class="agy-logo-mark" aria-hidden="true">
-                      <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M10 2.5 3.2 16.5h3.2l1.4-3.2h4.4l1.4 3.2h3.2L10 2.5Z" />
-                        <path d="M8.5 10.5h3" />
-                      </svg>
-                    </div>
-                    <div>
+                    <div class="agy-logo-mark" aria-hidden="true">A</div>
+                    <div class="agy-head-text">
                       <div class="agy-title-row">
                         <strong class="agy-title">Google Antigravity (agy)</strong>
-                        <span class="agy-partner-badge">Agente recomendado</span>
-                        <span id="mcp-active-edition-tag" class="status-pill status-pill-community">COMMUNITY (LOCAL)</span>
+                        <span class="agy-partner-badge">Socio agéntico</span>
+                        <span id="mcp-active-edition-tag" class="status-pill status-pill-community sr-only">COMMUNITY (LOCAL)</span>
                       </div>
                       <p class="agy-subtitle">
-                        Despliega subagentes en paralelo (<code>/teamwork</code>), cacerías autónomas (<code>/goal</code>) y auditorías profundas (<code>/boost</code>) mutando el lienzo del equipo en vivo.
+                        Despliega enjambres de subagentes en paralelo y cacerías autónomas sobre el grafo.
                       </p>
                     </div>
                   </div>
                   <div class="mcp-health-badge" title="12 herramientas forenses listas para invocación">
-                    <span class="presence-dot"></span>
+                    <span class="presence-dot" aria-hidden="true"></span>
                     <span id="lbl-mcp-tool-count" class="tabular">12 herramientas MCP</span>
                   </div>
                 </div>
 
-                <div class="agy-pillars-grid">
-                  <div class="agy-pillar">
-                    <strong><code>/teamwork</code> · Enjambre OSINT</strong>
-                    <span>Lanza subagentes simultáneos en DNS/ASN, vectores RRF y rutas críticas BFS.</span>
-                  </div>
-                  <div class="agy-pillar">
-                    <strong><code>/goal</code> · Cacería autónoma</strong>
-                    <span>Itera sin detenerse hasta mapear la red C2 y firmar el dictamen Daubert.</span>
-                  </div>
-                  <div class="agy-pillar">
-                    <strong>Streamable HTTP nativo</strong>
-                    <span>Se conecta directo desde <code>~/.gemini/config/mcp_config.json</code> sin wrappers.</span>
-                  </div>
+                <!-- 3 Píldoras Horizontales en 1 sola línea (sin columnas estrechas que corten texto) -->
+                <div class="agy-chips-row">
+                  <span class="agy-feature-chip"><code>/teamwork</code> · Enjambre paralelo</span>
+                  <span class="agy-feature-chip"><code>/goal</code> · Peritaje autónomo</span>
+                  <span class="agy-feature-chip">Streamable HTTP nativo</span>
                 </div>
               </div>
 
+              <!-- Fila compacta de 2 columnas: Expediente + Protocolo / Token -->
               <div class="mcp-controls-grid">
                 <div class="mcp-field-group">
                   <label for="inp-mcp-session-id" class="mcp-label">Expediente compartido (Session ID)</label>
@@ -1041,13 +1034,13 @@ AS13335</textarea>
                 </div>
 
                 <div id="mcp-token-container" class="mcp-field-group hidden">
-                  <label for="inp-mcp-auth-token" class="mcp-label">Llave del equipo o sesión (Bearer Auth)</label>
+                  <label for="inp-mcp-auth-token" class="mcp-label">Llave del equipo (Bearer Auth)</label>
                   <div class="mcp-input-action-row">
                     <input
                       id="inp-mcp-auth-token"
                       type="password"
                       class="ws-input mcp-token-input"
-                      placeholder="ses_sec_... o token de equipo"
+                      placeholder="ses_sec_…"
                       value=""
                       aria-label="Token de autenticación Bearer"
                       autocomplete="off"
@@ -1061,14 +1054,16 @@ AS13335</textarea>
 
                 <div id="mcp-community-transport-toggle" class="mcp-field-group">
                   <label class="mcp-label">Protocolo de transporte</label>
-                  <div class="console-tabs" role="tablist">
-                    <button id="btn-transport-stdio" type="button" class="tab-btn" role="tab" aria-selected="false">Stdio (Local Bun)</button>
+                  <div class="console-tabs mcp-transport-tabs" role="tablist">
                     <button id="btn-transport-http" type="button" class="tab-btn active" role="tab" aria-selected="true">Streamable HTTP</button>
+                    <button id="btn-transport-stdio" type="button" class="tab-btn" role="tab" aria-selected="false">Stdio (Local)</button>
                   </div>
                 </div>
               </div>
 
+              <!-- Selector de Cliente MCP -->
               <div class="mcp-client-tabs-bar">
+                <span class="mcp-client-label">Cliente</span>
                 <div class="console-tabs" role="tablist" aria-label="Clientes MCP compatibles">
                   <button id="tab-client-antigravity" type="button" class="tab-btn active" role="tab" aria-selected="true">
                     Antigravity (agy)
@@ -1083,40 +1078,36 @@ AS13335</textarea>
                     Claude Code
                   </button>
                 </div>
-                <span id="lbl-mcp-filepath" class="mcp-filepath-hint">
-                  Archivo: <code>~/.gemini/config/mcp_config.json</code>
-                </span>
               </div>
 
+              <!-- Contenedor de Código con Cabecera Propia (los botones nunca tapan el JSON) -->
               <div class="mcp-code-container">
-                <pre id="mcp-snippet-output" class="console-output mcp-code-block"></pre>
-                <div class="mcp-code-actions">
-                  <button id="btn-mcp-download-config" type="button" class="btn btn-quiet" title="Descargar archivo mcp_config.json listo para ~/.gemini/config/">
-                    Descargar .json
-                  </button>
-                  <button id="btn-mcp-copy-snippet" type="button" class="btn btn-primary" aria-label="Copiar configuración al portapapeles">
-                    Copiar configuración
-                  </button>
+                <div class="mcp-code-topbar">
+                  <span id="lbl-mcp-filepath" class="mcp-filepath-hint">~/.gemini/config/mcp_config.json</span>
+                  <div class="mcp-code-actions">
+                    <button id="btn-mcp-download-config" type="button" class="btn btn-quiet btn-xs" title="Descargar archivo de configuración JSON">
+                      Descargar .json
+                    </button>
+                    <button id="btn-mcp-copy-snippet" type="button" class="btn btn-primary btn-xs" aria-label="Copiar configuración al portapapeles">
+                      Copiar
+                    </button>
+                  </div>
                 </div>
+                <pre id="mcp-snippet-output" class="console-output mcp-code-block"></pre>
               </div>
 
-              <!-- Playbook de Misiones Agénticas para Antigravity -->
+              <!-- Misiones Rápidas para Antigravity (2 filas compactas de 1 línea) -->
               <div class="agy-missions-box">
-                <div class="agy-missions-header">
-                  <span class="ws-card-label">Misiones listas para lanzar en Antigravity (clic para copiar prompt)</span>
-                </div>
+                <div class="agy-missions-header">Misiones rápidas para Antigravity</div>
                 <div class="agy-missions-list">
                   <button
                     type="button"
                     class="agy-mission-btn"
                     data-agy-prompt="/teamwork Conéctate al servidor MCP de Cangrejo en el expediente activo y despliega 3 subagentes en paralelo: (1) expansión de superficie DNS, subdominios CT y ASN, (2) desofuscación de IOCs y vínculos latentes Vectorize, y (3) cálculo de PageRank, ruta más corta BFS y detección de anillos cíclicos."
                   >
-                    <div class="agy-mission-top">
-                      <code>/teamwork</code>
-                      <span class="agy-mission-title">Enjambre forense de 3 subagentes en paralelo</span>
-                      <span class="agy-mission-copy-tag">Copiar misión</span>
-                    </div>
-                    <span class="agy-mission-desc">Divide el análisis de red, correlación vectorial y topología PageRank entre subagentes simultáneos.</span>
+                    <code class="agy-mission-cmd">/teamwork</code>
+                    <span class="agy-mission-title">Enjambre OSINT de 3 subagentes (DNS, Vectorize y PageRank)</span>
+                    <span class="agy-mission-copy-tag">Copiar misión</span>
                   </button>
 
                   <button
@@ -1124,49 +1115,137 @@ AS13335</textarea>
                     class="agy-mission-btn"
                     data-agy-prompt="/goal Investiga de forma autónoma todos los nodos pivote del expediente en Cangrejo usando las 12 herramientas MCP hasta mapear la infraestructura C2 completa, clasificar la cadena en MITRE ATT&CK v15 y sintetizar el dictamen pericial Daubert con firma Ed25519."
                   >
-                    <div class="agy-mission-top">
-                      <code>/goal</code>
-                      <span class="agy-mission-title">Cacería autónoma hasta dictamen Daubert</span>
-                      <span class="agy-mission-copy-tag">Copiar misión</span>
-                    </div>
-                    <span class="agy-mission-desc">Ejecución continua multi-salto que no se detiene hasta completar la atribución probatoria.</span>
+                    <code class="agy-mission-cmd">/goal</code>
+                    <span class="agy-mission-title">Cacería autónoma multi-salto hasta dictamen Daubert Ed25519</span>
+                    <span class="agy-mission-copy-tag">Copiar misión</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            <!-- PESTAÑA 3: CONECTORES, MARCA BLANCA Y PLAN -->
+            <!-- PESTAÑA 3: CONECTORES, MARCA BLANCA Y PLAN (Vista 2) -->
             <div id="ws-panel-plan" data-ws-panel="plan" class="ws-tab-panel" hidden>
-              <div class="ws-surface-card" style="display: grid; gap: 12px">
-                <span class="ws-card-label">Marca blanca del equipo y licencia</span>
-                <label class="ws-field-label">
-                  <span>Firma de la organización (para dossiers periciales PDF / Daubert)</span>
-                  <input
-                    id="inp-edition-org"
-                    type="text"
-                    class="ws-input"
-                    value="Unidad Especial de Inteligencia Forense & CTI"
-                  />
-                </label>
-                <label class="ws-field-label">
-                  <span>Clave de licencia corporativa</span>
-                  <input
-                    id="inp-edition-key"
-                    type="text"
-                    class="ws-input"
-                    value="CGRJ-PLATINO-2026-ENTERPRISE"
-                  />
-                </label>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px">
-                  <button id="btn-activate-platino" type="button" class="btn btn-primary">
-                    Activar Platino (5,000 créditos)
-                  </button>
-                  <button id="btn-activate-oro" type="button" class="btn btn-quiet">
-                    Activar Oro Pro (500 créditos)
-                  </button>
-                  <button id="btn-reset-community" type="button" class="btn btn-ghost">
-                    Modo Community local
-                  </button>
+              <div class="ws-plan-layout">
+                <!-- 1. Nivel de Capacidad (3 Tarjetas Horizontales) -->
+                <div class="ws-plan-section">
+                  <div class="ws-section-heading">Nivel de capacidad del equipo</div>
+                  <div class="ws-tier-cards-grid">
+                    <div id="card-tier-community" class="ws-tier-card">
+                      <div class="ws-tier-card-top">
+                        <strong class="ws-tier-name">Community</strong>
+                      </div>
+                      <span class="ws-tier-meta">Local · 60 FPS · Gratis</span>
+                      <button id="btn-reset-community" type="button" class="btn btn-quiet btn-xs">
+                        Modo local
+                      </button>
+                    </div>
+
+                    <div id="card-tier-oro" class="ws-tier-card ws-tier-card-featured">
+                      <div class="ws-tier-card-top">
+                        <strong class="ws-tier-name">Oro Pro</strong>
+                        <span class="ws-live-indicator">Recomendado</span>
+                      </div>
+                      <span class="ws-tier-meta">500 créditos · 25k nodos</span>
+                      <button id="btn-activate-oro" type="button" class="btn btn-primary btn-xs">
+                        Activar Oro Pro
+                      </button>
+                    </div>
+
+                    <div id="card-tier-platino" class="ws-tier-card">
+                      <div class="ws-tier-card-top">
+                        <strong class="ws-tier-name">Platino</strong>
+                      </div>
+                      <span class="ws-tier-meta">5,000 créditos · Radar 24/7</span>
+                      <button id="btn-activate-platino" type="button" class="btn btn-quiet btn-xs">
+                        Activar Platino
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 2. Marca Blanca para Dossiers Daubert -->
+                <div class="ws-plan-section">
+                  <div class="ws-section-heading">Marca blanca para Dossiers Daubert (PDF / HTML5)</div>
+                  <div class="ws-field-row-2">
+                    <label class="ws-field-label">
+                      <span>Firma de la organización</span>
+                      <input
+                        id="inp-edition-org"
+                        type="text"
+                        class="ws-input"
+                        value="Unidad Especial CTI & Forense"
+                      />
+                    </label>
+                    <label class="ws-field-label">
+                      <span>Clave de licencia corporativa</span>
+                      <input
+                        id="inp-edition-key"
+                        type="text"
+                        class="ws-input"
+                        value="CGRJ-ORO-2026-PRO"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <!-- 3. Conectores de Inteligencia Comercial (BYOK / Cloud Pool) -->
+                <div class="ws-plan-section">
+                  <div class="ws-section-heading">Conectores de inteligencia comercial (BYOK / Cloud Pool)</div>
+                  <div class="ws-connectors-list">
+                    <div class="ws-connector-row">
+                      <div class="ws-connector-id">
+                        <span class="ws-connector-dot ws-dot-shodan" aria-hidden="true"></span>
+                        <span class="ws-connector-name">Shodan Host Intel</span>
+                      </div>
+                      <span id="lbl-byok-status-shodan" class="ws-connector-badge">Cloud Pool activo</span>
+                      <div class="ws-connector-input-wrap">
+                        <input
+                          id="inp-byok-shodan"
+                          type="password"
+                          class="ws-input ws-input-sm"
+                          placeholder="BYOK API key (opcional)"
+                          autocomplete="off"
+                        />
+                        <button type="button" data-byok-save="shodan" class="btn btn-quiet btn-xs">Guardar</button>
+                      </div>
+                    </div>
+
+                    <div class="ws-connector-row">
+                      <div class="ws-connector-id">
+                        <span class="ws-connector-dot ws-dot-vt" aria-hidden="true"></span>
+                        <span class="ws-connector-name">VirusTotal v3 CTI</span>
+                      </div>
+                      <span id="lbl-byok-status-virustotal" class="ws-connector-badge">Cloud Pool activo</span>
+                      <div class="ws-connector-input-wrap">
+                        <input
+                          id="inp-byok-virustotal"
+                          type="password"
+                          class="ws-input ws-input-sm"
+                          placeholder="BYOK API key (opcional)"
+                          autocomplete="off"
+                        />
+                        <button type="button" data-byok-save="virustotal" class="btn btn-quiet btn-xs">Guardar</button>
+                      </div>
+                    </div>
+
+                    <div class="ws-connector-row">
+                      <div class="ws-connector-id">
+                        <span class="ws-connector-dot ws-dot-abuse" aria-hidden="true"></span>
+                        <span class="ws-connector-name">AbuseIPDB Reputation</span>
+                      </div>
+                      <span id="lbl-byok-status-abuseipdb" class="ws-connector-badge">Cloud Pool activo</span>
+                      <div class="ws-connector-input-wrap">
+                        <input
+                          id="inp-byok-abuseipdb"
+                          type="password"
+                          class="ws-input ws-input-sm"
+                          placeholder="BYOK API key (opcional)"
+                          autocomplete="off"
+                        />
+                      <button type="button" data-byok-save="abuseipdb" class="btn btn-quiet btn-xs">Guardar</button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1174,7 +1253,7 @@ AS13335</textarea>
         </div>
       </div>
 
-      <!-- Comisario IA — Cloudflare Workers AI & Forensic Intelligence Modal (F1-F5) -->
+      <!-- Comisario IA — Inteligencia Forense en el Borde (Vista 3 — Raycast AI / Linear Style) -->
       <div
         id="ai-modal-backdrop"
         class="modal-backdrop hidden"
@@ -1182,77 +1261,134 @@ AS13335</textarea>
         aria-modal="true"
         aria-labelledby="ai-modal-title"
       >
-        <div class="modal-card">
-          <div class="modal-header">
-            <div class="modal-brand-row">
-              <img src="/cangrejo_logo_emblem.png" alt="Emblema Comisario IA" class="modal-emblem" />
-              <div>
-                <h2 id="ai-modal-title" class="modal-title">
-                  🧠 Comisario IA — Cloudflare Workers AI &amp; Forensics (`F1`–`F5`)
-                </h2>
-                <p class="modal-subtitle">
-                  Inferencia Serverless Edge (`Llama 3.3 70B` • `Llama 3.1 8B` • `Vectorize BGE-Large`) + Fallback CPU Universal (Cero NPU Requerida)
-                </p>
+        <div class="modal-card modal-card-workspace modal-card-ai">
+          <div class="ws-modal-header" style="padding-bottom: 14px">
+            <div class="ws-modal-title-row" style="margin-bottom: 0; align-items: center">
+              <div class="ws-brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 1.8v2.4M8 11.8v2.4M1.8 8h2.4M11.8 8h2.4M3.8 3.8l1.7 1.7M10.5 10.5l1.7 1.7M12.2 3.8l-1.7 1.7M5.5 10.5l-1.7 1.7" />
+                  <circle cx="8" cy="8" r="1.8" />
+                </svg>
               </div>
+              <div class="ws-title-group" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+                <h2 id="ai-modal-title" class="ws-modal-title">Comisario IA</h2>
+                <span class="agy-partner-badge">Llama 3.3 70B · Vectorize RRF</span>
+              </div>
+              <button id="btn-close-ai" type="button" class="btn btn-icon ws-close-btn" aria-label="Cerrar ventana">
+                ✕
+              </button>
             </div>
-            <button id="btn-close-ai" type="button" class="btn btn-icon" aria-label="Cerrar ventana">
-              ✕
-            </button>
           </div>
 
-          <div class="modal-body">
-            <div class="lore-section">
-              <h3>⚡ Ejecutar Capacidades Cognitivas sobre el Expediente Activo</h3>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px">
-                <button id="btn-ai-f1-unpack" type="button" class="btn">
-                  🔓 F1: Desofuscar IOCs (`hxxps` / `[.]`)
+          <div class="ws-modal-body ai-studio-body">
+            <!-- 1. Barra de Consulta en Lenguaje Natural (F5) -->
+            <div class="ai-prompt-bar">
+              <input
+                id="inp-ai-copilot-prompt"
+                type="text"
+                class="ws-input ai-prompt-input"
+                value="¿Cuál es el nodo pivote principal y qué pesquisas recomiendas?"
+                aria-label="Consulta en lenguaje natural para el Comisario IA"
+              />
+              <button id="btn-ai-f5-ask" type="button" class="btn btn-primary">
+                Consultar
+              </button>
+              <button id="btn-ai-run-tools" type="button" class="btn btn-quiet" title="Ejecutar en el grafo las pesquisas sugeridas">
+                Ejecutar sugerencias
+              </button>
+            </div>
+
+            <!-- 2. Grilla Estructurada 2x3 de Módulos de Análisis Forense (F1-F7) -->
+            <div class="ai-modules-section">
+              <div class="ws-section-heading">Módulos de análisis forense</div>
+              <div class="ai-modules-grid">
+                <button id="btn-ai-f1-unpack" type="button" class="ai-module-card">
+                  <div class="ai-module-head">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="3" y="2" width="10" height="12" rx="1.5" />
+                      <path d="M6 6h4M6 9h4M6 11.5h2.5" />
+                    </svg>
+                    <strong>F1 · Desofuscar IOCs</strong>
+                  </div>
+                  <span>Extrae hxxps y [.] con offsets UTF-8</span>
                 </button>
-                <button id="btn-ai-f2-latent" type="button" class="btn">
-                  🔗 F2: Vínculos Latentes (`Vectorize RRF k=60`)
+
+                <button id="btn-ai-f2-latent" type="button" class="ai-module-card">
+                  <div class="ai-module-head">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <circle cx="4" cy="12" r="2" />
+                      <circle cx="12" cy="4" r="2" />
+                      <path d="M5.5 10.5 10.5 5.5" />
+                    </svg>
+                    <strong>F2 · Vínculos latentes</strong>
+                  </div>
+                  <span>Correlación semántica Vectorize RRF</span>
                 </button>
-                <button id="btn-ai-f3-anomalies" type="button" class="btn">
-                  🚨 F3: Anomalías (`Fast-Flux` / `Peel-Chain`)
+
+                <button id="btn-ai-f3-anomalies" type="button" class="ai-module-card">
+                  <div class="ai-module-head">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M13 8A5 5 0 1 1 8 3c1.8 0 3.4.9 4.3 2.3" />
+                      <path d="M13 2.5v3h-3" />
+                    </svg>
+                    <strong>F3 · Anomalías y ciclos</strong>
+                  </div>
+                  <span>Detecta redes Fast-Flux y lavado</span>
                 </button>
-                <button id="btn-ai-f4-daubert" type="button" class="btn btn-primary">
-                  ⚖️ F4: Dictamen Judicial `Daubert / FRE 702` (`Ed25519`)
+
+                <button id="btn-ai-f4-daubert" type="button" class="ai-module-card">
+                  <div class="ai-module-head">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" />
+                      <path d="M5.5 9.5h5M5.5 11.8h3.5" />
+                    </svg>
+                    <strong>F4 · Dictamen Daubert</strong>
+                  </div>
+                  <span>Narrativa pericial con firma Ed25519</span>
                 </button>
-                <button id="btn-ai-f6-autoinvestigate" type="button" class="btn btn-primary" title="Ejecutar pesquisa autónoma multi-salto guiada por PageRank y Llama 3.3 70B">
-                  🤖 F6: Pesquisa Autónoma Multi-Salto
+
+                <button id="btn-ai-f6-autoinvestigate" type="button" class="ai-module-card">
+                  <div class="ai-module-head">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <circle cx="7" cy="7" r="4.2" />
+                      <path d="m10.2 10.2 3.3 3.3" />
+                    </svg>
+                    <strong>F6 · Cacería autónoma</strong>
+                  </div>
+                  <span>Pivoteo multi-salto por PageRank</span>
                 </button>
-                <button id="btn-ai-f7-vision" type="button" class="btn" title="Extraer IOCs desde evidencia visual / captura forense con Llama 3.2 Vision y sello SHA-256">
-                  👁️ F7: Ingesta Visual / Captura CTI
-                </button>
-                <button id="btn-ai-materialize" type="button" class="btn btn-primary">
-                  ✨ Materializar Hallazgos IA en el Grafo
-                </button>
-                <button id="btn-ai-mitre" type="button" class="btn">
-                  🎯 MITRE ATT&amp;CK v15 &amp; Cronología
+
+                <button id="btn-ai-f7-vision" type="button" class="ai-module-card">
+                  <div class="ai-module-head">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+                      <circle cx="6" cy="6.5" r="1.2" />
+                      <path d="m3.5 11.5 3.2-3 2.3 2 2-1.8 1.5 2.8" />
+                    </svg>
+                    <strong>F7 · Ingesta visual CTI</strong>
+                  </div>
+                  <span>Extracción multimodal y custodia SHA-256</span>
                 </button>
               </div>
             </div>
 
-            <div class="lore-section">
-              <h3>💬 F5: Consultar al Comisario IA sobre el Grafo</h3>
-              <div style="display: flex; gap: 8px; margin-top: 8px">
-                <input
-                  id="inp-ai-copilot-prompt"
-                  type="text"
-                  class="palette-search-input"
-                  style="flex: 1"
-                  value="¿Cuál es el nodo pivote principal y qué pesquisas OSINT recomiendas ejecutar?"
-                />
-                <button id="btn-ai-f5-ask" type="button" class="btn btn-primary">
-                  Preguntar a IA
-                </button>
-                <button id="btn-ai-run-tools" type="button" class="btn" title="Ejecutar automáticamente en el grafo las pesquisas recomendadas por el Comisario IA">
-                  🚀 Ejecutar Sugerencias
-                </button>
+            <!-- 3. Consola de Resultado Pericial con Acciones Integradas -->
+            <div class="mcp-code-container">
+              <div class="mcp-code-topbar">
+                <span class="mcp-filepath-hint">Resultado del análisis pericial</span>
+                <div class="mcp-code-actions">
+                  <button id="btn-ai-mitre" type="button" class="btn btn-quiet btn-xs">
+                    Mapeo MITRE ATT&amp;CK v15
+                  </button>
+                  <button id="btn-ai-materialize" type="button" class="btn btn-primary btn-xs">
+                    Materializar hallazgos en el grafo
+                  </button>
+                </div>
               </div>
               <pre
                 id="ai-modal-output"
-                class="console-output"
-                style="margin-top: 10px; max-height: 220px; border: 1px solid var(--border-default); border-radius: 6px"
-              >Selecciona cualquiera de las 5 funciones de IA (F1–F5) para analizar el expediente activo con trazabilidad probatoria.</pre>
+                class="console-output mcp-code-block ai-console-output"
+              >Selecciona un módulo forense (F1–F7) o realiza una consulta para analizar el expediente activo con trazabilidad probatoria.</pre>
             </div>
           </div>
         </div>
