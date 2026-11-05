@@ -203,6 +203,25 @@
 
             <div class="popover-divider" role="separator"></div>
             <div class="popover-section-label">Persistencia y dictamen pericial</div>
+            <div style="display: flex; gap: 4px; padding: 2px 6px 6px; align-items: center;">
+              <select
+                id="sel-vault-expediente"
+                class="input"
+                style="flex: 1; height: 26px; font-size: 11px; padding: 2px 6px;"
+                title="Seleccionar expediente guardado en Bóveda SQLite / Cloudflare D1"
+              >
+                <option value="expediente-activo">expediente-activo</option>
+              </select>
+              <button
+                id="btn-vault-delete"
+                type="button"
+                class="btn btn-ghost"
+                style="height: 26px; padding: 0 7px; font-size: 11px; color: #f87171;"
+                title="Eliminar expediente seleccionado de la Bóveda SQLite / D1"
+              >
+                ✕
+              </button>
+            </div>
             <button
               id="btn-vault-save"
               type="button"

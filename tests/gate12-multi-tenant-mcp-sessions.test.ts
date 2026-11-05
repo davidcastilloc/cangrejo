@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import cloudflareWorker, {
   CangrejoSessionRoomDO,
   resolveSessionRoomFromRequest,
+  resolveSessionRoomFromRequestAsync,
 } from '../apps/web/cloudflareWorker.js';
 import { cangrejoHonoApp, sessionRooms } from '../apps/web/honoApp.js';
 import { dispatchMcpJsonRpcLine } from '../apps/web/mcpStdioServer.js';
@@ -740,6 +741,127 @@ describe('Gate 12: Multi-Tenant MCP Session Isolation, Atomic WAL OCC Batching, 
     expect(indexHtml).toContain('id="btn-export-png"');
     expect(mainTs).toContain("document.getElementById('btn-export-png')");
     expect(mainTs).toContain('cangrejo_graph_autosave_');
+
+    vault.close();
+  });
+
+  it('9. verifies POST /api/mcp body/default Durable Object routing, cangrejo_run_osint_transform auto-detection & live session injection, and multi-expediente D1 vault CRUD (save/load/delete)', async () => {
+    const repoRoot = path.resolve(import.meta.dirname, '..');
+    const indexHtml = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf-8');
+    const mainTs = fs.readFileSync(path.join(repoRoot, 'apps/web/main.ts'), 'utf-8');
+
+    // 1. POST /api/mcp routing to SESSION_ROOM_DO (default & JSON-RPC body sessionId)
+    const bareMcpReq = new Request('https://cangrejo.test/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+    expect(resolveSessionRoomFromRequest(bareMcpReq, new URL(bareMcpReq.url))).toBe(
+      'expediente-apt29'
+    );
+
+    const bodyScopedReq = new Request('https://cangrejo.test/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'cangrejo_session_state',
+          arguments: { sessionId: 'sala-mcp-jsonrpc-body' },
+        },
+      }),
+    });
+    expect(
+      await resolveSessionRoomFromRequestAsync(bodyScopedReq, new URL(bodyScopedReq.url))
+    ).toBe('sala-mcp-jsonrpc-body');
+
+    // 2. cangrejo_run_osint_transform auto-detects IOC type and injects discovered nodes/links into live session
+    const vault = new BunSqliteVault(':memory:');
+    const d1 = vault.asD1Database();
+    const token = BunSqliteVault.issueSignedLicenseToken({
+      tier: 'ORO_PRO',
+      organizationName: 'Live Transform MCP Org',
+    });
+    const mcpTransformRes = await cangrejoHonoApp.request(
+      '/api/mcp/sala-live-transform',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 30,
+          method: 'tools/call',
+          params: {
+            name: 'cangrejo_run_osint_transform',
+            arguments: {
+              roomId: 'sala-live-transform',
+              entityValue: '8.8.8.8',
+              transformId: 'bgp-asn',
+              autoLayout: true,
+            },
+          },
+        }),
+      },
+      { DB: d1 }
+    );
+    expect(mcpTransformRes.status).toBe(200);
+    const mcpTransformJson = (await mcpTransformRes.json()) as {
+      result: {
+        structuredContent: {
+          ok: boolean;
+          totalAddedEntities: number;
+          totalAddedLinks: number;
+          entityCount: number;
+        };
+      };
+    };
+    expect(mcpTransformJson.result.structuredContent.ok).toBe(true);
+    expect(mcpTransformJson.result.structuredContent.totalAddedEntities).toBeGreaterThan(0);
+    expect(mcpTransformJson.result.structuredContent.totalAddedLinks).toBeGreaterThan(0);
+
+    // 3. Multi-expediente D1 vault CRUD (save, list, delete) + UI controls
+    expect(indexHtml).toContain('id="sel-vault-expediente"');
+    expect(indexHtml).toContain('id="btn-vault-delete"');
+    expect(mainTs).toContain('async function refreshVaultExpedientesDropdown');
+
+    const saveRes = await cangrejoHonoApp.request(
+      '/api/vault/expedientes',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: 'expediente-operacion-sur',
+          title: 'Operación Sur',
+          caseTier: 'ORO',
+          entities: [{ id: '101', typeName: 'maltego.Domain', value: 'sur-target.org' }],
+          links: [],
+        }),
+      },
+      { DB: d1 }
+    );
+    expect(saveRes.status).toBe(200);
+
+    const listBefore = await cangrejoHonoApp.request('/api/vault/expedientes', { method: 'GET' }, { DB: d1 });
+    const listBeforeJson = (await listBefore.json()) as {
+      ok: boolean;
+      expedientes: Array<{ id: string }>;
+    };
+    expect(listBeforeJson.expedientes.some((e) => e.id === 'expediente-operacion-sur')).toBe(true);
+
+    const delRes = await cangrejoHonoApp.request(
+      '/api/vault/expedientes/expediente-operacion-sur',
+      { method: 'DELETE' },
+      { DB: d1 }
+    );
+    expect(delRes.status).toBe(200);
+    const delJson = (await delRes.json()) as { ok: boolean; deleted: boolean };
+    expect(delJson.ok).toBe(true);
+    expect(delJson.deleted).toBe(true);
 
     vault.close();
   });

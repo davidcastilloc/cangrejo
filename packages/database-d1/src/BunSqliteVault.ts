@@ -250,6 +250,8 @@ function createEdgeMemorySqliteDb(): SqliteDbLike {
               cgrj_payload,
               updated_at,
             });
+          } else if (norm.startsWith('DELETE FROM cangrejo_expedientes')) {
+            expedientes.delete(String(params[0]));
           } else if (norm.startsWith('INSERT INTO cangrejo_pesquisa_audit')) {
             const [id, transform_id, target_value, discovered_count, elapsed_ms, created_at] = params;
             audits.unshift({
@@ -811,6 +813,19 @@ export class BunSqliteVault {
       linkCount: r.link_count,
       updatedAt: r.updated_at,
     }));
+  }
+
+  /**
+   * Deletes a saved Expediente from SQLite by ID.
+   */
+  public deleteExpediente(id: string): boolean {
+    const cleanId = id.trim();
+    if (!cleanId) return false;
+    const existing = this.getExpediente(cleanId);
+    if (!existing) return false;
+    const stmt = this.db.prepare(`DELETE FROM cangrejo_expedientes WHERE id = ?`);
+    stmt.run(cleanId);
+    return true;
   }
 
   /**
@@ -1730,6 +1745,26 @@ export class BunSqliteVault {
     } catch (err) {
       console.error('[BunSqliteVault] Cloudflare D1 listExpedientes failed gracefully:', err);
       return null;
+    }
+  }
+
+  /**
+   * Deletes an Expediente from a Cloudflare D1 binding (`env.DB`) by ID.
+   */
+  public async deleteExpedienteFromD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    id: string
+  ): Promise<boolean> {
+    if (!d1 || typeof d1.prepare !== 'function') return false;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      await d1
+        .prepare(`DELETE FROM cangrejo_expedientes WHERE id = ?`)
+        .bind(id.trim())
+        .run();
+      return true;
+    } catch {
+      return false;
     }
   }
 

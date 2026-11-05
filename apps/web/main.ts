@@ -2261,15 +2261,82 @@ document.getElementById('btn-export-png')?.addEventListener('click', () => {
   }
 });
 
+async function refreshVaultExpedientesDropdown(preferredId?: string): Promise<void> {
+  try {
+    const vRes = await fetch('/api/vault/expedientes');
+    if (!vRes.ok) return;
+    const vData = (await vRes.json()) as {
+      ok: boolean;
+      expedientes?: Array<{ id: string; title: string; entityCount?: number; linkCount?: number }>;
+    };
+    if (!Array.isArray(vData.expedientes)) return;
+
+    const vaultSel = document.getElementById('sel-vault-expediente') as HTMLSelectElement | null;
+    if (vaultSel) {
+      const currentVal = preferredId ?? vaultSel.value ?? 'expediente-activo';
+      vaultSel.innerHTML = '';
+      const idsSeen = new Set<string>();
+      for (const exp of vData.expedientes) {
+        idsSeen.add(exp.id);
+        const opt = document.createElement('option');
+        opt.value = exp.id;
+        opt.textContent =
+          typeof exp.entityCount === 'number'
+            ? `${exp.id} (${exp.entityCount}n/${exp.linkCount ?? 0}e)`
+            : exp.id;
+        vaultSel.appendChild(opt);
+      }
+      if (!idsSeen.has('expediente-activo')) {
+        const defOpt = document.createElement('option');
+        defOpt.value = 'expediente-activo';
+        defOpt.textContent = 'expediente-activo';
+        vaultSel.appendChild(defOpt);
+      }
+      if (preferredId && !idsSeen.has(preferredId) && preferredId !== 'expediente-activo') {
+        const pOpt = document.createElement('option');
+        pOpt.value = preferredId;
+        pOpt.textContent = preferredId;
+        vaultSel.appendChild(pOpt);
+      }
+      vaultSel.value = currentVal;
+    }
+
+    const selEl = document.getElementById('preset-select') as HTMLSelectElement | null;
+    if (selEl) {
+      const existingValues = new Set(Array.from(selEl.options).map((o) => o.value));
+      for (const exp of vData.expedientes) {
+        if (!existingValues.has(exp.id)) {
+          const opt = document.createElement('option');
+          opt.value = exp.id;
+          opt.textContent = `MCP · ${exp.id}`;
+          selEl.appendChild(opt);
+        }
+      }
+    }
+  } catch {
+    // Ignore offline errors
+  }
+}
+
 document.getElementById('btn-vault-save')?.addEventListener('click', async () => {
   try {
+    const vaultSel = document.getElementById('sel-vault-expediente') as HTMLSelectElement | null;
+    const defaultId =
+      vaultSel?.value?.trim() || mcpState.sessionId.trim() || 'expediente-activo';
+    const rawChosen = window.prompt(
+      'Identificador del expediente para guardar en Bóveda SQLite / Cloudflare D1:',
+      defaultId
+    );
+    if (rawChosen === null) return;
+    const targetId = rawChosen.trim() || defaultId;
+
     const payload = serializeCurrentStore();
     const res = await fetch('/api/vault/expedientes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        id: 'expediente-activo',
-        title: 'Expediente Operación Cangrejo',
+        id: targetId,
+        title: `Expediente ${targetId}`,
         caseTier: 'ORO',
         ...payload,
       }),
@@ -2283,8 +2350,9 @@ document.getElementById('btn-vault-save')?.addEventListener('click', async () =>
       appendLog(`Error guardando en Bóveda SQLite: ${data.error}`);
       return;
     }
+    await refreshVaultExpedientesDropdown(data.expediente.id);
     appendLog(
-      `Expediente "${data.expediente.id}" persistido en Bóveda SQLite (${data.expediente.entityCount} entidades, ${data.expediente.linkCount} enlaces).`
+      `Expediente "${data.expediente.id}" persistido en Bóveda SQLite / D1 (${data.expediente.entityCount} entidades, ${data.expediente.linkCount} enlaces).`
     );
   } catch (err) {
     appendLog(`Error conectando con Bóveda SQLite: ${String(err)}`);
@@ -2293,7 +2361,9 @@ document.getElementById('btn-vault-save')?.addEventListener('click', async () =>
 
 document.getElementById('btn-vault-load')?.addEventListener('click', async () => {
   try {
-    const res = await fetch('/api/vault/expedientes/expediente-activo');
+    const vaultSel = document.getElementById('sel-vault-expediente') as HTMLSelectElement | null;
+    const targetId = vaultSel?.value?.trim() || 'expediente-activo';
+    const res = await fetch(`/api/vault/expedientes/${encodeURIComponent(targetId)}`);
     const data = (await res.json()) as {
       ok: boolean;
       error?: string;
@@ -2304,16 +2374,36 @@ document.getElementById('btn-vault-load')?.addEventListener('click', async () =>
     };
     if (!data.ok || !data.payload?.entities) {
       appendLog(
-        `Aviso Bóveda SQLite: ${data.error ?? 'Primero guarda un expediente con "Guardar en bóveda SQLite".'}`
+        `Aviso Bóveda SQLite: ${data.error ?? `Primero guarda el expediente "${targetId}" con "Guardar en bóveda SQLite".`}`
       );
       return;
     }
     hydrateStoreFromSerialized(data.payload.entities, data.payload.links ?? []);
     appendLog(
-      `Expediente "expediente-activo" restaurado desde Bóveda SQLite (${store.entityCount} entidades, ${store.linkCount} enlaces).`
+      `Expediente "${targetId}" restaurado desde Bóveda SQLite / D1 (${store.entityCount} entidades, ${store.linkCount} enlaces).`
     );
   } catch (err) {
     appendLog(`Error restaurando de Bóveda SQLite: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-vault-delete')?.addEventListener('click', async () => {
+  try {
+    const vaultSel = document.getElementById('sel-vault-expediente') as HTMLSelectElement | null;
+    const targetId = vaultSel?.value?.trim() || '';
+    if (!targetId) return;
+    const res = await fetch(`/api/vault/expedientes/${encodeURIComponent(targetId)}`, {
+      method: 'DELETE',
+    });
+    const data = (await res.json()) as { ok: boolean; deleted?: boolean; error?: string };
+    if (!data.ok) {
+      appendLog(`Error eliminando expediente "${targetId}": ${data.error}`);
+      return;
+    }
+    await refreshVaultExpedientesDropdown('expediente-activo');
+    appendLog(`Expediente "${targetId}" eliminado de la Bóveda SQLite / D1.`);
+  } catch (err) {
+    appendLog(`Error eliminando de Bóveda SQLite: ${String(err)}`);
   }
 });
 
@@ -2546,26 +2636,8 @@ async function syncActiveMcpSessionFromServer(targetRoomId?: string): Promise<vo
       }
     }
 
-    // Also refresh saved expedientes in #preset-select if available
-    const vRes = await fetch('/api/vault/expedientes');
-    if (vRes.ok) {
-      const vData = (await vRes.json()) as {
-        ok: boolean;
-        expedientes?: Array<{ id: string; title: string }>;
-      };
-      const selEl = document.getElementById('preset-select') as HTMLSelectElement | null;
-      if (selEl && Array.isArray(vData.expedientes)) {
-        const existingValues = new Set(Array.from(selEl.options).map((o) => o.value));
-        for (const exp of vData.expedientes) {
-          if (!existingValues.has(exp.id)) {
-            const opt = document.createElement('option');
-            opt.value = exp.id;
-            opt.textContent = `MCP · ${exp.id}`;
-            selEl.appendChild(opt);
-          }
-        }
-      }
-    }
+    // Also refresh saved expedientes in #sel-vault-expediente and #preset-select
+    await refreshVaultExpedientesDropdown();
   } catch {
     syncSceneAndUi(false);
   }

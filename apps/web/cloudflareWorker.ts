@@ -64,16 +64,57 @@ export function resolveSessionRoomFromRequest(request: Request, url: URL): strin
   }
   const mcpPathMatch = url.pathname.match(/^\/api\/mcp\/([^/]+)/);
   if (mcpPathMatch?.[1]) {
-    return decodeURIComponent(mcpPathMatch[1]).trim() || 'expediente-apt29';
+    const seg = decodeURIComponent(mcpPathMatch[1]).trim();
+    if (seg === 'codemode.d.ts') return null;
+    return seg || 'expediente-apt29';
   }
   if (url.pathname === '/api/mcp') {
     const qRoom = url.searchParams.get('session') ?? url.searchParams.get('room');
     const hRoom =
       request.headers.get('x-cangrejo-session') ?? request.headers.get('mcp-session-id');
     const resolved = (qRoom ?? hRoom ?? '').trim();
-    if (resolved) return resolved;
+    return resolved || 'expediente-apt29';
   }
   return null;
+}
+
+export async function resolveSessionRoomFromRequestAsync(
+  request: Request,
+  url: URL
+): Promise<string | null> {
+  const syncRoom = resolveSessionRoomFromRequest(request, url);
+  if (url.pathname === '/api/mcp' && request.method === 'POST') {
+    const qRoom = url.searchParams.get('session') ?? url.searchParams.get('room');
+    const hRoom =
+      request.headers.get('x-cangrejo-session') ?? request.headers.get('mcp-session-id');
+    if ((qRoom ?? hRoom ?? '').trim()) {
+      return (qRoom ?? hRoom ?? '').trim();
+    }
+    try {
+      const cloned = (await request.clone().json()) as Record<string, unknown> | null;
+      const params =
+        typeof cloned?.params === 'object' && cloned.params !== null
+          ? (cloned.params as Record<string, unknown>)
+          : null;
+      const args =
+        typeof params?.arguments === 'object' && params.arguments !== null
+          ? (params.arguments as Record<string, unknown>)
+          : null;
+      const bodyRoom =
+        (typeof args?.sessionId === 'string' && args.sessionId.trim()) ||
+        (typeof args?.roomId === 'string' && args.roomId.trim()) ||
+        (typeof params?.sessionId === 'string' && params.sessionId.trim()) ||
+        (typeof params?.roomId === 'string' && params.roomId.trim()) ||
+        (typeof cloned?.sessionId === 'string' && cloned.sessionId.trim()) ||
+        (typeof cloned?.roomId === 'string' && cloned.roomId.trim()) ||
+        '';
+      if (bodyRoom) return bodyRoom;
+    } catch {
+      // Ignore non-JSON body
+    }
+    return 'expediente-apt29';
+  }
+  return syncRoom;
 }
 
 /**
@@ -92,7 +133,7 @@ export default {
       const url = new URL(request.url);
       if (url.pathname.startsWith('/api/')) {
         if (env.SESSION_ROOM_DO) {
-          const roomId = resolveSessionRoomFromRequest(request, url);
+          const roomId = await resolveSessionRoomFromRequestAsync(request, url);
           if (roomId) {
             const doId = env.SESSION_ROOM_DO.idFromName(roomId);
             return await env.SESSION_ROOM_DO.get(doId).fetch(request);

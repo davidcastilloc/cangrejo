@@ -8,6 +8,7 @@ import {
   Guid,
   StrategicGraphMerger,
   analyzeExpedienteForensics,
+  convertTextToEntity,
   createPropertyBag,
   getPartPrimaryValue,
   type MaltegoLinkData,
@@ -450,6 +451,19 @@ cangrejoHonoApp.post('/api/vault/expedientes', async (c) => {
   }
 });
 
+cangrejoHonoApp.delete('/api/vault/expedientes/:id', async (c) => {
+  const id = c.req.param('id').trim();
+  const d1 = extractD1Binding(c.env);
+  const deletedLocal = sqliteVault.deleteExpediente(id);
+  const deletedD1 = d1 ? await sqliteVault.deleteExpedienteFromD1Safe(d1, id) : false;
+  return c.json({
+    ok: true,
+    id,
+    deleted: deletedLocal || deletedD1,
+    d1Bound: Boolean(d1),
+  });
+});
+
 export interface CangrejoSessionUiEvent {
   seq: number;
   type: 'select' | 'layout' | 'camera' | 'preset' | 'clear' | 'sync';
@@ -868,7 +882,15 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
   const t0 = performance.now();
   try {
     const rawBody = (await c.req.json()) as Record<string, unknown>;
-    const transformId = typeof rawBody.transformId === 'string' ? rawBody.transformId : 'all';
+    const rawTransformId = typeof rawBody.transformId === 'string' ? rawBody.transformId.trim() : 'all';
+    const transformId =
+      rawTransformId === 'bgp-asn'
+        ? 'ip-to-asn'
+        : rawTransformId === 'dns-resolve'
+          ? 'dns-to-ip'
+          : rawTransformId === 'whois-rdap'
+            ? 'whois-to-contacts'
+            : rawTransformId || 'all';
     const entityType =
       typeof rawBody.entityType === 'string' ? rawBody.entityType : 'maltego.Domain';
     const value = normalizeEntityValue(rawBody.entityValue);
@@ -4575,6 +4597,8 @@ const CODEMODE_METHOD_TO_MCP_TOOL: Record<string, string> = {
   cangrejo_session_mutate_graph: 'cangrejo_session_mutate_graph',
   runPesquisa: 'cangrejo_session_run_pesquisa',
   cangrejo_session_run_pesquisa: 'cangrejo_session_run_pesquisa',
+  runOsintTransform: 'cangrejo_session_run_pesquisa',
+  cangrejo_run_osint_transform: 'cangrejo_session_run_pesquisa',
   viewControl: 'cangrejo_session_view_control',
   cangrejo_session_view_control: 'cangrejo_session_view_control',
   vault: 'cangrejo_session_vault',
@@ -5294,11 +5318,13 @@ async function executeCangrejoMcpToolCall(
           };
           break;
         }
+        case 'cangrejo_run_osint_transform':
         case 'cangrejo_session_run_pesquisa': {
           const session = await resolveMcpSessionRoom(c, args);
           const store = session.store;
           const transformId = typeof args.transformId === 'string' ? args.transformId : 'all';
           const sliderLimit = typeof args.sliderLimit === 'number' ? args.sliderLimit : 12;
+          const liveNetwork = args.liveNetwork === true;
 
           const targetEntityIds: Guid[] = [];
           if (Array.isArray(args.entityIds) && args.entityIds.length > 0) {
@@ -5312,10 +5338,11 @@ async function executeCangrejoMcpToolCall(
               (e) => getPartPrimaryValue(e).toLowerCase() === val.toLowerCase()
             );
             if (!existing) {
+              const detected = convertTextToEntity(val, registry);
               const typeName =
                 typeof args.entityType === 'string' && args.entityType.trim()
                   ? args.entityType.trim()
-                  : 'maltego.Domain';
+                  : detected.typeName || 'maltego.Domain';
               existing = registry.createEntity(typeName, val, { weight: 95, bookmark: 4 });
               store.addEntity(existing, { x: 0, y: 0, z: 0 }, false);
             }
@@ -5349,17 +5376,22 @@ async function executeCangrejoMcpToolCall(
               fieldsObj[k] = String(v ?? '');
             }
 
-            const runRes = await cangrejoHonoApp.request('/api/transforms/run', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                transformId,
-                entityType: entity.typeName,
-                entityValue: primaryValue,
-                entityFields: fieldsObj,
-                sliderLimit,
-              }),
-            });
+            const runRes = await cangrejoHonoApp.request(
+              '/api/transforms/run',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  transformId,
+                  entityType: entity.typeName,
+                  entityValue: primaryValue,
+                  entityFields: fieldsObj,
+                  sliderLimit,
+                  liveNetwork,
+                }),
+              },
+              c.env
+            );
             const runData = (await runRes.json()) as {
               ok: boolean;
               entities?: Array<{
@@ -5412,6 +5444,15 @@ async function executeCangrejoMcpToolCall(
               sourceValue: primaryValue,
               discoveredCount: returnedEntities.length,
               addedCount: mergeResult.addedEntities.length,
+            });
+          }
+
+          if (targetEntityIds.length > 0) {
+            session.selectedEntityIds = targetEntityIds.map((gid) => gid.toString());
+          }
+          if (args.autoLayout === true && totalAddedEntities > 0 && store.entityCount > 1) {
+            sessionLayoutPipeline.executeLayout(store, session.layoutMode, {
+              preferTier: 'tier2-wasm',
             });
           }
 
@@ -5488,11 +5529,23 @@ async function executeCangrejoMcpToolCall(
         case 'cangrejo_session_vault': {
           const session = await resolveMcpSessionRoom(c, args);
           const action = String(args.action ?? 'list_expedientes');
+          const d1 = extractD1Binding(c.env);
 
           if (action === 'list_expedientes') {
+            const localExpedientes = sqliteVault.listExpedientes();
+            const d1Expedientes = d1 ? await sqliteVault.listExpedientesFromD1Safe(d1) : null;
+            const mergedMap = new Map(localExpedientes.map((item) => [item.id, item]));
+            if (d1Expedientes) {
+              for (const item of d1Expedientes) {
+                const existing = mergedMap.get(item.id);
+                if (!existing || item.updatedAt >= existing.updatedAt) {
+                  mergedMap.set(item.id, item);
+                }
+              }
+            }
             toolOutput = {
               ok: true,
-              expedientes: sqliteVault.listExpedientes(),
+              expedientes: Array.from(mergedMap.values()).sort((a, b) => b.updatedAt - a.updatedAt),
             };
             break;
           }
@@ -5526,9 +5579,12 @@ async function executeCangrejoMcpToolCall(
                 ...serialized,
               },
             });
+            if (d1) {
+              await sqliteVault.saveExpedienteToD1Safe(d1, record);
+            }
 
             if (session.isCloudScoped) {
-              const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+              const activeD1 = d1 ?? sqliteVault.asD1Database();
               const r2 = extractR2Binding(c.env);
               await BunSqliteVault.persistGraphSnapshotToD1OrR2(activeD1, r2, {
                 tenantId: session.tenantId,
@@ -5554,7 +5610,19 @@ async function executeCangrejoMcpToolCall(
               typeof args.expedienteId === 'string' && args.expedienteId.trim()
                 ? args.expedienteId.trim()
                 : session.expedienteId;
-            const saved = sqliteVault.getExpediente(expId);
+            let saved = sqliteVault.getExpediente(expId);
+            if (!saved && d1) {
+              const d1Rec = await sqliteVault.getExpedienteFromD1Safe(d1, expId);
+              if (d1Rec) {
+                saved = sqliteVault.saveExpediente({
+                  id: d1Rec.id,
+                  titleOrMeta: { title: d1Rec.title, caseTier: d1Rec.caseTier },
+                  entityCount: d1Rec.entityCount,
+                  linkCount: d1Rec.linkCount,
+                  cgrjPayload: d1Rec.cgrjPayload,
+                });
+              }
+            }
             if (!saved) {
               throw new Error(`Expediente "${expId}" not found in SQLite Vault.`);
             }
@@ -5606,6 +5674,25 @@ async function executeCangrejoMcpToolCall(
               ok: true,
               action: 'load_expediente',
               ...getSessionSnapshotSummary(session),
+            };
+            break;
+          }
+
+          if (action === 'delete_expediente') {
+            const expId =
+              typeof args.expedienteId === 'string' && args.expedienteId.trim()
+                ? args.expedienteId.trim()
+                : '';
+            if (!expId) {
+              throw new Error('Missing expedienteId for delete_expediente.');
+            }
+            const deletedLocal = sqliteVault.deleteExpediente(expId);
+            const deletedD1 = d1 ? await sqliteVault.deleteExpedienteFromD1Safe(d1, expId) : false;
+            toolOutput = {
+              ok: true,
+              action: 'delete_expediente',
+              expedienteId: expId,
+              deleted: deletedLocal || deletedD1,
             };
             break;
           }
