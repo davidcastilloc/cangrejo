@@ -131,6 +131,11 @@ export const EXTENDED_OSINT_CONVERTERS: readonly AutodetectionConverter[] = [
     order: 88,
     regex: /^\+[1-9]\d{0,3}[-\s.]?\(?\d{2,4}\)?[-\s.]?\d{3,4}[-\s.]?\d{3,4}$/,
   },
+  {
+    type: 'maltego.Alias',
+    order: 90,
+    regex: /^@[a-zA-Z0-9_.-]{2,36}$/,
+  },
 ];
 
 export interface AutodetectionMatch {

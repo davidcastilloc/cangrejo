@@ -865,6 +865,7 @@
     height: 100%;
     display: block;
     cursor: grab;
+    touch-action: none;
   }
 
   #graph-canvas:active {
@@ -2520,9 +2521,20 @@
       height: 100dvh;
     }
 
+    .ribbon {
+      padding: 0 8px;
+      gap: 6px;
+    }
+
     .ribbon-center,
     .ribbon-breadcrumb-sep,
     #btn-load-preset,
+    .ribbon-right > [popovertarget='menu-forensic-tools'],
+    #btn-ai-copilot,
+    .ribbon-divider,
+    #collab-presence-badge,
+    #btn-mobile-field-toggle,
+    #btn-edition-tier,
     .sidebar-left,
     .sidebar-right,
     .canvas-dock-wrapper,
@@ -2531,18 +2543,27 @@
       display: none !important;
     }
 
+    .ribbon-select {
+      max-width: 118px;
+    }
+
+    #btn-primary-run-transforms {
+      padding: 0 8px;
+      font-size: 11px;
+    }
+
     .workstation {
       position: relative;
       grid-template-columns: 1fr !important;
       height: calc(100dvh - 48px);
-      padding-bottom: 58px;
+      padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px));
     }
 
     .mobile-superapp-shell {
       display: flex;
       flex-direction: column;
       position: absolute;
-      inset: 0 0 58px 0;
+      inset: 0 0 calc(58px + env(safe-area-inset-bottom, 0px)) 0;
       z-index: 25;
       pointer-events: none;
     }
@@ -2556,16 +2577,61 @@
       left: 0;
       right: 0;
       bottom: 0;
-      height: 58px;
-      padding: 6px 10px;
+      height: calc(58px + env(safe-area-inset-bottom, 0px));
+      padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
       background: var(--surface-panel);
       border-top: 1px solid var(--border-default);
       z-index: 40;
+    }
+
+    .modal-backdrop {
+      padding: 10px;
+    }
+
+    .modal-card {
+      max-height: calc(100dvh - 20px);
+    }
+
+    .ws-modal-body {
+      padding: 14px;
+      max-height: calc(100dvh - 150px);
+    }
+
+    .ai-prompt-bar,
+    .mcp-code-topbar,
+    .ws-connector-row,
+    .ws-modal-title-row {
+      flex-wrap: wrap;
+    }
+
+    .ai-prompt-input {
+      flex: 1 1 100%;
+    }
+
+    .ai-modules-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ws-field-row-2,
+    .mcp-controls-grid,
+    .ws-tier-cards-grid,
+    .agy-chips-row,
+    .tier-grid,
+    .shortcut-grid {
+      grid-template-columns: 1fr;
     }
   }
 
   /* Desktop Field-Preview Drawer Mode (when toggled via #btn-mobile-field-toggle) */
   @media (min-width: 861px) {
+    body[data-field-mode='true'] .workstation {
+      grid-template-columns: 320px 1fr;
+    }
+
+    body[data-field-mode='true'] .sidebar-right {
+      display: none;
+    }
+
     body[data-field-mode='true'] .mobile-superapp-shell {
       display: flex;
       flex-direction: column;
@@ -2644,6 +2710,29 @@
     background: rgba(16, 185, 129, 0.14);
     border: 1px solid rgba(16, 185, 129, 0.4);
     color: var(--text-primary);
+    cursor: pointer;
+  }
+
+  .mobile-toast-banner {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    right: 12px;
+    z-index: 45;
+    padding: 7px 10px;
+    border-radius: var(--radius-md);
+    background: var(--surface-panel-elevated);
+    border: 1px solid var(--brand-gold-border);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.35;
+    box-shadow: var(--shadow-popover);
+    pointer-events: none;
+  }
+
+  .mobile-toast-banner[hidden] {
+    display: none !important;
   }
 
   .mobile-sunlight-btn {
@@ -2709,7 +2798,7 @@
 
   .mobile-bento-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 
@@ -2814,7 +2903,35 @@
 
   .mobile-correlation-actions {
     display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
     justify-content: flex-end;
+  }
+
+  .mobile-custody-ledger {
+    background: var(--surface-panel);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    padding: 7px 10px;
+    max-height: 92px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .mobile-custody-entry {
+    line-height: 1.35;
+    border-bottom: 1px dashed var(--border-subtle);
+    padding-bottom: 3px;
+  }
+
+  .mobile-custody-entry:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
   }
 
   /* VISTA 2: Radar Overlay (transparent top so WebGPU/Canvas2D shows through) */
@@ -2860,9 +2977,16 @@
     box-shadow: var(--shadow-popover);
   }
 
+  .mobile-dossier-sheet.collapsed .mobile-dossier-select,
   .mobile-dossier-sheet.collapsed .mobile-dossier-actions,
   .mobile-dossier-sheet.collapsed .mobile-dossier-props {
     display: none;
+  }
+
+  .mobile-dossier-select {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 11px;
   }
 
   .mobile-sheet-handle-btn {
@@ -3068,6 +3192,12 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
+  }
+
+  @media (max-width: 420px) {
+    .mobile-scanner-mode-row {
+      grid-template-columns: 1fr;
+    }
   }
 
   /* Thumb Dock Buttons */

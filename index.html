@@ -2,7 +2,7 @@
 <html lang="es" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>CANGREJO — Open-Source OSINT &amp; Forensic Link-Analysis Platform</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -710,11 +710,26 @@ AS13335</textarea>
           class="mobile-superapp-shell"
           aria-label="Cangrejo Mobile Super-App para Investigadores, Periodistas y Forenses"
         >
+          <div
+            id="mobile-toast-banner"
+            class="mobile-toast-banner"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></div>
+
           <!-- VISTA 1 (Opción A): Super-App Launchpad (Navaja Suiza OSINT) -->
           <div id="mobile-view-launchpad" data-mview-panel="launchpad" class="mobile-view-panel">
             <div class="mobile-status-strip">
               <span class="mobile-gold-badge">CANGREJO // FIELD OSINT</span>
-              <span id="lbl-mobile-live-room" class="mobile-live-pill">● EXP-APT29 (LIVE)</span>
+              <button
+                id="lbl-mobile-live-room"
+                type="button"
+                class="mobile-live-pill"
+                title="Sincronizar cola offline y copiar enlace de sala colaborativa"
+              >
+                ● EXP-APT29 (LIVE)
+              </button>
               <button
                 id="btn-mobile-sunlight"
                 type="button"
@@ -802,9 +817,24 @@ AS13335</textarea>
                 104.16.132.229 conecta a 2 saltos con Nodo Crítico «APT29 (Midnight Blizzard)» vía cloudflare.com.
               </p>
               <div class="mobile-correlation-actions">
+                <button
+                  id="btn-mobile-copy-brief"
+                  type="button"
+                  class="btn btn-quiet btn-xs"
+                  title="Copiar briefing táctico de 4 líneas para Signal o Telegram"
+                >
+                  📋 Copiar Briefing
+                </button>
                 <button id="btn-mobile-correlation-radar" type="button" class="btn btn-quiet btn-xs">
                   Ver en Radar 1-2 Saltos →
                 </button>
+              </div>
+            </div>
+
+            <div class="mobile-section-label">BITÁCORA DE CUSTODIA EN CAMPO (SHA-256)</div>
+            <div id="mobile-custody-ledger" class="mobile-custody-ledger tabular" aria-live="polite">
+              <div class="mobile-custody-entry">
+                #01 · UTC LIVE · Expediente inicial sincronizado · Bóveda Cero Activa
               </div>
             </div>
           </div>
@@ -838,12 +868,25 @@ AS13335</textarea>
                 <strong id="lbl-mobile-dossier-title" class="mobile-dossier-title">cloudflare.com</strong>
                 <span id="lbl-mobile-dossier-type" class="mobile-dossier-type tabular">maltego.Domain</span>
               </div>
+              <select
+                id="sel-mobile-dossier-entity"
+                class="ws-input ws-input-sm mobile-dossier-select"
+                aria-label="Seleccionar entidad objetivo en el expediente"
+              ></select>
               <div class="mobile-dossier-actions">
                 <button id="btn-mobile-pivot-whois" type="button" class="btn btn-primary btn-xs">
                   ⚡ Pesquisa DNS/WHOIS
                 </button>
                 <button id="btn-mobile-pivot-all" type="button" class="btn btn-quiet btn-xs">
                   🔍 Pivote Total OSINT
+                </button>
+                <button
+                  id="btn-mobile-pivot-dork"
+                  type="button"
+                  class="btn btn-quiet btn-xs"
+                  title="Generar y copiar OSINT Dorks y enlace Wayback para el nodo activo"
+                >
+                  🔎 Dorks &amp; Wayback
                 </button>
                 <button id="btn-mobile-pivot-daubert" type="button" class="btn btn-quiet btn-xs">
                   📄 Acta Daubert

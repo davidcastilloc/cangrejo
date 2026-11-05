@@ -513,16 +513,24 @@ describe('Gate 12: Multi-Tenant MCP Session Isolation, Atomic WAL OCC Batching, 
     expect(mainTs).toContain('cangrejo_mcp_auth_token');
     expect(mainTs).toContain('CANGREJO_MCP_TOKEN');
 
-    // Verify Mobile OSINT Super-App (Launchpad Bento 2x3, Radar 1-2H Dossier & Scanner HUD)
+    // Verify Mobile OSINT Super-App (Launchpad Bento 2x3, Radar 1-2H Dossier & Scanner HUD + QA R1/R2)
     expect(indexHtml).toContain('id="mobile-superapp-shell"');
+    expect(indexHtml).toContain('id="mobile-toast-banner"');
+    expect(indexHtml).toContain('id="mobile-custody-ledger"');
+    expect(indexHtml).toContain('id="sel-mobile-dossier-entity"');
+    expect(indexHtml).toContain('id="btn-mobile-pivot-dork"');
+    expect(indexHtml).toContain('id="btn-mobile-copy-brief"');
     expect(indexHtml).toContain('id="mobile-view-launchpad"');
     expect(indexHtml).toContain('id="mobile-view-radar"');
     expect(indexHtml).toContain('id="mobile-view-scanner"');
     expect(indexHtml).toContain('id="mobile-thumb-dock"');
     expect(stylesCss).toContain('100dvh');
+    expect(stylesCss).toContain('safe-area-inset-bottom');
     expect(stylesCss).toContain('.mobile-bento-grid');
     expect(mainTs).toContain('initMobileSuperAppController');
     expect(mainTs).toContain('switchMobileSuperAppView');
+    expect(mainTs).toContain('cangrejo_mobile_offline_queue');
+    expect(mainTs).toContain('extractEmbeddedIocsAndAliases');
 
     // Verify mcpStdioServer forwards CANGREJO_SESSION_ID and CANGREJO_MCP_TOKEN
     const token = BunSqliteVault.issueSignedLicenseToken({
