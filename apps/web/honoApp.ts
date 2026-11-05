@@ -452,7 +452,7 @@ cangrejoHonoApp.post('/api/vault/expedientes', async (c) => {
 
 export interface CangrejoSessionUiEvent {
   seq: number;
-  type: 'select' | 'layout' | 'camera' | 'preset' | 'clear';
+  type: 'select' | 'layout' | 'camera' | 'preset' | 'clear' | 'sync';
   payload: Record<string, unknown>;
   timestamp: number;
 }
@@ -685,6 +685,16 @@ function normalizeIncomingDeltaLink(raw: unknown): SerializedLinkDelta {
   };
 }
 
+function emitSessionFullSync(session: CangrejoSessionRoomState): void {
+  const snapshot = serializeStoreToPayload(session.store);
+  emitSessionUiEvent(session, 'sync', {
+    entities: snapshot.entities,
+    links: snapshot.links,
+    selectedEntityIds: session.selectedEntityIds,
+    layoutMode: session.layoutMode,
+  });
+}
+
 cangrejoHonoApp.get('/api/collab/rooms/:roomId', (c) => {
   const roomId = c.req.param('roomId');
   const session = getOrCreateSessionRoom(roomId);
@@ -694,6 +704,7 @@ cangrejoHonoApp.get('/api/collab/rooms/:roomId', (c) => {
     analysts: collabHub.listRoomAnalysts(roomId),
     deltas: collabHub.getRoomDeltaHistory(roomId),
     session: getSessionSnapshotSummary(session),
+    ...serializeStoreToPayload(session.store),
   });
 });
 
@@ -3024,85 +3035,56 @@ function loadSessionPresetIntoStore(
   presetId: string
 ): { presetId: string; entityCount: number; linkCount: number } {
   const store = session.store;
+  const saved = presetId && presetId !== 'clean' ? sqliteVault.getExpediente(presetId) : undefined;
   store.runInBatch(() => {
     clearStoreAtomically(store);
-    if (presetId === 'cloudflare') {
-      const d1 = registry.createEntity('maltego.Domain', 'cloudflare.com', { weight: 100, bookmark: 4 });
-      const d2 = registry.createEntity('maltego.Domain', 'github.com', { weight: 100, bookmark: 2 });
-      store.addEntity(d1, { x: -180, y: 0, z: 0 });
-      store.addEntity(d2, { x: 180, y: 0, z: 0 });
-      session.selectedEntityIds = [d1.id.toString()];
-    } else if (presetId === 'crypto') {
-      const ransomWallet = registry.createEntity(
-        'maltego.BitcoinAddress',
-        'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-        {
-          weight: 100,
-          bookmark: 1,
-          extraProperties: { cluster: 'BlackCat / ALPHV Treasury', balance: '148.42 BTC' },
+    session.selectedEntityIds = [];
+    if (saved) {
+      try {
+        const parsedPayload = JSON.parse(saved.cgrjPayload) as Record<string, unknown>;
+        const rawEntities = Array.isArray(parsedPayload.entities) ? parsedPayload.entities : [];
+        const rawLinks = Array.isArray(parsedPayload.links) ? parsedPayload.links : [];
+        for (const rawEnt of rawEntities) {
+          const norm = normalizeIncomingDeltaEntity(rawEnt);
+          const eid = Guid.parse(norm.id);
+          const created = registry.createEntity(norm.typeName, norm.value, {
+            id: eid,
+            weight: norm.weight,
+            bookmark: norm.bookmark,
+            extraProperties: norm.properties,
+          });
+          created.notes = norm.notes;
+          store.addEntity(created, norm.position, norm.pinned);
         }
-      );
-      store.addEntity(ransomWallet, { x: 0, y: -140, z: 0 });
-      for (let i = 1; i <= 5; i++) {
-        const hop = registry.createEntity(
-          'maltego.BitcoinAddress',
-          `bc1qmixerhop00${i}99x8877aabbccddeeff00112233`,
-          {
-            weight: 80,
-            bookmark: 5,
-            extraProperties: { hop: String(i), amount: `${(12.5 * i).toFixed(2)} BTC` },
+        for (const rawLnk of rawLinks) {
+          const norm = normalizeIncomingDeltaLink(rawLnk);
+          if (!norm.sourceId || !norm.targetId) continue;
+          const srcId = Guid.parse(norm.sourceId);
+          const dstId = Guid.parse(norm.targetId);
+          const lid = Guid.parse(norm.id);
+          if (
+            store.dataStore.hasEntity(srcId) &&
+            store.dataStore.hasEntity(dstId) &&
+            !store.structureStore.hasLink(lid)
+          ) {
+            store.addLink(
+              makeSimpleLink(lid, norm.label, norm.color, norm.weight),
+              srcId,
+              dstId,
+              norm.isReversed,
+              norm.path
+            );
           }
-        );
-        store.addEntity(hop, { x: -240 + i * 80, y: 90, z: 0 });
-        store.addLink(
-          makeSimpleLink(Guid.generate(), `peel chain #${i}`, '#F59E0B'),
-          ransomWallet.id,
-          hop.id
-        );
-      }
-      session.selectedEntityIds = [ransomWallet.id.toString()];
-    } else {
-      const actor = registry.createEntity('maltego.ThreatActor', 'APT29 (Midnight Blizzard)', {
-        weight: 100,
-        bookmark: 0,
-        extraProperties: { mitre_id: 'G0016', attribution: 'SVR Foreign Intelligence' },
-      });
-      const cve = registry.createEntity('maltego.CVE', 'CVE-2024-21412', {
-        weight: 95,
-        bookmark: 1,
-        extraProperties: { cvss: '8.1 HIGH', vector: 'SmartScreen Bypass' },
-      });
-      const hash = registry.createEntity(
-        'maltego.Hash',
-        '94b8f12c77d0e1a9bc82144f0019c8a21e7731094b8f12c77d0e1a9bc82144f0',
-        {
-          weight: 90,
-          bookmark: 0,
-          extraProperties: { family: 'WINELOADER Stage-2', algorithm: 'SHA-256' },
         }
-      );
-      const c2Domain = registry.createEntity('maltego.Domain', 'cloudflare.com', {
-        weight: 95,
-        bookmark: 4,
-        extraProperties: { registrar: 'Cloudflare Inc.', role: 'Redirector / CDN Front' },
-      });
-      const c2Ip = registry.createEntity('maltego.IPv4Address', '104.16.132.229', {
-        weight: 90,
-        bookmark: 3,
-        extraProperties: { asn: 'AS13335' },
-      });
-      store.addEntity(actor, { x: 0, y: -150, z: 0 }, true);
-      store.addEntity(cve, { x: -250, y: -10, z: 0 });
-      store.addEntity(hash, { x: 0, y: -10, z: 0 });
-      store.addEntity(c2Domain, { x: 250, y: -10, z: 0 });
-      store.addEntity(c2Ip, { x: 250, y: 150, z: 0 });
-      store.addLink(makeSimpleLink(Guid.generate(), 'weaponizes', '#EF4444'), actor.id, cve.id);
-      store.addLink(makeSimpleLink(Guid.generate(), 'deploys loader', '#EF4444'), actor.id, hash.id);
-      store.addLink(makeSimpleLink(Guid.generate(), 'beacons HTTPS', '#3B82F6'), hash.id, c2Domain.id);
-      store.addLink(makeSimpleLink(Guid.generate(), 'resolves A', '#38BDF8'), c2Domain.id, c2Ip.id);
-      session.selectedEntityIds = [c2Domain.id.toString()];
+        session.expedienteId = saved.id;
+        session.title = saved.title;
+        session.caseTier = saved.caseTier;
+      } catch {
+        // Ignore malformed payload
+      }
     }
   });
+  emitSessionFullSync(session);
   emitSessionUiEvent(session, 'preset', {
     presetId,
     selectedEntityIds: session.selectedEntityIds,
@@ -3913,6 +3895,123 @@ async function resolveStoreForMcpTool(
   };
 }
 
+export const CANGREJO_MCP_RESOURCES_CATALOG = [
+  {
+    uri: 'cangrejo://session/active/graph',
+    name: 'Active Session Graph Topology (Entities & Links)',
+    description: 'Live 64-bit Guid entity and link topology of the active CANGREJO MCP session room.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'cangrejo://session/active/analytics',
+    name: 'Active Session Forensic Graph Analytics & MITRE ATT&CK v15.1',
+    description: 'PageRank, betweenness centrality, cycle detection, and MITRE ATT&CK kill-chain mapping for the active session.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'cangrejo://session/active/stix21',
+    name: 'Active Session OASIS STIX 2.1 Bundle (SHA-256 Custody)',
+    description: 'OASIS STIX 2.1 JSON bundle with deterministic x_cangrejo_custody SHA-256 manifest.',
+    mimeType: 'application/stix+json',
+  },
+  {
+    uri: 'cangrejo://taxonomy/entities',
+    name: 'CANGREJO OSINT Entity & IOC Taxonomy Catalog',
+    description: 'Catalog of all 107 OSINT entity types and 17 deterministic IOC regex/RFC converters.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'cangrejo://vault/expedientes',
+    name: 'SQLite / D1 Forensic Vault Expedientes Index',
+    description: 'Index of persisted forensic expedientes in BunSqliteVault / Cloudflare D1.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'cangrejo://sdk/codemode.d.ts',
+    name: 'Cloudflare Code Mode TypeScript SDK Declarations',
+    description: 'Ambient TypeScript declarations for single-turn multi-hop codemode.* execution.',
+    mimeType: 'application/typescript',
+  },
+] as const;
+
+export const CANGREJO_MCP_RESOURCE_TEMPLATES_CATALOG = [
+  {
+    uriTemplate: 'cangrejo://session/{roomId}/graph',
+    name: 'Session Graph by Room ID',
+    description: 'Read live entities, links, selection, and layout state for any session room ID.',
+    mimeType: 'application/json',
+  },
+  {
+    uriTemplate: 'cangrejo://session/{roomId}/analytics',
+    name: 'Session Forensic Analytics by Room ID',
+    description: 'Compute MITRE ATT&CK v15.1 and structural metrics for any session room ID.',
+    mimeType: 'application/json',
+  },
+  {
+    uriTemplate: 'cangrejo://session/{roomId}/stix21',
+    name: 'Session OASIS STIX 2.1 Bundle by Room ID',
+    description: 'Export a custody-signed OASIS STIX 2.1 bundle for any session room ID.',
+    mimeType: 'application/stix+json',
+  },
+] as const;
+
+export const CANGREJO_MCP_PROMPTS_CATALOG = [
+  {
+    name: 'osint-surface-expansion',
+    description: 'Expands external attack surface (DNS, CT logs, RDAP WHOIS, BGP/ASN) around a target IOC or the active session graph.',
+    arguments: [
+      {
+        name: 'target',
+        description: 'Primary domain, IPv4/IPv6, ASN, or IOC to pivot from (optional if session already has nodes).',
+        required: false,
+      },
+      {
+        name: 'roomId',
+        description: 'Target MCP session room ID.',
+        required: false,
+      },
+    ],
+  },
+  {
+    name: 'forensic-graph-audit',
+    description: 'Audits structural choke points (PageRank, bridges, cyclic routing) and maps MITRE ATT&CK v15.1 kill-chain phases.',
+    arguments: [
+      {
+        name: 'roomId',
+        description: 'Target MCP session room ID.',
+        required: false,
+      },
+    ],
+  },
+  {
+    name: 'daubert-court-dossier',
+    description: 'Synthesizes a court-admissible forensic executive brief (Daubert / FRE 702 & Ley 53-07) with verifiable 64-bit Guid citations.',
+    arguments: [
+      {
+        name: 'caseTitle',
+        description: 'Official expediente title for the forensic brief.',
+        required: false,
+      },
+      {
+        name: 'leadAnalyst',
+        description: 'Lead forensic investigator name or badge.',
+        required: false,
+      },
+    ],
+  },
+  {
+    name: 'codemode-single-turn-pipeline',
+    description: 'Generates a single-turn TypeScript arrow function using codemode.* to unpack IOCs, pivot OSINT transforms in parallel, and layout the graph.',
+    arguments: [
+      {
+        name: 'objective',
+        description: 'Investigation objective or raw threat bulletin to process.',
+        required: true,
+      },
+    ],
+  },
+] as const;
+
 function handleMcpCatalogRequest(c: Context) {
   const mcpCtx = getMcpContext(c);
   const mode = c.req.query('mode') ?? '';
@@ -3922,6 +4021,12 @@ function handleMcpCatalogRequest(c: Context) {
     protocol: 'Model Context Protocol (MCP)',
     protocolVersion: '2024-11-05',
     mode: isCodeMode ? 'codemode' : 'standard',
+    capabilities: {
+      tools: { listChanged: false },
+      resources: { subscribe: false, listChanged: false },
+      prompts: { listChanged: false },
+      logging: {},
+    },
     codeMode: {
       enabled: true,
       sdkEndpoint: '/api/mcp/codemode.d.ts',
@@ -3942,6 +4047,9 @@ function handleMcpCatalogRequest(c: Context) {
       vendor: 'CANGREJO Open-Core OSINT & Forensic Link-Analysis Platform',
     },
     tools: isCodeMode ? [CANGREJO_CODEMODE_MCP_TOOL] : CANGREJO_MCP_TOOLS_CATALOG,
+    resources: CANGREJO_MCP_RESOURCES_CATALOG,
+    resourceTemplates: CANGREJO_MCP_RESOURCE_TEMPLATES_CATALOG,
+    prompts: CANGREJO_MCP_PROMPTS_CATALOG,
   });
 }
 
@@ -4465,6 +4573,7 @@ async function executeCangrejoMcpToolCall(
                 }
               }
             });
+            emitSessionFullSync(session);
             await commitSessionMutationIfCloud(c, session, 'upsert');
           }
           toolOutput = imported;
@@ -4513,6 +4622,7 @@ async function executeCangrejoMcpToolCall(
                 }
               }
             });
+            emitSessionFullSync(session);
             await commitSessionMutationIfCloud(c, session, 'upsert');
           }
           toolOutput = result;
@@ -4558,6 +4668,7 @@ async function executeCangrejoMcpToolCall(
             clearStoreAtomically(store);
             session.selectedEntityIds = [];
             emitSessionUiEvent(session, 'clear', {});
+            emitSessionFullSync(session);
             await commitSessionMutationIfCloud(c, session, 'clear');
             toolOutput = {
               ok: true,
@@ -4570,6 +4681,7 @@ async function executeCangrejoMcpToolCall(
           if (action === 'undo') {
             const applied = store.undoRedoManager.undo();
             if (applied) {
+              emitSessionFullSync(session);
               await commitSessionMutationIfCloud(c, session, 'undo');
             }
             toolOutput = {
@@ -4584,6 +4696,7 @@ async function executeCangrejoMcpToolCall(
           if (action === 'redo') {
             const applied = store.undoRedoManager.redo();
             if (applied) {
+              emitSessionFullSync(session);
               await commitSessionMutationIfCloud(c, session, 'redo');
             }
             toolOutput = {
@@ -4620,6 +4733,7 @@ async function executeCangrejoMcpToolCall(
 
             const removedSet = new Set(entityIds);
             session.selectedEntityIds = session.selectedEntityIds.filter((id) => !removedSet.has(id));
+            emitSessionFullSync(session);
             await commitSessionMutationIfCloud(c, session, 'remove');
             toolOutput = {
               ok: true,
@@ -4690,6 +4804,7 @@ async function executeCangrejoMcpToolCall(
               emitSessionUiEvent(session, 'select', {
                 selectedEntityIds: session.selectedEntityIds,
               });
+              emitSessionFullSync(session);
               await commitSessionMutationIfCloud(c, session, 'paste_iocs');
             }
 
@@ -4749,6 +4864,7 @@ async function executeCangrejoMcpToolCall(
             }
           });
 
+          emitSessionFullSync(session);
           await commitSessionMutationIfCloud(c, session, 'upsert');
           toolOutput = {
             ok: true,
@@ -4880,6 +4996,7 @@ async function executeCangrejoMcpToolCall(
             });
           }
 
+          emitSessionFullSync(session);
           await commitSessionMutationIfCloud(c, session, 'upsert');
           toolOutput = {
             ok: true,
@@ -4919,6 +5036,7 @@ async function executeCangrejoMcpToolCall(
               });
             }
             emitSessionUiEvent(session, 'layout', { layoutMode: mode });
+            emitSessionFullSync(session);
           }
 
           if (typeof args.camera === 'object' && args.camera !== null) {
@@ -5063,6 +5181,7 @@ async function executeCangrejoMcpToolCall(
             session.expedienteId = saved.id;
             session.title = saved.title;
             session.caseTier = saved.caseTier;
+            emitSessionFullSync(session);
             await commitSessionMutationIfCloud(c, session, 'upsert');
             toolOutput = {
               ok: true,
@@ -5123,26 +5242,60 @@ async function executeCangrejoMcpToolCall(
       return toolOutput;
 }
 
-async function handleMcpJsonRpcDispatch(c: Context) {
-  try {
-    const rpc = (await c.req.json()) as {
-      jsonrpc?: string;
-      id?: string | number | null;
-      method?: string;
-      params?: Record<string, unknown>;
-    };
-    const rpcId = rpc.id ?? 1;
-    const method = rpc.method ?? '';
+type McpRpcRequest = {
+  jsonrpc?: string;
+  id?: string | number | null;
+  method?: string;
+  params?: Record<string, unknown>;
+};
 
-    if (method === 'initialize') {
-      const mcpCtx = getMcpContext(c);
-      return c.json({
+async function dispatchSingleMcpRpcObject(
+  c: Context,
+  rpc: McpRpcRequest
+): Promise<{ status: number; body: Record<string, unknown> | null }> {
+  const hasId = rpc.id !== undefined;
+  const rpcId = rpc.id ?? 1;
+  const method = rpc.method ?? '';
+
+  if (method.startsWith('notifications/')) {
+    if (!hasId) {
+      return { status: 202, body: null };
+    }
+    return {
+      status: 200,
+      body: {
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: { acknowledged: true, notification: method },
+      },
+    };
+  }
+
+  if (method === 'ping' || method === 'logging/setLevel') {
+    return {
+      status: 200,
+      body: {
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: {},
+      },
+    };
+  }
+
+  if (method === 'initialize') {
+    const mcpCtx = getMcpContext(c);
+    return {
+      status: 200,
+      body: {
         jsonrpc: '2.0',
         id: rpcId,
         result: {
           protocolVersion: '2024-11-05',
           capabilities: {
             tools: { listChanged: false },
+            resources: { subscribe: false, listChanged: false },
+            prompts: { listChanged: false },
+            logging: {},
           },
           serverInfo: {
             name: 'cangrejo-osint-mcp',
@@ -5150,62 +5303,335 @@ async function handleMcpJsonRpcDispatch(c: Context) {
             tier: mcpCtx.tier,
             sessionId: mcpCtx.rawSessionId,
           },
+          instructions:
+            'CANGREJO OSINT & Forensic Link-Analysis MCP Server. Use tools/call to inspect or mutate the live 64-bit Guid GraphStore, run live OSINT Pesquisas (DNS, CT logs, RDAP WHOIS, BGP/ASN), map MITRE ATT&CK v15.1, or execute single-turn TypeScript pipelines via cangrejo_codemode_run.',
         },
-      });
-    }
+      },
+    };
+  }
 
-    if (method === 'tools/list') {
-      const reqMode = String(rpc.params?.mode ?? c.req.query('mode') ?? '').toLowerCase();
-      return c.json({
+  if (method === 'tools/list') {
+    const reqMode = String(rpc.params?.mode ?? c.req.query('mode') ?? '').toLowerCase();
+    return {
+      status: 200,
+      body: {
         jsonrpc: '2.0',
         id: rpcId,
         result: {
           tools: reqMode === 'codemode' ? [CANGREJO_CODEMODE_MCP_TOOL] : CANGREJO_MCP_TOOLS_CATALOG,
         },
-      });
+      },
+    };
+  }
+
+  if (method === 'resources/list') {
+    return {
+      status: 200,
+      body: {
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: {
+          resources: CANGREJO_MCP_RESOURCES_CATALOG,
+        },
+      },
+    };
+  }
+
+  if (method === 'resources/templates/list') {
+    return {
+      status: 200,
+      body: {
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: {
+          resourceTemplates: CANGREJO_MCP_RESOURCE_TEMPLATES_CATALOG,
+        },
+      },
+    };
+  }
+
+  if (method === 'resources/read') {
+    const uri = String(rpc.params?.uri ?? '').trim();
+    if (!uri) {
+      return {
+        status: 400,
+        body: {
+          jsonrpc: '2.0',
+          id: rpcId,
+          error: { code: -32602, message: 'Missing required parameter: uri' },
+        },
+      };
     }
 
-    if (method === 'codemode/types') {
-      return c.json({
+    if (uri === 'cangrejo://sdk/codemode.d.ts') {
+      return {
+        status: 200,
+        body: {
+          jsonrpc: '2.0',
+          id: rpcId,
+          result: {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/typescript',
+                text: CANGREJO_CODEMODE_TYPESCRIPT_DTS,
+              },
+            ],
+          },
+        },
+      };
+    }
+
+    if (uri === 'cangrejo://taxonomy/entities') {
+      const entityTypes = registry.getAll().map((t) => ({
+        typeName: t.id,
+        displayName: t.displayName,
+        category: t.category,
+      }));
+      return {
+        status: 200,
+        body: {
+          jsonrpc: '2.0',
+          id: rpcId,
+          result: {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify({ count: entityTypes.length, entityTypes }),
+              },
+            ],
+          },
+        },
+      };
+    }
+
+    if (uri === 'cangrejo://vault/expedientes') {
+      return {
+        status: 200,
+        body: {
+          jsonrpc: '2.0',
+          id: rpcId,
+          result: {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify({ expedientes: sqliteVault.listExpedientes() }),
+              },
+            ],
+          },
+        },
+      };
+    }
+
+    const sessionMatch = /^cangrejo:\/\/session\/([^/]+)\/(graph|analytics|stix21)$/.exec(uri);
+    if (sessionMatch) {
+      const targetRoom = sessionMatch[1] === 'active' ? undefined : decodeURIComponent(sessionMatch[1]!);
+      const resourceKind = sessionMatch[2]!;
+      const session = await resolveMcpSessionRoom(c, targetRoom ? { roomId: targetRoom } : {});
+
+      if (resourceKind === 'graph') {
+        const snapshot = {
+          ...getSessionSnapshotSummary(session),
+          ...serializeStoreToPayload(session.store),
+        };
+        return {
+          status: 200,
+          body: {
+            jsonrpc: '2.0',
+            id: rpcId,
+            result: {
+              contents: [
+                {
+                  uri,
+                  mimeType: 'application/json',
+                  text: JSON.stringify(snapshot),
+                },
+              ],
+            },
+          },
+        };
+      }
+
+      if (resourceKind === 'analytics') {
+        const aiConfig = resolveAiRuntimeConfig(c);
+        const mitre = CloudflareWorkersAiEngine.analyzeMitreAttackAndTimeline(session.store, aiConfig);
+        return {
+          status: 200,
+          body: {
+            jsonrpc: '2.0',
+            id: rpcId,
+            result: {
+              contents: [
+                {
+                  uri,
+                  mimeType: 'application/json',
+                  text: JSON.stringify({
+                    sessionId: session.roomId,
+                    entityCount: session.store.entityCount,
+                    linkCount: session.store.linkCount,
+                    mitre,
+                  }),
+                },
+              ],
+            },
+          },
+        };
+      }
+
+      if (resourceKind === 'stix21') {
+        const bundle = Stix21Exporter.exportFromStore(session.store, {
+          expedienteTitle: session.title,
+          caseTier: session.caseTier,
+        });
+        return {
+          status: 200,
+          body: {
+            jsonrpc: '2.0',
+            id: rpcId,
+            result: {
+              contents: [
+                {
+                  uri,
+                  mimeType: 'application/stix+json',
+                  text: JSON.stringify(bundle),
+                },
+              ],
+            },
+          },
+        };
+      }
+    }
+
+    return {
+      status: 404,
+      body: {
+        jsonrpc: '2.0',
+        id: rpcId,
+        error: { code: -32002, message: `Unknown CANGREJO MCP resource URI: "${uri}"` },
+      },
+    };
+  }
+
+  if (method === 'prompts/list') {
+    return {
+      status: 200,
+      body: {
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: {
+          prompts: CANGREJO_MCP_PROMPTS_CATALOG,
+        },
+      },
+    };
+  }
+
+  if (method === 'prompts/get') {
+    const promptName = String(rpc.params?.name ?? '').trim();
+    const promptArgs = (rpc.params?.arguments ?? {}) as Record<string, unknown>;
+    const foundPrompt = CANGREJO_MCP_PROMPTS_CATALOG.find((p) => p.name === promptName);
+    if (!foundPrompt) {
+      return {
+        status: 404,
+        body: {
+          jsonrpc: '2.0',
+          id: rpcId,
+          error: { code: -32602, message: `Unknown CANGREJO MCP prompt: "${promptName}"` },
+        },
+      };
+    }
+
+    const session = await resolveMcpSessionRoom(c, promptArgs);
+    const summary = getSessionSnapshotSummary(session);
+    let instructionText = '';
+
+    if (promptName === 'osint-surface-expansion') {
+      const target = typeof promptArgs.target === 'string' && promptArgs.target.trim()
+        ? promptArgs.target.trim()
+        : 'active session entities';
+      instructionText = `Execute a full OSINT attack-surface expansion in CANGREJO session "${summary.roomId}" (currently ${summary.entityCount} nodes, ${summary.linkCount} links) targeting: ${target}.\n1. If raw IOCs or domains are provided, upsert or unpack them via cangrejo_session_mutate_graph or cangrejo_unpack_defanged_iocs.\n2. Run live OSINT transforms (ct-subdomains, dns-resolve, whois-rdap, bgp-asn) via cangrejo_session_run_pesquisa.\n3. Arrange the resulting topology using cangrejo_session_view_control ({ layoutMode: "organic" }) and summarize key findings with 64-bit Guid citations.`;
+    } else if (promptName === 'forensic-graph-audit') {
+      instructionText = `Perform a structural and adversarial audit on CANGREJO session "${summary.roomId}" (${summary.entityCount} nodes, ${summary.linkCount} links).\n1. Inspect current graph state via cangrejo_session_state.\n2. Map MITRE ATT&CK v15.1 tactics, techniques, and cyclic routing via cangrejo_map_mitre_attack.\n3. Detect bridge nodes and anomalous subgraphs via cangrejo_detect_anomalies_and_bridges.`;
+    } else if (promptName === 'daubert-court-dossier') {
+      const caseTitle = typeof promptArgs.caseTitle === 'string' ? promptArgs.caseTitle : summary.title;
+      const leadAnalyst = typeof promptArgs.leadAnalyst === 'string' ? promptArgs.leadAnalyst : 'Perito Forense CANGREJO';
+      instructionText = `Generate a court-admissible forensic dossier for case "${caseTitle}" (Lead Analyst: ${leadAnalyst}) on CANGREJO session "${summary.roomId}".\n1. Call cangrejo_synthesize_forensic_brief with caseTitle and leadAnalyst.\n2. Export the signed HTML5 dossier and OASIS STIX 2.1 custody bundle via cangrejo_session_vault.`;
+    } else {
+      const objective = typeof promptArgs.objective === 'string' ? promptArgs.objective : 'Expand and analyze active session graph';
+      instructionText = `Use CANGREJO Code Mode (cangrejo_codemode_run) to fulfill the following objective in a single turn using Promise.all where possible:\nObjective: ${objective}\nSession Room: ${summary.roomId}`;
+    }
+
+    return {
+      status: 200,
+      body: {
+        jsonrpc: '2.0',
+        id: rpcId,
+        result: {
+          description: foundPrompt.description,
+          messages: [
+            {
+              role: 'user',
+              content: {
+                type: 'text',
+                text: instructionText,
+              },
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  if (method === 'codemode/types') {
+    return {
+      status: 200,
+      body: {
         jsonrpc: '2.0',
         id: rpcId,
         result: {
           sdkVersion: '1.1.0',
           typescriptDeclaration: CANGREJO_CODEMODE_TYPESCRIPT_DTS,
         },
-      });
-    }
+      },
+    };
+  }
 
-    if (method === 'codemode/run') {
-      const args = (rpc.params ?? {}) as Record<string, unknown>;
-      const out = await executeCangrejoCodeMode(c, args);
-      return c.json({
+  if (method === 'codemode/run') {
+    const args = (rpc.params ?? {}) as Record<string, unknown>;
+    const out = await executeCangrejoCodeMode(c, args);
+    return {
+      status: 200,
+      body: {
         jsonrpc: '2.0',
         id: rpcId,
         result: out,
-      });
+      },
+    };
+  }
+
+  if (method === 'tools/call') {
+    const toolName = String(rpc.params?.name ?? '');
+    const args = (rpc.params?.arguments ?? {}) as Record<string, unknown>;
+    const toolOutput = await executeCangrejoMcpToolCall(c, toolName, args);
+
+    if (toolOutput === undefined) {
+      return {
+        status: 400,
+        body: {
+          jsonrpc: '2.0',
+          id: rpcId,
+          error: {
+            code: -32601,
+            message: `Unknown CANGREJO MCP tool: "${toolName}"`,
+          },
+        },
+      };
     }
 
-    if (method === 'tools/call') {
-      const toolName = String(rpc.params?.name ?? '');
-      const args = (rpc.params?.arguments ?? {}) as Record<string, unknown>;
-      const toolOutput = await executeCangrejoMcpToolCall(c, toolName, args);
-
-      if (toolOutput === undefined) {
-        return c.json(
-          {
-            jsonrpc: '2.0',
-            id: rpcId,
-            error: {
-              code: -32601,
-              message: `Unknown CANGREJO MCP tool: "${toolName}"`,
-            },
-          },
-          400
-        );
-      }
-
-      return c.json({
+    return {
+      status: 200,
+      body: {
         jsonrpc: '2.0',
         id: rpcId,
         result: {
@@ -5218,20 +5644,47 @@ async function handleMcpJsonRpcDispatch(c: Context) {
           structuredContent: toolOutput,
           isError: false,
         },
-      });
+      },
+    };
+  }
+
+  return {
+    status: 400,
+    body: {
+      jsonrpc: '2.0',
+      id: rpcId,
+      error: {
+        code: -32601,
+        message: `Unsupported MCP JSON-RPC method: "${method}"`,
+      },
+    },
+  };
+}
+
+async function handleMcpJsonRpcDispatch(c: Context) {
+  try {
+    const rawPayload = await c.req.json();
+    if (Array.isArray(rawPayload)) {
+      const responses: Array<Record<string, unknown>> = [];
+      for (const item of rawPayload) {
+        if (typeof item === 'object' && item !== null) {
+          const res = await dispatchSingleMcpRpcObject(c, item as McpRpcRequest);
+          if (res.body !== null) {
+            responses.push(res.body);
+          }
+        }
+      }
+      if (responses.length === 0) {
+        return c.body(null, 202);
+      }
+      return c.json(responses, 200);
     }
 
-    return c.json(
-      {
-        jsonrpc: '2.0',
-        id: rpcId,
-        error: {
-          code: -32601,
-          message: `Unsupported MCP JSON-RPC method: "${method}"`,
-        },
-      },
-      400
-    );
+    const singleRes = await dispatchSingleMcpRpcObject(c, (rawPayload ?? {}) as McpRpcRequest);
+    if (singleRes.body === null) {
+      return c.body(null, 202);
+    }
+    return c.json(singleRes.body, singleRes.status as 200 | 400 | 404 | 500);
   } catch (err) {
     console.error('[Hono /api/mcp] MCP JSON-RPC execution failed:', err);
     return c.json(

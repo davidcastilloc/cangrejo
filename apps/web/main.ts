@@ -259,195 +259,18 @@ function syncSceneAndUi(runLayoutAfter = false): void {
 }
 
 // =============================================================================
-// 3. Sample Investigation Presets
+// 3. Live MCP Session & Vault Expediente Synchronization (Zero Simulated Cases)
 // =============================================================================
-function loadPreset(presetId: string): void {
-  store.clear();
-  selection.clearSelection();
-  store.undoRedoManager.clear();
-
-  if (presetId === 'apt29') {
-    store.runInBatch(() => {
-      const actor = registry.createEntity('maltego.ThreatActor', 'APT29 (Midnight Blizzard)', {
-        weight: 100,
-        bookmark: 0,
-        extraProperties: { mitre_id: 'G0016', attribution: 'SVR Foreign Intelligence' },
-      });
-      actor.notes = {
-        value: 'Primary threat actor targeting diplomatic & cloud tenants.',
-        show: true,
-      };
-      store.addEntity(actor, { x: 0, y: -150, z: 0 }, true);
-
-      const cve = registry.createEntity('maltego.CVE', 'CVE-2024-21412', {
-        weight: 95,
-        bookmark: 1,
-        extraProperties: { cvss: '8.1 HIGH', vector: 'SmartScreen Bypass' },
-      });
-      store.addEntity(cve, { x: -250, y: -10, z: 0 });
-
-      const hash = registry.createEntity(
-        'maltego.Hash',
-        '94b8f12c77d0e1a9bc82144f0019c8a21e7731094b8f12c77d0e1a9bc82144f0',
-        {
-          weight: 90,
-          bookmark: 0,
-          extraProperties: { family: 'WINELOADER Stage-2', algorithm: 'SHA-256' },
-        }
-      );
-      store.addEntity(hash, { x: 0, y: -10, z: 0 });
-
-      const c2Domain = registry.createEntity('maltego.Domain', 'cloudflare.com', {
-        weight: 95,
-        bookmark: 4,
-        extraProperties: { registrar: 'Cloudflare Inc.', role: 'Redirector / CDN Front' },
-      });
-      c2Domain.notes = {
-        value: 'Haz clic derecho aquí o pulsa "Run OSINT Transforms" para DNS A/MX/NS en vivo.',
-        show: true,
-      };
-      store.addEntity(c2Domain, { x: 250, y: -10, z: 0 });
-
-      const c2Ip = registry.createEntity('maltego.IPv4Address', '104.16.132.229', {
-        weight: 90,
-        bookmark: 3,
-        extraProperties: { asn: 'AS13335' },
-      });
-      store.addEntity(c2Ip, { x: 250, y: 150, z: 0 });
-
-      store.addLink(makeSimpleLink(Guid.generate(), 'weaponizes', '#EF4444'), actor.id, cve.id);
-      store.addLink(makeSimpleLink(Guid.generate(), 'deploys loader', '#EF4444'), actor.id, hash.id);
-      store.addLink(
-        makeSimpleLink(Guid.generate(), 'beacons HTTPS', '#3B82F6'),
-        hash.id,
-        c2Domain.id
-      );
-      store.addLink(
-        makeSimpleLink(Guid.generate(), 'resolves A', '#38BDF8'),
-        c2Domain.id,
-        c2Ip.id
-      );
-
-      const leafSubs = ['auth', 'vpn-gw', 'mail-relay', 'update-srv', 'telemetry', 'cdn-static'];
-      leafSubs.forEach((sub, idx) => {
-        const subEnt = registry.createEntity(
-          'maltego.DNSName',
-          `${sub}.svr-ops-telemetry.net`,
-          { weight: 70 }
-        );
-        store.addEntity(subEnt, { x: -280 + idx * 100, y: 155, z: 0 });
-        store.addLink(
-          makeSimpleLink(Guid.generate(), 'DGA fallback', '#8B5CF6'),
-          hash.id,
-          subEnt.id
-        );
-      });
-
-      selection.selectInModel([c2Domain.id]);
-    });
-    appendLog('Cargado caso APT29 / Midnight Blizzard Infrastructure (11 entidades, 10 enlaces).');
-  } else if (presetId === 'cloudflare') {
-    store.runInBatch(() => {
-      const d1 = registry.createEntity('maltego.Domain', 'cloudflare.com', {
-        weight: 100,
-        bookmark: 4,
-      });
-      d1.notes = { value: 'Clic derecho -> DNS A / MX / NS en vivo', show: true };
-      store.addEntity(d1, { x: -180, y: 0, z: 0 });
-
-      const d2 = registry.createEntity('maltego.Domain', 'github.com', {
-        weight: 100,
-        bookmark: 2,
-      });
-      d2.notes = { value: 'Clic derecho -> Ejecutar Todos los Transforms', show: true };
-      store.addEntity(d2, { x: 180, y: 0, z: 0 });
-
-      selection.selectInModel([d1.id]);
-    });
-    appendLog(
-      'Cargado caso Superficie DNS en Vivo (cloudflare.com & github.com). Pulsa "Run OSINT Transforms" para lanzar consultas DNS reales.'
-    );
-  } else if (presetId === 'crypto') {
-    store.runInBatch(() => {
-      const ransomWallet = registry.createEntity(
-        'maltego.BitcoinAddress',
-        'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-        {
-          weight: 100,
-          bookmark: 1,
-          extraProperties: { cluster: 'BlackCat / ALPHV Treasury', balance: '148.42 BTC' },
-        }
-      );
-      ransomWallet.notes = { value: 'Main ransom collection wallet', show: true };
-      store.addEntity(ransomWallet, { x: 0, y: -140, z: 0 });
-
-      for (let i = 1; i <= 5; i++) {
-        const hop = registry.createEntity(
-          'maltego.BitcoinAddress',
-          `bc1qmixerhop00${i}99x8877aabbccddeeff00112233`,
-          {
-            weight: 80,
-            bookmark: 5,
-            extraProperties: { hop: String(i), amount: `${(12.5 * i).toFixed(2)} BTC` },
-          }
-        );
-        store.addEntity(hop, { x: -240 + i * 80, y: 90, z: 0 });
-        store.addLink(
-          makeSimpleLink(Guid.generate(), `peel chain #${i}`, '#F59E0B'),
-          ransomWallet.id,
-          hop.id
-        );
-      }
-      selection.selectInModel([ransomWallet.id]);
-    });
-    appendLog('Cargado caso Ransomware BTC Treasury & Mixer Trace.');
-  } else if (presetId === 'stress250') {
-    store.runInBatch(() => {
-      const hubs: EntityID[] = [];
-      for (let h = 0; h < 5; h++) {
-        const hub = registry.createEntity('maltego.AS', `AS1333${h}`, {
-          weight: 100,
-          bookmark: h % 6,
-        });
-        store.addEntity(hub, {
-          x: Math.cos((h * 2 * Math.PI) / 5) * 260,
-          y: Math.sin((h * 2 * Math.PI) / 5) * 260,
-          z: 0,
-        });
-        hubs.push(hub.id);
-        if (h > 0) {
-          store.addLink(
-            makeSimpleLink(Guid.generate(), 'BGP peer', '#3B82F6'),
-            hubs[h - 1]!,
-            hub.id
-          );
-        }
-      }
-      for (let i = 0; i < 245; i++) {
-        const parentHub = hubs[i % hubs.length]!;
-        const leaf = registry.createEntity(
-          i % 2 === 0 ? 'maltego.IPv4Address' : 'maltego.DNSName',
-          i % 2 === 0
-            ? `172.67.${Math.floor(i / 25)}.${(i % 250) + 1}`
-            : `edge-${i}.cloudflare-dns.com`,
-          { weight: 70 }
-        );
-        store.addEntity(leaf, {
-          x: (Math.random() - 0.5) * 900,
-          y: (Math.random() - 0.5) * 700,
-          z: 0,
-        });
-        store.addLink(makeSimpleLink(Guid.generate(), 'announces', '#64748B'), parentHub, leaf.id);
-      }
-    });
-    syncSceneAndUi(true);
-    appendLog(
-      'Cargado Benchmark de 250 Nodos con Barnes-Hut ForceAtlas2 y agrupación automática en Collection Nodes.'
-    );
-    return;
+function loadPreset(sessionOrExpedienteId: string): void {
+  const cleanId = sessionOrExpedienteId.trim() || 'expediente-apt29';
+  mcpState.sessionId = cleanId;
+  const sessionInp = document.getElementById('inp-mcp-session-id') as HTMLInputElement | null;
+  if (sessionInp && sessionInp.value !== cleanId) {
+    sessionInp.value = cleanId;
   }
-
-  syncSceneAndUi(false);
+  renderMcpSnippet();
+  connectLiveMcpSessionStream(cleanId);
+  void syncActiveMcpSessionFromServer(cleanId);
 }
 
 // =============================================================================
@@ -1759,10 +1582,11 @@ document.getElementById('btn-decrypt-mtgj')?.addEventListener('click', async () 
 const clientCollabHub = new CollaborationRoomHub();
 let isApplyingRemoteDelta = false;
 let lastProcessedUiSeq = 0;
+let activeMcpEventSource: EventSource | null = null;
 
 function applyRemoteSessionUiEvent(ev: {
   seq: number;
-  type: 'select' | 'layout' | 'camera' | 'preset' | 'clear';
+  type: 'select' | 'layout' | 'camera' | 'preset' | 'clear' | 'sync';
   payload: Record<string, unknown>;
 }): void {
   if (ev.seq <= lastProcessedUiSeq) return;
@@ -1781,13 +1605,31 @@ function applyRemoteSessionUiEvent(ev: {
     return;
   }
 
-  if (ev.type === 'preset' && typeof ev.payload.presetId === 'string') {
+  if (ev.type === 'sync') {
+    const rawEntities = Array.isArray(ev.payload.entities)
+      ? (ev.payload.entities as SerializedGraphEntityItem[])
+      : [];
+    const rawLinks = Array.isArray(ev.payload.links)
+      ? (ev.payload.links as SerializedGraphLinkItem[])
+      : [];
     isApplyingRemoteDelta = true;
     try {
-      loadPreset(ev.payload.presetId);
+      hydrateStoreFromSerialized(rawEntities, rawLinks);
+      if (Array.isArray(ev.payload.selectedEntityIds)) {
+        const ids = ev.payload.selectedEntityIds
+          .map((raw) => Guid.parse(String(raw)))
+          .filter((gid) => store.dataStore.hasEntity(gid));
+        selection.selectInModel(ids);
+      }
     } finally {
       isApplyingRemoteDelta = false;
     }
+    syncSceneAndUi(false);
+    return;
+  }
+
+  if (ev.type === 'preset' && typeof ev.payload.presetId === 'string') {
+    void syncActiveMcpSessionFromServer(mcpState.sessionId);
     return;
   }
 
@@ -1822,13 +1664,14 @@ function applyRemoteSessionUiEvent(ev: {
 
 store.subscribe((mods) => {
   if (isApplyingRemoteDelta) return;
+  const activeRoom = mcpState.sessionId.trim() || 'expediente-apt29';
   const delta = clientCollabHub.serializeModsToDelta(
-    'expediente-apt29',
+    activeRoom,
     'browser-workstation',
     store,
     mods
   );
-  void fetch('/api/collab/rooms/expediente-apt29/deltas', {
+  void fetch(`/api/collab/rooms/${encodeURIComponent(activeRoom)}/deltas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(delta),
@@ -1837,18 +1680,25 @@ store.subscribe((mods) => {
   });
 });
 
-async function refreshCollaborationPresence(): Promise<void> {
+async function syncActiveMcpSessionFromServer(targetRoomId?: string): Promise<void> {
+  const roomId = (targetRoomId ?? mcpState.sessionId).trim() || 'expediente-apt29';
   try {
-    const res = await fetch('/api/collab/rooms/expediente-apt29');
+    const res = await fetch(`/api/collab/rooms/${encodeURIComponent(roomId)}`);
     if (!res.ok) return;
     const data = (await res.json()) as {
       ok: boolean;
       analysts?: Array<{ displayName: string; forensicRank: string }>;
       deltas?: SerializedGraphModsDelta[];
       session?: {
+        roomId?: string;
+        entityCount?: number;
+        linkCount?: number;
+        selectedEntityIds?: string[];
+        entities?: SerializedGraphEntityItem[];
+        links?: SerializedGraphLinkItem[];
         uiEvents?: Array<{
           seq: number;
-          type: 'select' | 'layout' | 'camera' | 'preset' | 'clear';
+          type: 'select' | 'layout' | 'camera' | 'preset' | 'clear' | 'sync';
           payload: Record<string, unknown>;
         }>;
       };
@@ -1857,7 +1707,22 @@ async function refreshCollaborationPresence(): Promise<void> {
     if (countEl && Array.isArray(data.analysts)) {
       countEl.textContent = String(data.analysts.length);
     }
-    if (Array.isArray(data.deltas)) {
+
+    if (Array.isArray(data.session?.entities) && Array.isArray(data.session?.links)) {
+      isApplyingRemoteDelta = true;
+      try {
+        hydrateStoreFromSerialized(data.session.entities, data.session.links);
+        if (Array.isArray(data.session.selectedEntityIds)) {
+          const ids = data.session.selectedEntityIds
+            .map((raw) => Guid.parse(String(raw)))
+            .filter((gid) => store.dataStore.hasEntity(gid));
+          selection.selectInModel(ids);
+        }
+      } finally {
+        isApplyingRemoteDelta = false;
+      }
+      syncSceneAndUi(false);
+    } else if (Array.isArray(data.deltas) && data.deltas.length > 0) {
       let appliedAny = false;
       isApplyingRemoteDelta = true;
       try {
@@ -1872,33 +1737,80 @@ async function refreshCollaborationPresence(): Promise<void> {
       if (appliedAny) {
         syncSceneAndUi(false);
       }
+    } else {
+      syncSceneAndUi(false);
     }
+
     if (Array.isArray(data.session?.uiEvents)) {
       for (const ev of data.session.uiEvents) {
         applyRemoteSessionUiEvent(ev);
       }
     }
+
+    // Also refresh saved expedientes in #preset-select if available
+    const vRes = await fetch('/api/vault/expedientes');
+    if (vRes.ok) {
+      const vData = (await vRes.json()) as {
+        ok: boolean;
+        expedientes?: Array<{ id: string; title: string }>;
+      };
+      const selEl = document.getElementById('preset-select') as HTMLSelectElement | null;
+      if (selEl && Array.isArray(vData.expedientes)) {
+        const existingValues = new Set(Array.from(selEl.options).map((o) => o.value));
+        for (const exp of vData.expedientes) {
+          if (!existingValues.has(exp.id)) {
+            const opt = document.createElement('option');
+            opt.value = exp.id;
+            opt.textContent = `Expediente: ${exp.title} (${exp.id})`;
+            selEl.appendChild(opt);
+          }
+        }
+      }
+    }
   } catch {
-    // Graceful no-op when running offline
+    syncSceneAndUi(false);
   }
 }
-void refreshCollaborationPresence();
 
-if (typeof EventSource !== 'undefined') {
+function connectLiveMcpSessionStream(targetRoomId?: string): void {
+  if (typeof EventSource === 'undefined') return;
+  const roomId = (targetRoomId ?? mcpState.sessionId).trim() || 'expediente-apt29';
   try {
-    const es = new EventSource('/api/collab/rooms/expediente-apt29/stream');
+    if (activeMcpEventSource) {
+      activeMcpEventSource.close();
+      activeMcpEventSource = null;
+    }
+    const es = new EventSource(`/api/collab/rooms/${encodeURIComponent(roomId)}/stream`);
+    activeMcpEventSource = es;
     es.onmessage = (msg) => {
       try {
         const parsed = JSON.parse(msg.data) as {
           type?: 'init' | 'delta' | 'ui';
           delta?: SerializedGraphModsDelta;
+          session?: {
+            entities?: SerializedGraphEntityItem[];
+            links?: SerializedGraphLinkItem[];
+            selectedEntityIds?: string[];
+          };
           event?: {
             seq: number;
-            type: 'select' | 'layout' | 'camera' | 'preset' | 'clear';
+            type: 'select' | 'layout' | 'camera' | 'preset' | 'clear' | 'sync';
             payload: Record<string, unknown>;
           };
         };
-        if (parsed.type === 'delta' && parsed.delta) {
+        if (
+          parsed.type === 'init' &&
+          Array.isArray(parsed.session?.entities) &&
+          Array.isArray(parsed.session?.links)
+        ) {
+          isApplyingRemoteDelta = true;
+          try {
+            hydrateStoreFromSerialized(parsed.session.entities, parsed.session.links);
+          } finally {
+            isApplyingRemoteDelta = false;
+          }
+          syncSceneAndUi(false);
+        } else if (parsed.type === 'delta' && parsed.delta) {
           isApplyingRemoteDelta = true;
           try {
             if (clientCollabHub.applyDeltaToStore(store, parsed.delta, registry)) {
@@ -1918,6 +1830,7 @@ if (typeof EventSource !== 'undefined') {
     // Graceful fallback when EventSource is unavailable
   }
 }
+connectLiveMcpSessionStream();
 
 // =============================================================================
 // 9. 60 FPS Impeccable Style Scenegraph Renderer (Micro-Badges + Backed Edge Pills + Radar Minimap)
@@ -2473,6 +2386,12 @@ export function initMcpModalController(): void {
   sessionInp?.addEventListener('input', (e) => {
     mcpState.sessionId = (e.target as HTMLInputElement).value.trim() || 'expediente-apt29';
     renderMcpSnippet();
+    connectLiveMcpSessionStream(mcpState.sessionId);
+  });
+
+  document.getElementById('btn-open-mcp-studio')?.addEventListener('click', () => {
+    document.getElementById('btn-edition-tier')?.click();
+    document.getElementById('btn-goto-mcp-tab')?.click();
   });
 
   const tokenInp = document.getElementById('inp-mcp-auth-token') as HTMLInputElement | null;
@@ -2567,24 +2486,100 @@ export function initMcpModalController(): void {
     URL.revokeObjectURL(url);
   });
 
-  document.querySelectorAll('.agy-mission-btn').forEach((missionBtn) => {
-    missionBtn.addEventListener('click', async () => {
-      const prompt = missionBtn.getAttribute('data-agy-prompt');
-      if (!prompt) return;
-      try {
-        await navigator.clipboard.writeText(prompt);
-        const tagEl = missionBtn.querySelector('.agy-mission-copy-tag');
-        if (tagEl) {
-          const prev = tagEl.textContent;
-          tagEl.textContent = 'Misión copiada ✓';
-          setTimeout(() => {
-            tagEl.textContent = prev;
-          }, 2000);
-        }
-      } catch {
-        // Fallback
+  const selLiveMethod = document.getElementById('sel-mcp-live-method') as HTMLSelectElement | null;
+  const inpLiveArgs = document.getElementById('inp-mcp-live-args') as HTMLInputElement | null;
+
+  selLiveMethod?.addEventListener('change', () => {
+    if (!inpLiveArgs) return;
+    const v = selLiveMethod.value;
+    if (v === 'tool:cangrejo_session_mutate_graph') {
+      inpLiveArgs.value = JSON.stringify({
+        action: 'upsert',
+        entities: [{ id: '1001', typeName: 'maltego.Domain', value: 'example.org', weight: 95 }],
+        links: [],
+      });
+    } else if (v === 'tool:cangrejo_session_run_pesquisa') {
+      inpLiveArgs.value = JSON.stringify({ transformId: 'all', sliderLimit: 8 });
+    } else if (v === 'tool:cangrejo_session_view_control') {
+      inpLiveArgs.value = JSON.stringify({ layoutMode: 'organic', camera: { action: 'fit' } });
+    } else if (v === 'tool:cangrejo_session_vault') {
+      inpLiveArgs.value = JSON.stringify({ action: 'list_expedientes' });
+    } else if (v === 'tool:cangrejo_unpack_defanged_iocs') {
+      inpLiveArgs.value = JSON.stringify({ text: 'hxxps[:]//example[.]org y 1.1.1.1' });
+    } else if (v === 'tool:cangrejo_codemode_run') {
+      inpLiveArgs.value = JSON.stringify({
+        code: 'async () => { const state = await codemode.sessionState({}); return state; }',
+      });
+    } else {
+      inpLiveArgs.value = '{}';
+    }
+  });
+
+  document.getElementById('btn-mcp-live-exec')?.addEventListener('click', async () => {
+    const methodSelection = selLiveMethod?.value || 'tool:cangrejo_session_state';
+    const rawArgs = inpLiveArgs?.value.trim() || '{}';
+    let parsedArgs: Record<string, unknown> = {};
+    try {
+      parsedArgs = JSON.parse(rawArgs) as Record<string, unknown>;
+    } catch {
+      appendLog('[Consola MCP]: JSON inválido en los argumentos.');
+      return;
+    }
+
+    const session = mcpState.sessionId.trim() || 'expediente-apt29';
+    let rpcMethod = 'tools/call';
+    let rpcParams: Record<string, unknown> = {};
+
+    if (methodSelection.startsWith('tool:')) {
+      rpcMethod = 'tools/call';
+      rpcParams = {
+        name: methodSelection.slice(5),
+        arguments: { roomId: session, ...parsedArgs },
+      };
+    } else if (methodSelection.startsWith('res:')) {
+      rpcMethod = 'resources/read';
+      rpcParams = { uri: methodSelection.slice(4), ...parsedArgs };
+    } else if (methodSelection.startsWith('rpc:')) {
+      rpcMethod = methodSelection.slice(4);
+      rpcParams = parsedArgs;
+    }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (mcpState.licenseKey) {
+      headers.Authorization = `Bearer ${mcpState.licenseKey}`;
+    }
+    const targetMcpUrl = mcpState.licenseKey
+      ? `/api/mcp/${encodeURIComponent(session)}`
+      : '/api/mcp';
+
+    try {
+      const res = await fetch(targetMcpUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: Date.now(),
+          method: rpcMethod,
+          params: rpcParams,
+        }),
+      });
+      const json = await res.json();
+      const outEl = document.getElementById('mcp-snippet-output');
+      if (outEl) {
+        outEl.textContent = JSON.stringify(json, null, 2);
       }
-    });
+      await syncActiveMcpSessionFromServer(session);
+      appendLog(`[MCP JSON-RPC 2.0 Ejecutado]: ${rpcMethod} (${methodSelection}) en sesión "${session}".`);
+    } catch (err) {
+      appendLog(`[Error en Consola MCP]: ${String(err)}`);
+    }
+  });
+
+  document.getElementById('btn-mcp-live-sync')?.addEventListener('click', () => {
+    const session = mcpState.sessionId.trim() || 'expediente-apt29';
+    connectLiveMcpSessionStream(session);
+    void syncActiveMcpSessionFromServer(session);
+    appendLog(`[Sincronización MCP]: Lienzo sincronizado con la sesión "${session}".`);
   });
 
   if (typeof window !== 'undefined' && window.sessionStorage) {
@@ -2954,11 +2949,9 @@ document.querySelectorAll('[data-byok-save]').forEach((btn) => {
 
 // Wire Smart IOC Paste-to-Graph (`#btn-paste-iocs`)
 document.getElementById('btn-paste-iocs')?.addEventListener('click', async () => {
-  const defaultBulletin =
-    'INCIDENTE CANGREJO: Tráfico C2 hacia apt29-stealth-relay.org (185.220.101.42) bajo AS42610 explotando CVE-2024-3400. Hash payload: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855. Contacto rescate: ops@dark-syndicate.io y wallet BTC 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
   const rawText = window.prompt(
     'Pega cualquier boletín CTI, correo sospechoso o log de firewall para extraer automáticamente todos los IOCs al grafo:',
-    defaultBulletin
+    ''
   );
   if (!rawText || !rawText.trim()) return;
 
@@ -3051,7 +3044,10 @@ document.getElementById('btn-paste-iocs')?.addEventListener('click', async () =>
 document.getElementById('btn-radar-watch')?.addEventListener('click', async () => {
   const selectedIds = Array.from(selection.getModelSelectedEntities());
   const firstSelected = selectedIds[0] ? store.dataStore.tryGetEntity(selectedIds[0]) : undefined;
-  const targetValue = firstSelected ? getPartPrimaryValue(firstSelected) : 'apt29-c2-mirror.org';
+  const targetValue = firstSelected
+    ? getPartPrimaryValue(firstSelected)
+    : window.prompt('Ingresa el dominio o IP objetivo para vigilar en Radar 24/7:', '')?.trim() || '';
+  if (!targetValue) return;
   const entityType = firstSelected?.typeName ?? 'maltego.Domain';
 
   try {
@@ -3130,9 +3126,11 @@ let lastAiLatentSuggestions: Array<{
 }> = [];
 
 document.getElementById('btn-ai-f1-unpack')?.addEventListener('click', async () => {
-  const sample =
-    inpAiCopilotPrompt?.value.trim() ||
-    'Reporte CTI: Conexión detectada hacia hxxps[:]//c2-Command[.]apt29-mirror[.]org/gate y correo ops[@]shadow-apt[.]ru desde 185[.]220[.]101[.]42 explotando CVE-2024-3400.';
+  const sample = inpAiCopilotPrompt?.value.trim() || '';
+  if (!sample) {
+    setAiOutput('Escribe o pega un boletín CTI con IOCs ofuscados en el campo de entrada superior antes de ejecutar F1.');
+    return;
+  }
   try {
     const res = await fetch('/api/ai/unpack-iocs', {
       method: 'POST',
@@ -3430,14 +3428,18 @@ document.getElementById('btn-ai-f6-autoinvestigate')?.addEventListener('click', 
 
 document.getElementById('btn-ai-f7-vision')?.addEventListener('click', async () => {
   try {
+    const captionInput = inpAiCopilotPrompt?.value.trim() || '';
+    if (!captionInput) {
+      setAiOutput('Ingresa la descripción/OCR de la evidencia visual en el campo superior o usa el Escáner HUD para subir una captura.');
+      return;
+    }
     setAiOutput('[F7 Ingesta Visual Multimodal • Llama 3.2 11B Vision]: Procesando evidencia y calculando custodia SHA-256…');
     const res = await fetch('/api/ai/vision-ingest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        filename: 'captura-panel-c2-apt29.png',
-        evidenceCaption:
-          'Evidencia visual: consola C2 apuntando a hxxps[:]//vision-c2[.]apt29-mirror[.]org/admin, IP 185[.]220[.]101[.]99 y correo operador[@]shadow-apt[.]ru.',
+        filename: 'evidencia-visual-forense.png',
+        evidenceCaption: captionInput,
       }),
     });
     const data = (await res.json()) as {
@@ -4191,11 +4193,33 @@ export function syncMobileSuperAppState(): void {
   const allIds = Array.from(store.structureStore.entities.keys());
   const selectedIds = Array.from(selection.getModelSelectedEntities());
   const activeId = selectedIds[0] ?? allIds[0];
-  if (!activeId || !store.dataStore.hasEntity(activeId)) return;
-
   const dossierSelectEl = document.getElementById(
     'sel-mobile-dossier-entity'
   ) as HTMLSelectElement | null;
+  const titleEl = document.getElementById('lbl-mobile-dossier-title');
+  const typeEl = document.getElementById('lbl-mobile-dossier-type');
+  const scoreEl = document.getElementById('lbl-mobile-dossier-score');
+  const propsEl = document.getElementById('mobile-dossier-props');
+  const corrText = document.getElementById('lbl-mobile-correlation-text');
+  const corrHops = document.getElementById('lbl-mobile-correlation-hops');
+  const radarPath = document.getElementById('lbl-mobile-radar-path');
+
+  if (!activeId || !store.dataStore.hasEntity(activeId)) {
+    if (dossierSelectEl) dossierSelectEl.innerHTML = '';
+    if (titleEl) titleEl.textContent = 'Sin entidad seleccionada';
+    if (typeEl) typeEl.textContent = '—';
+    if (scoreEl) scoreEl.textContent = 'Score: --/100 · EN ESPERA';
+    if (propsEl) propsEl.textContent = '';
+    if (corrHops) corrHops.textContent = 'BFS Listo';
+    if (corrText) {
+      corrText.textContent = 'Sin correlación activa. Ingresa un IOC arriba o sincroniza con tu agente MCP.';
+    }
+    if (radarPath) {
+      radarPath.textContent = 'Selecciona 2 o más nodos para calcular ruta BFS';
+    }
+    return;
+  }
+
   if (dossierSelectEl) {
     dossierSelectEl.innerHTML = allIds
       .filter((id) => store.dataStore.hasEntity(id))
@@ -4210,10 +4234,6 @@ export function syncMobileSuperAppState(): void {
 
   const ent = store.dataStore.getEntity(activeId);
   const val = getPartPrimaryValue(ent);
-  const titleEl = document.getElementById('lbl-mobile-dossier-title');
-  const typeEl = document.getElementById('lbl-mobile-dossier-type');
-  const scoreEl = document.getElementById('lbl-mobile-dossier-score');
-  const propsEl = document.getElementById('mobile-dossier-props');
 
   if (titleEl) titleEl.textContent = val;
   if (typeEl) typeEl.textContent = ent.typeName;
@@ -4241,16 +4261,20 @@ export function syncMobileSuperAppState(): void {
       ? getPartPrimaryValue(store.dataStore.getEntity(targetId))
       : val;
 
-    const corrText = document.getElementById('lbl-mobile-correlation-text');
-    const corrHops = document.getElementById('lbl-mobile-correlation-hops');
-    const radarPath = document.getElementById('lbl-mobile-radar-path');
-
     if (corrHops) corrHops.textContent = `${hops} salto(s) BFS`;
     if (corrText) {
       corrText.textContent = `${targetVal} conecta a ${hops} salto(s) con Nodo Crítico «${rootVal}» en el expediente activo.`;
     }
     if (radarPath) {
       radarPath.textContent = `Camino más corto: ${hops} salto(s) a «${rootVal}»`;
+    }
+  } else {
+    if (corrHops) corrHops.textContent = '1 nodo activo';
+    if (corrText) {
+      corrText.textContent = `Objetivo activo: «${val}». Ejecuta una pesquisa OSINT para descubrir conexiones.`;
+    }
+    if (radarPath) {
+      radarPath.textContent = `Objetivo centrado: «${val}»`;
     }
   }
 }
@@ -4653,7 +4677,7 @@ export function initMobileSuperAppController(): void {
         void runSpecificTransformsOnSelected(['dns-to-ip', 'whois-identity', 'ct-subdomains']);
         switchMobileSuperAppView('radar');
       } else if (app === 'crypto-utxo') {
-        loadPreset('crypto');
+        if (omniInput?.value.trim()) runOmniSearch();
         void runSpecificTransformsOnSelected(['crypto-trace']);
         switchMobileSuperAppView('radar');
       } else if (app === 'boveda-panic') {
@@ -4821,6 +4845,13 @@ export function initMobileSuperAppController(): void {
   };
 
   document.getElementById('btn-mobile-scanner-inject')?.addEventListener('click', async () => {
+    const fallbackText = omniInput?.value.trim() || '';
+    if (!pendingMobileEvidence && !fallbackText) {
+      if (custodyStrip) {
+        custodyStrip.textContent = 'SELECCIONA UNA IMAGEN (📷) O ESCRIBE TEXTO EN OMNI-SEARCH PRIMERO';
+      }
+      return;
+    }
     const reqPayload = pendingMobileEvidence
       ? {
           filename: pendingMobileEvidence.filename,
@@ -4828,13 +4859,12 @@ export function initMobileSuperAppController(): void {
           evidenceCaption: `Evidencia fotográfica capturada en campo: ${pendingMobileEvidence.filename}`,
         }
       : {
-          filename: 'evidencia-campo-mobile.jpg',
-          evidenceCaption:
-            'Manifiesto de campo: consola apuntando a hxxps[:]//vision-c2[.]apt29-mirror[.]org/admin, IP 185[.]220[.]101[.]99 y correo operador[@]shadow-apt[.]ru.',
+          filename: 'evidencia-campo-mobile.txt',
+          evidenceCaption: fallbackText,
         };
     const fallbackSha =
       pendingMobileEvidence?.clientSha256Hex ??
-      '8f4e9b2c1d0a7f6e5c4b3a29182736458f4e9b2c1d0a7f6e5c4b3a2918273a1c';
+      (await computeBytesSha256Hex(new TextEncoder().encode(reqPayload.evidenceCaption).buffer as ArrayBuffer));
 
     try {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -4885,7 +4915,7 @@ export function initMobileSuperAppController(): void {
   document.getElementById('btn-mobile-voice-note')?.addEventListener('click', () => {
     const rawNote = window.prompt(
       'Dicta o pega la nota de campo para extracción automática de IOCs:',
-      'Revisión en terreno: router apunta a 185.220.101.4, contacto soporte@shadow-logistics.net y operador @alias_target'
+      ''
     );
     if (!rawNote) return;
     if (omniInput) {
@@ -4957,5 +4987,5 @@ initMcpModalController();
 initAccountAuthController();
 initMobileSuperAppController();
 void syncEditionBadge();
-loadPreset('apt29');
+void syncActiveMcpSessionFromServer();
 requestAnimationFrame(renderFrame);

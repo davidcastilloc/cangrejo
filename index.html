@@ -49,15 +49,13 @@
           <span class="ribbon-breadcrumb-sep" aria-hidden="true">/</span>
 
           <div class="case-selector-group">
-            <label for="preset-select" class="sr-only">Seleccionar expediente</label>
-            <select id="preset-select" class="ribbon-select" aria-label="Expediente de investigación">
-              <option value="apt29">Caso #01: APT29 CozyBear</option>
-              <option value="cloudflare">Caso #02: Superficie DNS (cloudflare.com)</option>
-              <option value="crypto">Caso #03: Ransomware BTC Treasury</option>
-              <option value="stress250">Caso #04: Benchmark 250 Nodos</option>
+            <label for="preset-select" class="sr-only">Seleccionar sesión o expediente MCP</label>
+            <select id="preset-select" class="ribbon-select" aria-label="Sesión o expediente MCP">
+              <option value="expediente-apt29">Sesión MCP: expediente-apt29</option>
+              <option value="expediente-activo">Sesión MCP: expediente-activo</option>
             </select>
-            <button id="btn-load-preset" type="button" class="btn btn-quiet" title="Cargar expediente seleccionado">
-              Importar
+            <button id="btn-load-preset" type="button" class="btn btn-quiet" title="Sincronizar con la sesión MCP o expediente seleccionado">
+              Sincronizar MCP
             </button>
           </div>
         </div>
@@ -81,6 +79,14 @@
 
         <!-- ZONA DERECHA: Menús de Gobernanza, Cuenta y Acción Primaria -->
         <div class="ribbon-right">
+          <button
+            id="btn-open-mcp-studio"
+            type="button"
+            class="btn btn-quiet"
+            title="Abrir consola MCP en vivo, configurar agentes (Claude, Cursor, Antigravity) y ejecutar herramientas JSON-RPC 2.0"
+          >
+            <span>🔌 MCP · 12 tools</span>
+          </button>
           <button
             type="button"
             class="btn btn-ghost btn-popover-trigger"
@@ -409,12 +415,7 @@
               rows="4"
               aria-label="Pegar indicadores OSINT para detección automática"
               placeholder="Pega IPs, dominios, URLs, correos, CVEs, hashes SHA-256, billeteras BTC o ASNs…"
-            >104.21.16.1
-api.cloudflare.com
-security@cloudflare.com
-CVE-2024-21412
-bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh
-AS13335</textarea>
+            ></textarea>
             <button id="btn-smart-paste" class="btn btn-primary btn-block">
               Detectar y crear entidades
             </button>
@@ -744,7 +745,7 @@ AS13335</textarea>
                 class="mobile-live-pill"
                 title="Sincronizar cola offline y copiar enlace de sala colaborativa"
               >
-                ● EXP-APT29 (LIVE)
+                ● MCP LIVE
               </button>
               <button
                 id="btn-mobile-sunlight"
@@ -826,11 +827,11 @@ AS13335</textarea>
             <div class="mobile-section-label">HIGH-PRIORITY TARGET CORRELATION</div>
             <div id="mobile-correlation-card" class="mobile-correlation-card">
               <div class="mobile-correlation-head">
-                <span class="mobile-alert-badge">⚠️ MATCH A 2 SALTOS</span>
-                <span id="lbl-mobile-correlation-hops" class="tabular mobile-correlation-meta">BFS Activo</span>
+                <span class="mobile-alert-badge">📡 CORRELACIÓN EN VIVO</span>
+                <span id="lbl-mobile-correlation-hops" class="tabular mobile-correlation-meta">BFS Listo</span>
               </div>
               <p id="lbl-mobile-correlation-text" class="mobile-correlation-body">
-                104.16.132.229 conecta a 2 saltos con Nodo Crítico «APT29 (Midnight Blizzard)» vía cloudflare.com.
+                Sin correlación activa. Ingresa un IOC arriba o sincroniza con tu agente MCP.
               </p>
               <div class="mobile-correlation-actions">
                 <button
@@ -850,7 +851,7 @@ AS13335</textarea>
             <div class="mobile-section-label">BITÁCORA DE CUSTODIA EN CAMPO (SHA-256)</div>
             <div id="mobile-custody-ledger" class="mobile-custody-ledger tabular" aria-live="polite">
               <div class="mobile-custody-entry">
-                #01 · UTC LIVE · Expediente inicial sincronizado · Bóveda Cero Activa
+                #01 · UTC LIVE · Lienzo forense listo · Bóveda Cero Activa
               </div>
             </div>
           </div>
@@ -859,8 +860,8 @@ AS13335</textarea>
           <div id="mobile-view-radar" data-mview-panel="radar" class="mobile-view-panel mobile-radar-overlay" hidden>
             <div class="mobile-radar-top-hud">
               <button id="btn-mobile-radar-bfs" type="button" class="mobile-radar-path-pill">
-                <span aria-hidden="true">⚠️</span>
-                <span id="lbl-mobile-radar-path">Camino más corto: 2 saltos al Objetivo Principal</span>
+                <span aria-hidden="true">📡</span>
+                <span id="lbl-mobile-radar-path">Selecciona 2 o más nodos para calcular ruta BFS</span>
               </button>
               <button id="btn-mobile-radar-fit" type="button" class="btn btn-quiet btn-xs">
                 Centrar 1-Hop
@@ -878,11 +879,11 @@ AS13335</textarea>
               </button>
               <div class="mobile-dossier-header">
                 <span class="mobile-dossier-kicker">FICHA DE OBJETIVO // DOSSIER EN VIVO</span>
-                <span id="lbl-mobile-dossier-score" class="mobile-score-pill tabular">Score: 95/100 · CRÍTICO</span>
+                <span id="lbl-mobile-dossier-score" class="mobile-score-pill tabular">Score: --/100 · EN ESPERA</span>
               </div>
               <div class="mobile-dossier-target-row">
-                <strong id="lbl-mobile-dossier-title" class="mobile-dossier-title">cloudflare.com</strong>
-                <span id="lbl-mobile-dossier-type" class="mobile-dossier-type tabular">maltego.Domain</span>
+                <strong id="lbl-mobile-dossier-title" class="mobile-dossier-title">Sin entidad seleccionada</strong>
+                <span id="lbl-mobile-dossier-type" class="mobile-dossier-type tabular">—</span>
               </div>
               <select
                 id="sel-mobile-dossier-entity"
@@ -918,17 +919,9 @@ AS13335</textarea>
               <div class="mobile-scanner-doc-sim">
                 <div class="mobile-scanner-doc-title">EVIDENCIA DE CAMPO // MANIFIESTO O CAPTURA</div>
                 <div id="mobile-scanner-boxes" class="mobile-scanner-boxes">
-                  <div class="mobile-ocr-box mobile-ocr-amber">
-                    <span class="mobile-ocr-tag">IP ADDRESS · YA EN GRAFO (2 SALTOS)</span>
-                    <code id="lbl-scanner-ioc-1">185.220.101.99</code>
-                  </div>
                   <div class="mobile-ocr-box mobile-ocr-cyan">
-                    <span class="mobile-ocr-tag">EMAIL · NUEVO IOC DETECTADO</span>
-                    <code id="lbl-scanner-ioc-2">operador@shadow-apt.ru</code>
-                  </div>
-                  <div class="mobile-ocr-box mobile-ocr-cyan">
-                    <span class="mobile-ocr-tag">URL C2 · DEFANGED IOC</span>
-                    <code id="lbl-scanner-ioc-3">vision-c2.apt29-mirror.org</code>
+                    <span class="mobile-ocr-tag">CAPTURA LISTA · SUBE IMAGEN O PEGA TEXTO</span>
+                    <code id="lbl-scanner-ioc-1">Sin evidencia cargada</code>
                   </div>
                 </div>
               </div>
@@ -936,13 +929,13 @@ AS13335</textarea>
               <!-- PiP Mini-Graph en Esquina Superior Derecha -->
               <div class="mobile-scanner-pip" title="Topología del expediente en tiempo real">
                 <span class="mobile-pip-label">PiP · LIVE GRAPH</span>
-                <div id="lbl-mobile-pip-stats" class="mobile-pip-stats tabular">11 nodos · 10 enlaces</div>
+                <div id="lbl-mobile-pip-stats" class="mobile-pip-stats tabular">0 nodos · 0 enlaces</div>
               </div>
             </div>
 
             <!-- Cintillo de Cadena de Custodia SHA-256 -->
             <div id="lbl-mobile-custody-strip" class="mobile-custody-strip tabular">
-              SHA-256: 8f4e9b2c1d0a...3a1c | UTC LIVE | BÓVEDA CERO: ACTIVA
+              SHA-256: PENDIENTE DE CAPTURA | UTC LIVE | BÓVEDA CERO: ACTIVA
             </div>
 
             <input
@@ -1455,38 +1448,49 @@ AS13335</textarea>
                 <pre id="mcp-snippet-output" class="console-output mcp-code-block"></pre>
               </div>
 
-              <!-- Misiones Rápidas para Antigravity (filas compactas de 1 línea) -->
+              <!-- Consola y Ejecutor MCP en Vivo (JSON-RPC 2.0) -->
               <div class="agy-missions-box">
-                <div class="agy-missions-header">Misiones rápidas para Antigravity &amp; Code Mode</div>
-                <div class="agy-missions-list">
-                  <button
-                    type="button"
-                    class="agy-mission-btn"
-                    data-agy-prompt="Usa la herramienta cangrejo_codemode_run (Cloudflare Code Mode) para escribir un único script TypeScript async () => { ... } que encadene en paralelo Promise.all([codemode.runPesquisa({ transformId: 'all' }), codemode.classifyAnomalies({}), codemode.mapMitreAttack({})]) y emita el dictamen Daubert en un solo turno (-92% tokens)."
-                  >
-                    <code class="agy-mission-cmd">codemode</code>
-                    <span class="agy-mission-title">Pipeline TypeScript en 1 turno con Promise.all (-92% tokens)</span>
-                    <span class="agy-mission-copy-tag">Copiar misión</span>
+                <div class="agy-missions-header">Consola y Ejecutor MCP en Vivo (JSON-RPC 2.0 · Tools / Resources / Prompts)</div>
+                <div class="ws-inline-fields" style="display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap;">
+                  <select id="sel-mcp-live-method" class="ws-input ws-input-sm" style="flex: 1; min-width: 220px;" aria-label="Método o herramienta MCP a ejecutar">
+                    <optgroup label="Herramientas de Sesión en Vivo (tools/call)">
+                      <option value="tool:cangrejo_session_state">tools/call · cangrejo_session_state (Leer grafo activo)</option>
+                      <option value="tool:cangrejo_session_mutate_graph">tools/call · cangrejo_session_mutate_graph (Upsert / Clear / Undo)</option>
+                      <option value="tool:cangrejo_session_run_pesquisa">tools/call · cangrejo_session_run_pesquisa (Pesquisa OSINT en vivo)</option>
+                      <option value="tool:cangrejo_session_view_control">tools/call · cangrejo_session_view_control (Layout / Selección / Cámara)</option>
+                      <option value="tool:cangrejo_session_vault">tools/call · cangrejo_session_vault (Listar / Guardar / Exportar)</option>
+                    </optgroup>
+                    <optgroup label="Herramientas Forenses y Code Mode (tools/call)">
+                      <option value="tool:cangrejo_unpack_defanged_iocs">tools/call · cangrejo_unpack_defanged_iocs (Desofuscar IOCs)</option>
+                      <option value="tool:cangrejo_map_mitre_attack">tools/call · cangrejo_map_mitre_attack (MITRE ATT&amp;CK v15.1)</option>
+                      <option value="tool:cangrejo_detect_anomalies_and_bridges">tools/call · cangrejo_detect_anomalies_and_bridges (Anomalías y Puentes)</option>
+                      <option value="tool:cangrejo_synthesize_forensic_brief">tools/call · cangrejo_synthesize_forensic_brief (Dictamen Daubert)</option>
+                      <option value="tool:cangrejo_codemode_run">tools/call · cangrejo_codemode_run (TypeScript SDK en 1 turno)</option>
+                    </optgroup>
+                    <optgroup label="Protocolo MCP (Resources / Prompts / Discovery)">
+                      <option value="rpc:initialize">initialize (Handshake &amp; Capabilities)</option>
+                      <option value="rpc:tools/list">tools/list (Catálogo de 12 herramientas)</option>
+                      <option value="rpc:resources/list">resources/list (Catálogo de recursos MCP)</option>
+                      <option value="res:cangrejo://session/active/graph">resources/read · cangrejo://session/active/graph</option>
+                      <option value="res:cangrejo://session/active/analytics">resources/read · cangrejo://session/active/analytics</option>
+                      <option value="res:cangrejo://taxonomy/entities">resources/read · cangrejo://taxonomy/entities</option>
+                      <option value="rpc:prompts/list">prompts/list (Catálogo de prompts forenses)</option>
+                    </optgroup>
+                  </select>
+                  <input
+                    id="inp-mcp-live-args"
+                    type="text"
+                    class="ws-input ws-input-sm tabular"
+                    style="flex: 1.4; min-width: 220px;"
+                    value="{}"
+                    placeholder='Argumentos JSON, ej: {"query":""}'
+                    aria-label="Argumentos JSON para la llamada MCP"
+                  />
+                  <button id="btn-mcp-live-exec" type="button" class="btn btn-primary btn-xs">
+                    ⚡ Ejecutar JSON-RPC
                   </button>
-
-                  <button
-                    type="button"
-                    class="agy-mission-btn"
-                    data-agy-prompt="/teamwork Conéctate al servidor MCP de Cangrejo en el expediente activo y despliega 3 subagentes en paralelo: (1) expansión de superficie DNS, subdominios CT y ASN, (2) desofuscación de IOCs y vínculos latentes Vectorize, y (3) cálculo de PageRank, ruta más corta BFS y detección de anillos cíclicos."
-                  >
-                    <code class="agy-mission-cmd">/teamwork</code>
-                    <span class="agy-mission-title">Enjambre OSINT de 3 subagentes (DNS, Vectorize y PageRank)</span>
-                    <span class="agy-mission-copy-tag">Copiar misión</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    class="agy-mission-btn"
-                    data-agy-prompt="/goal Investiga de forma autónoma todos los nodos pivote del expediente en Cangrejo usando las 12 herramientas MCP hasta mapear la infraestructura C2 completa, clasificar la cadena en MITRE ATT&CK v15 y sintetizar el dictamen pericial Daubert con firma Ed25519."
-                  >
-                    <code class="agy-mission-cmd">/goal</code>
-                    <span class="agy-mission-title">Cacería autónoma multi-salto hasta dictamen Daubert Ed25519</span>
-                    <span class="agy-mission-copy-tag">Copiar misión</span>
+                  <button id="btn-mcp-live-sync" type="button" class="btn btn-quiet btn-xs" title="Hidratar el lienzo local desde la sesión MCP activa">
+                    🔄 Sincronizar Lienzo
                   </button>
                 </div>
               </div>

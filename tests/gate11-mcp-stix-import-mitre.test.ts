@@ -442,4 +442,59 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     expect(execJson.tokenSavings.reductionPercent).toBeGreaterThan(90);
     expect(execJson.session.entityCount).toBeGreaterThanOrEqual(2);
   });
+
+  it('6. serves full MCP Resources (resources/list, resources/read), Prompts (prompts/list, prompts/get), ping, notifications, and JSON-RPC 2.0 batching', async () => {
+    const batchRes = await cangrejoHonoApp.request('/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([
+        { jsonrpc: '2.0', method: 'notifications/initialized' },
+        { jsonrpc: '2.0', id: 301, method: 'ping' },
+        { jsonrpc: '2.0', id: 302, method: 'resources/list' },
+        {
+          jsonrpc: '2.0',
+          id: 303,
+          method: 'resources/read',
+          params: { uri: 'cangrejo://session/expediente-mcp-session-test/graph' },
+        },
+        { jsonrpc: '2.0', id: 304, method: 'prompts/list' },
+        {
+          jsonrpc: '2.0',
+          id: 305,
+          method: 'prompts/get',
+          params: {
+            name: 'osint-surface-expansion',
+            arguments: { target: 'cloudflare.com', roomId: 'expediente-mcp-session-test' },
+          },
+        },
+      ]),
+    });
+    expect(batchRes.status).toBe(200);
+    const batchJson = (await batchRes.json()) as Array<{
+      id: number;
+      result: Record<string, unknown>;
+    }>;
+    // Notification without id is omitted from JSON-RPC batch response array -> 5 responses
+    expect(batchJson.length).toBe(5);
+    expect(batchJson[0]!.id).toBe(301);
+    expect(batchJson[1]!.id).toBe(302);
+    const resources = (batchJson[1]!.result.resources as Array<{ uri: string }>).map((r) => r.uri);
+    expect(resources).toContain('cangrejo://session/active/graph');
+    expect(resources).toContain('cangrejo://taxonomy/entities');
+
+    const readContents = batchJson[2]!.result.contents as Array<{ uri: string; text: string }>;
+    expect(readContents[0]!.uri).toBe('cangrejo://session/expediente-mcp-session-test/graph');
+    const parsedGraph = JSON.parse(readContents[0]!.text) as { entityCount: number };
+    expect(parsedGraph.entityCount).toBeGreaterThanOrEqual(2);
+
+    const prompts = (batchJson[3]!.result.prompts as Array<{ name: string }>).map((p) => p.name);
+    expect(prompts).toContain('osint-surface-expansion');
+    expect(prompts).toContain('forensic-graph-audit');
+
+    const promptMessages = batchJson[4]!.result.messages as Array<{
+      role: string;
+      content: { text: string };
+    }>;
+    expect(promptMessages[0]!.content.text).toContain('cloudflare.com');
+  });
 });

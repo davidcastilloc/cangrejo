@@ -1,6 +1,25 @@
 import readline from 'node:readline';
 import { cangrejoHonoApp } from './honoApp.js';
 
+export function parseCliMcpStdioFlags(argv: string[] = process.argv.slice(2)): {
+  targetUrl?: string;
+  sessionId?: string;
+  token?: string;
+} {
+  const flags: { targetUrl?: string; sessionId?: string; token?: string } = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if ((arg === '--url' || arg === '-u') && argv[i + 1]) {
+      flags.targetUrl = argv[++i];
+    } else if ((arg === '--session' || arg === '-s') && argv[i + 1]) {
+      flags.sessionId = argv[++i];
+    } else if ((arg === '--token' || arg === '-t') && argv[i + 1]) {
+      flags.token = argv[++i];
+    }
+  }
+  return flags;
+}
+
 /**
  * Dispatches a single newline-delimited MCP JSON-RPC 2.0 payload either to a running
  * CANGREJO workstation (`CANGREJO_MCP_URL`, default `http://127.0.0.1:3000/api/mcp`)
@@ -19,16 +38,25 @@ export async function dispatchMcpJsonRpcLine(
   if (!trimmed) return null;
 
   const parsed = JSON.parse(trimmed) as { id?: unknown; method?: string };
-  if (parsed.id === undefined && String(parsed.method ?? '').startsWith('notifications/')) {
+  if (
+    !Array.isArray(parsed) &&
+    parsed.id === undefined &&
+    String(parsed.method ?? '').startsWith('notifications/')
+  ) {
     return null;
   }
 
-  const sessionId = (options?.sessionId ?? process.env.CANGREJO_SESSION_ID ?? '').trim();
-  const token = (options?.token ?? process.env.CANGREJO_MCP_TOKEN ?? '').trim();
+  const cliFlags = parseCliMcpStdioFlags();
+  const effectiveUrl = (targetUrl ?? cliFlags.targetUrl ?? '').trim();
+  const sessionId = (options?.sessionId ?? cliFlags.sessionId ?? process.env.CANGREJO_SESSION_ID ?? '').trim();
+  const token = (options?.token ?? cliFlags.token ?? process.env.CANGREJO_MCP_TOKEN ?? '').trim();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+  if (sessionId) {
+    headers['X-Cangrejo-Session-Id'] = sessionId;
+  }
   if (token) {
     headers.Authorization = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
   }
@@ -41,14 +69,15 @@ export async function dispatchMcpJsonRpcLine(
     return cleanBase;
   };
 
-  if (targetUrl) {
+  if (effectiveUrl) {
     try {
-      const resolvedUrl = appendSessionSlug(targetUrl);
+      const resolvedUrl = appendSessionSlug(effectiveUrl);
       const res = await fetch(resolvedUrl, {
         method: 'POST',
         headers,
         body: trimmed,
       });
+      if (res.status === 202 || res.status === 204) return null;
       return JSON.stringify(await res.json());
     } catch {
       // Fallback to in-process Hono app when standalone HTTP server is offline
@@ -61,6 +90,7 @@ export async function dispatchMcpJsonRpcLine(
     headers,
     body: trimmed,
   });
+  if (localRes.status === 202 || localRes.status === 204) return null;
   return JSON.stringify(await localRes.json());
 }
 
