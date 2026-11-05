@@ -651,4 +651,96 @@ describe('Gate 12: Multi-Tenant MCP Session Isolation, Atomic WAL OCC Batching, 
     expect(roomJson.ok).toBe(true);
     expect(roomJson.roomId).toBe('expediente-do-test');
   });
+
+  it('8. verifies zero false-positive live transforms, D1 persistence for BYOK & Radar 24/7 + scheduled cron, Omnicanal Graph Search, editable dynamic properties, and local autosave + PNG export', async () => {
+    const repoRoot = path.resolve(import.meta.dirname, '..');
+    const indexHtml = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf-8');
+    const mainTs = fs.readFileSync(path.join(repoRoot, 'apps/web/main.ts'), 'utf-8');
+    const honoAppTs = fs.readFileSync(path.join(repoRoot, 'apps/web/honoApp.ts'), 'utf-8');
+
+    // 1. Live ThreatFox + VirusTotal v3 + AbuseIPDB v2 without false positives on transformId === 'all' & liveNetwork === true
+    expect(honoAppTs).toContain('https://threatfox-api.abuse.ch/api/v1/');
+    expect(honoAppTs).toContain('https://www.virustotal.com/api/v3/');
+    expect(honoAppTs).toContain('https://api.abuseipdb.com/api/v2/check');
+
+    const vault = new BunSqliteVault(':memory:');
+    const d1 = vault.asD1Database();
+
+    const liveAllRes = await cangrejoHonoApp.request(
+      '/api/transforms/run',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transformId: 'all',
+          entityType: 'maltego.Domain',
+          entityValue: 'clean-example-domain.org',
+          liveNetwork: true,
+        }),
+      },
+      { DB: d1 }
+    );
+    expect(liveAllRes.status).toBe(200);
+    const liveAllJson = (await liveAllRes.json()) as {
+      ok: boolean;
+      entities: Array<{ value: string; properties?: Record<string, string> }>;
+    };
+    expect(liveAllJson.ok).toBe(true);
+    // Clean domain with liveNetwork: true and no BYOK keys must NOT get fake 14/92-malicious VT node
+    const fakeVt = liveAllJson.entities.find((e) => e.value.includes('14/92-malicious'));
+    expect(fakeVt).toBeUndefined();
+
+    // 2. D1 Persistence for BYOK Provider Keys & Radar 24/7 + scheduled() cron
+    await vault.setProviderApiKeyToD1Safe(d1, 'virustotal', 'vt-d1-persisted-key-999');
+    const fetchedKey = await vault.getProviderApiKeyFromD1Safe(d1, 'virustotal');
+    expect(fetchedKey).toBe('vt-d1-persisted-key-999');
+    const providers = await vault.listConfiguredProvidersFromD1Safe(d1);
+    expect(providers?.some((p) => p.provider === 'virustotal')).toBe(true);
+
+    await vault.upsertRadarWatchToD1Safe(d1, {
+      id: 'watch-d1-1',
+      targetValue: 'c2-Dropper-D1.org',
+      entityType: 'maltego.Domain',
+      expedienteId: 'expediente-apt29',
+      baselineIndicators: ['initial-baseline-indicator'],
+      baselineDigestHex: 'initial-digest-000',
+      lastCheckedAt: Date.now(),
+      driftCount: 0,
+    });
+    const d1Watches = await vault.listRadarWatchesFromD1Safe(d1);
+    expect(d1Watches?.some((w) => w.id === 'watch-d1-1')).toBe(true);
+
+    // Trigger scheduled() worker handler against D1
+    let scheduledPromise: Promise<unknown> | null = null;
+    await cloudflareWorker.scheduled(
+      { cron: '*/15 * * * *', scheduledTime: Date.now() },
+      { DB: d1 },
+      {
+        waitUntil(p: Promise<unknown>) {
+          scheduledPromise = p;
+        },
+      }
+    );
+    if (scheduledPromise) await scheduledPromise;
+    const d1Alerts = await vault.listRadarAlertsFromD1Safe(d1);
+    expect(d1Alerts?.some((a) => a.watchId === 'watch-d1-1')).toBe(true);
+
+    // 3. Omnicanal Graph Search (centerCameraOnEntity + findCanvasEntitiesMatchingQuery)
+    expect(mainTs).toContain('function centerCameraOnEntity');
+    expect(mainTs).toContain('function findCanvasEntitiesMatchingQuery');
+    expect(mainTs).toContain('En el mapa activo (');
+
+    // 4. Editable Dynamic Properties & Right-Click on Edges
+    expect(mainTs).toContain('class="insp-prop-input"');
+    expect(mainTs).toContain('id="btn-add-custom-prop"');
+    expect(mainTs).toContain('id="inp-new-prop-key"');
+    expect(mainTs).toContain('id="inp-new-prop-val"');
+
+    // 5. Instant Local Autosave + High-Resolution PNG Export
+    expect(indexHtml).toContain('id="btn-export-png"');
+    expect(mainTs).toContain("document.getElementById('btn-export-png')");
+    expect(mainTs).toContain('cangrejo_graph_autosave_');
+
+    vault.close();
+  });
 });

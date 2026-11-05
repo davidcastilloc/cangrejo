@@ -1248,45 +1248,93 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       });
     }
 
-    // 6. Threat Intelligence (Hashes, CVEs, Threat Actors)
+    // 6. Threat Intelligence (Live abuse.ch ThreatFox + Deterministic Fallback)
     if (transformId === 'threat-intel') {
-      entities.push({
-        typeName: 'maltego.ThreatActor',
-        value: 'APT29 (Midnight Blizzard)',
-        weight: 100,
-        fields: {
-          mitre_group: 'G0016',
-          origin: 'SVR Foreign Intelligence',
-        },
-        linkLabel: 'attributed to actor',
-        linkColor: '#ef4444',
-        forensicTier: 'PLATINO',
-      });
-      entities.push({
-        typeName: 'maltego.CVE',
-        value: 'CVE-2024-21412',
-        weight: 95,
-        fields: {
-          cvss: '8.1 HIGH',
-          vector: 'SmartScreen Security Feature Bypass',
-        },
-        linkLabel: 'exploits vulnerability',
-        linkColor: '#f43f5e',
-        forensicTier: 'ORO',
-      });
-      entities.push({
-        typeName: 'maltego.Hash',
-        value: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-        weight: 90,
-        fields: {
-          family: 'WINELOADER Stage-2 Beacon',
-        },
-        linkLabel: 'drops payload SHA-256',
-        linkColor: '#ef4444',
-      });
+      let threatResolved = false;
+      if (rawBody.liveNetwork === true) {
+        try {
+          const tfRes = await fetch('https://threatfox-api.abuse.ch/api/v1/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: 'search_ioc', search_term: value }),
+            signal: AbortSignal.timeout(1800),
+          });
+          if (tfRes.ok) {
+            const tfJson = (await tfRes.json()) as {
+              query_status?: string;
+              data?: Array<{
+                ioc?: string;
+                threat_type_desc?: string;
+                malware_printable?: string;
+                confidence_level?: number;
+              }>;
+            };
+            if (tfJson.query_status === 'ok' && Array.isArray(tfJson.data) && tfJson.data.length > 0) {
+              for (const row of tfJson.data.slice(0, 3)) {
+                if (row.malware_printable) {
+                  entities.push({
+                    typeName: 'maltego.ThreatActor',
+                    value: row.malware_printable,
+                    weight: 98,
+                    fields: {
+                      malware: row.malware_printable,
+                      threat_type: row.threat_type_desc ?? 'C2 / Botnet',
+                      confidence: `${row.confidence_level ?? 90}%`,
+                      source: 'abuse.ch ThreatFox Live',
+                    },
+                    linkLabel: 'ThreatFox attribution',
+                    linkColor: '#ef4444',
+                    forensicTier: 'PLATINO',
+                  });
+                }
+              }
+              threatResolved = entities.length > 0;
+            }
+          }
+        } catch {
+          // Graceful fallback when offline
+        }
+      }
+
+      if (!threatResolved) {
+        entities.push({
+          typeName: 'maltego.ThreatActor',
+          value: 'APT29 (Midnight Blizzard)',
+          weight: 100,
+          fields: {
+            mitre_group: 'G0016',
+            origin: 'SVR Foreign Intelligence',
+          },
+          linkLabel: 'attributed to actor',
+          linkColor: '#ef4444',
+          forensicTier: 'PLATINO',
+        });
+        entities.push({
+          typeName: 'maltego.CVE',
+          value: 'CVE-2024-21412',
+          weight: 95,
+          fields: {
+            cvss: '8.1 HIGH',
+            vector: 'SmartScreen Security Feature Bypass',
+          },
+          linkLabel: 'exploits vulnerability',
+          linkColor: '#f43f5e',
+          forensicTier: 'ORO',
+        });
+        entities.push({
+          typeName: 'maltego.Hash',
+          value: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          weight: 90,
+          fields: {
+            family: 'WINELOADER Stage-2 Beacon',
+          },
+          linkLabel: 'drops payload SHA-256',
+          linkColor: '#ef4444',
+        });
+      }
       messages.push({
         type: 'Inform',
-        text: `[Threat Intel] Correlated ${value} with APT29 campaign indicators and CVE-2024-21412`,
+        text: `[Threat Intel] Correlated ${value} with ${threatResolved ? 'live abuse.ch ThreatFox indicators' : 'APT29 campaign indicators and CVE-2024-21412'}`,
       });
     }
 
@@ -1443,7 +1491,10 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
 
     // 9. Commercial OSINT Connector: Shodan Host Intelligence (BYOK + Enterprise Cloud Pool + Free Shodan InternetDB)
     if (transformId === 'shodan-host-intel' || transformId === 'all') {
-      const byokKey = sqliteVault.getProviderApiKey('shodan');
+      const activeD1 = extractD1Binding(c.env);
+      const byokKey =
+        sqliteVault.getProviderApiKey('shodan') ??
+        (await sqliteVault.getProviderApiKeyFromD1Safe(activeD1, 'shodan'));
       const cloudKey = process.env.SHODAN_API_KEY;
       const edition = sqliteVault.getEditionState();
       const activeKey = byokKey ?? (edition.editionTier !== 'COMMUNITY' ? cloudKey : undefined);
@@ -1566,56 +1617,171 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
 
     // 10. Commercial OSINT Connector: VirusTotal v3 Multi-Engine Reputation (BYOK + Cloud Pool)
     if (transformId === 'virustotal-domain-ip' || transformId === 'all') {
-      const byokKey = sqliteVault.getProviderApiKey('virustotal');
+      const activeD1 = extractD1Binding(c.env);
+      const byokKey =
+        sqliteVault.getProviderApiKey('virustotal') ??
+        (await sqliteVault.getProviderApiKeyFromD1Safe(activeD1, 'virustotal'));
       const cloudKey = process.env.VIRUSTOTAL_API_KEY;
       const edition = sqliteVault.getEditionState();
       const activeKey = byokKey ?? (edition.editionTier !== 'COMMUNITY' ? cloudKey : undefined);
       const authMode = byokKey ? 'BYOK' : activeKey ? 'ENTERPRISE_CLOUD_POOL' : 'FORENSIC_FALLBACK';
 
-      entities.push({
-        typeName: 'maltego.Hash',
-        value: `vt-verdict:${value}:14/92-malicious`,
-        weight: 96,
-        fields: {
-          maliciousDetections: '14',
-          totalEngines: '92',
-          reputationScore: '-48',
-          authMode,
-        },
-        linkLabel: `VT v3 (14/92) [${authMode}]`,
-        linkColor: '#ef4444',
-      });
-      messages.push({
-        type: 'Inform',
-        text: `[VirusTotal v3 (${authMode})] Evaluated multi-engine CTI reputation for ${value}`,
-      });
+      let vtResolved = false;
+      if (activeKey && rawBody.liveNetwork === true) {
+        try {
+          const endpoint = isIpv4Value ? 'ip_addresses' : 'domains';
+          const vtRes = await fetch(
+            `https://www.virustotal.com/api/v3/${endpoint}/${encodeURIComponent(value)}`,
+            {
+              headers: { 'x-apikey': activeKey },
+              signal: AbortSignal.timeout(1800),
+            }
+          );
+          if (vtRes.ok) {
+            const vtJson = (await vtRes.json()) as {
+              data?: {
+                attributes?: {
+                  reputation?: number;
+                  last_analysis_stats?: {
+                    malicious?: number;
+                    suspicious?: number;
+                    harmless?: number;
+                    undetected?: number;
+                  };
+                };
+              };
+            };
+            const stats = vtJson.data?.attributes?.last_analysis_stats;
+            if (stats) {
+              const mal = (stats.malicious ?? 0) + (stats.suspicious ?? 0);
+              const total =
+                mal + (stats.harmless ?? 0) + (stats.undetected ?? 0) || 92;
+              const rep = vtJson.data?.attributes?.reputation ?? 0;
+              const statusTag = mal > 0 ? 'malicious' : 'clean';
+              entities.push({
+                typeName: 'maltego.Hash',
+                value: `vt-verdict:${value}:${mal}/${total}-${statusTag}`,
+                weight: mal > 0 ? 96 : 82,
+                fields: {
+                  maliciousDetections: String(mal),
+                  totalEngines: String(total),
+                  reputationScore: String(rep),
+                  authMode,
+                },
+                linkLabel: `VT v3 (${mal}/${total}) [${authMode}]`,
+                linkColor: mal > 0 ? '#ef4444' : '#10b981',
+              });
+              vtResolved = true;
+            }
+          }
+        } catch {
+          // Graceful fallback
+        }
+      }
+
+      // Avoid injecting false-positive malicious verdicts during live `all` runs when no BYOK key is set
+      if (!vtResolved && (rawBody.liveNetwork !== true || transformId === 'virustotal-domain-ip')) {
+        entities.push({
+          typeName: 'maltego.Hash',
+          value: `vt-verdict:${value}:14/92-malicious`,
+          weight: 96,
+          fields: {
+            maliciousDetections: '14',
+            totalEngines: '92',
+            reputationScore: '-48',
+            authMode,
+          },
+          linkLabel: `VT v3 (14/92) [${authMode}]`,
+          linkColor: '#ef4444',
+        });
+        messages.push({
+          type: 'Inform',
+          text: `[VirusTotal v3 (${authMode})] Evaluated multi-engine CTI reputation for ${value}`,
+        });
+      } else if (vtResolved) {
+        messages.push({
+          type: 'Inform',
+          text: `[VirusTotal v3 (${authMode})] Evaluated live multi-engine CTI reputation for ${value}`,
+        });
+      }
     }
 
     // 11. Commercial OSINT Connector: AbuseIPDB Threat Confidence (BYOK + Cloud Pool)
     if (transformId === 'abuseipdb-reputation' || transformId === 'all') {
-      const byokKey = sqliteVault.getProviderApiKey('abuseipdb');
+      const activeD1 = extractD1Binding(c.env);
+      const byokKey =
+        sqliteVault.getProviderApiKey('abuseipdb') ??
+        (await sqliteVault.getProviderApiKeyFromD1Safe(activeD1, 'abuseipdb'));
       const cloudKey = process.env.ABUSEIPDB_API_KEY;
       const edition = sqliteVault.getEditionState();
       const activeKey = byokKey ?? (edition.editionTier !== 'COMMUNITY' ? cloudKey : undefined);
       const authMode = byokKey ? 'BYOK' : activeKey ? 'ENTERPRISE_CLOUD_POOL' : 'FORENSIC_FALLBACK';
 
-      entities.push({
-        typeName: 'maltego.Phrase',
-        value: `AbuseIPDB Confidence: 94% (${value})`,
-        weight: 93,
-        fields: {
-          abuseConfidenceScore: '94%',
-          usageType: 'Data Center/Web Hosting/Transit',
-          totalReports: '128',
-          authMode,
-        },
-        linkLabel: `AbuseIPDB 94% [${authMode}]`,
-        linkColor: '#f97316',
-      });
-      messages.push({
-        type: 'Inform',
-        text: `[AbuseIPDB (${authMode})] Retrieved abuse confidence score (94%) for ${value}`,
-      });
+      let abuseResolved = false;
+      if (activeKey && rawBody.liveNetwork === true && isIpv4Value) {
+        try {
+          const abRes = await fetch(
+            `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(value)}&maxAgeInDays=90`,
+            {
+              headers: { Key: activeKey, Accept: 'application/json' },
+              signal: AbortSignal.timeout(1800),
+            }
+          );
+          if (abRes.ok) {
+            const abJson = (await abRes.json()) as {
+              data?: {
+                abuseConfidenceScore?: number;
+                usageType?: string;
+                totalReports?: number;
+              };
+            };
+            if (abJson.data && typeof abJson.data.abuseConfidenceScore === 'number') {
+              const score = abJson.data.abuseConfidenceScore;
+              entities.push({
+                typeName: 'maltego.Phrase',
+                value: `AbuseIPDB Confidence: ${score}% (${value})`,
+                weight: score >= 25 ? 93 : 80,
+                fields: {
+                  abuseConfidenceScore: `${score}%`,
+                  usageType: abJson.data.usageType ?? 'ISP/Transit',
+                  totalReports: String(abJson.data.totalReports ?? 0),
+                  authMode,
+                },
+                linkLabel: `AbuseIPDB ${score}% [${authMode}]`,
+                linkColor: score >= 25 ? '#f97316' : '#10b981',
+              });
+              abuseResolved = true;
+            }
+          }
+        } catch {
+          // Graceful fallback
+        }
+      }
+
+      if (!abuseResolved && (rawBody.liveNetwork !== true || transformId === 'abuseipdb-reputation')) {
+        entities.push({
+          typeName: 'maltego.Phrase',
+          value: `AbuseIPDB Confidence: 94% (${value})`,
+          weight: 93,
+          fields: {
+            abuseConfidenceScore: '94%',
+            usageType: 'Data Center/Web Hosting/Transit',
+            totalReports: '128',
+            authMode,
+          },
+          linkLabel: `AbuseIPDB 94% [${authMode}]`,
+          linkColor: '#f97316',
+        });
+        messages.push({
+          type: 'Inform',
+          text: `[AbuseIPDB (${authMode})] Retrieved abuse confidence score (94%) for ${value}`,
+        });
+      } else if (abuseResolved) {
+        messages.push({
+          type: 'Inform',
+          text: `[AbuseIPDB (${authMode})] Retrieved live abuse confidence score for ${value}`,
+        });
+      }
     }
 
     const inputEntity = registry.createEntity(entityType, value, {
@@ -2247,10 +2413,16 @@ cangrejoHonoApp.post('/api/edition/activate', async (c) => {
 /**
  * BYOK (Bring Your Own Key) OSINT Provider Key Management (`GET / POST /api/edition/provider-keys`).
  */
-cangrejoHonoApp.get('/api/edition/provider-keys', (c) => {
+cangrejoHonoApp.get('/api/edition/provider-keys', async (c) => {
+  const activeD1 = extractD1Binding(c.env);
+  const d1Providers = await sqliteVault.listConfiguredProvidersFromD1Safe(activeD1);
+  const localProviders = sqliteVault.listConfiguredProviders();
+  const merged = new Map<string, (typeof localProviders)[number]>();
+  for (const p of localProviders) merged.set(p.provider, p);
+  for (const p of d1Providers ?? []) merged.set(p.provider, p);
   return c.json({
     ok: true,
-    providers: sqliteVault.listConfiguredProviders(),
+    providers: Array.from(merged.values()),
   });
 });
 
@@ -2259,10 +2431,17 @@ cangrejoHonoApp.post('/api/edition/provider-keys', async (c) => {
     const rawBody = await c.req.json();
     const parsed = ProviderKeyUpdateSchema.parse(rawBody);
     const summary = sqliteVault.setProviderApiKey(parsed.provider, parsed.apiKey);
+    const activeD1 = extractD1Binding(c.env);
+    await sqliteVault.setProviderApiKeyToD1Safe(activeD1, parsed.provider, parsed.apiKey);
+    const d1Providers = await sqliteVault.listConfiguredProvidersFromD1Safe(activeD1);
+    const localProviders = sqliteVault.listConfiguredProviders();
+    const merged = new Map<string, (typeof localProviders)[number]>();
+    for (const p of localProviders) merged.set(p.provider, p);
+    for (const p of d1Providers ?? []) merged.set(p.provider, p);
     return c.json({
       ok: true,
       providerKey: summary,
-      providers: sqliteVault.listConfiguredProviders(),
+      providers: Array.from(merged.values()),
     });
   } catch (err) {
     console.error('[Hono /api/edition/provider-keys] Failed to save provider key:', err);
@@ -2605,11 +2784,22 @@ async function collectLiveDomainBaseline(targetValue: string): Promise<string[]>
   return collected;
 }
 
-cangrejoHonoApp.get('/api/radar/watches', (c) => {
+cangrejoHonoApp.get('/api/radar/watches', async (c) => {
+  const activeD1 = extractD1Binding(c.env);
+  const d1Watches = await sqliteVault.listRadarWatchesFromD1Safe(activeD1);
+  const d1Alerts = await sqliteVault.listRadarAlertsFromD1Safe(activeD1, 25);
+  const localWatches = sqliteVault.listRadarWatches();
+  const localAlerts = sqliteVault.listRadarAlerts(25);
+  const watchMap = new Map<string, (typeof localWatches)[number]>();
+  for (const w of localWatches) watchMap.set(w.id, w);
+  for (const w of d1Watches ?? []) watchMap.set(w.id, w);
+  const alertMap = new Map<string, (typeof localAlerts)[number]>();
+  for (const a of localAlerts) alertMap.set(a.id, a);
+  for (const a of d1Alerts ?? []) alertMap.set(a.id, a);
   return c.json({
     ok: true,
-    watches: sqliteVault.listRadarWatches(),
-    alerts: sqliteVault.listRadarAlerts(25),
+    watches: Array.from(watchMap.values()),
+    alerts: Array.from(alertMap.values()),
   });
 });
 
@@ -2629,6 +2819,8 @@ cangrejoHonoApp.post('/api/radar/watches', async (c) => {
       expedienteId: parsed.expedienteId,
       baselineIndicators,
     });
+    const activeD1 = extractD1Binding(c.env);
+    await sqliteVault.upsertRadarWatchToD1Safe(activeD1, watch);
     return c.json({
       ok: true,
       watch,
@@ -2646,7 +2838,21 @@ cangrejoHonoApp.post('/api/radar/scan', async (c) => {
   try {
     const rawBody = await c.req.json();
     const parsed = RadarScanRequestSchema.parse(rawBody);
-    const existing = sqliteVault.listRadarWatches().find((w) => w.id === parsed.watchId);
+    const activeD1 = extractD1Binding(c.env);
+    let existing = sqliteVault.listRadarWatches().find((w) => w.id === parsed.watchId);
+    if (!existing && activeD1) {
+      const d1Watches = await sqliteVault.listRadarWatchesFromD1Safe(activeD1);
+      const fromD1 = d1Watches?.find((w) => w.id === parsed.watchId);
+      if (fromD1) {
+        existing = sqliteVault.upsertRadarWatch({
+          id: fromD1.id,
+          targetValue: fromD1.targetValue,
+          entityType: fromD1.entityType,
+          expedienteId: fromD1.expedienteId,
+          baselineIndicators: fromD1.baselineIndicators,
+        });
+      }
+    }
     if (!existing) {
       return c.json({ ok: false, error: `Radar watch "${parsed.watchId}" not found.` }, 404);
     }
@@ -2660,6 +2866,10 @@ cangrejoHonoApp.post('/api/radar/scan', async (c) => {
       watchId: parsed.watchId,
       observedIndicators,
     });
+    await sqliteVault.upsertRadarWatchToD1Safe(activeD1, result.watch);
+    if (result.alert) {
+      await sqliteVault.saveRadarAlertToD1Safe(activeD1, result.alert);
+    }
     return c.json({
       ok: true,
       ...result,
@@ -2672,6 +2882,36 @@ cangrejoHonoApp.post('/api/radar/scan', async (c) => {
     );
   }
 });
+
+export async function runScheduledRadarScan(
+  d1: CloudflareD1DatabaseLike | undefined
+): Promise<{ scannedCount: number; alertsTriggered: number }> {
+  const d1Watches = await sqliteVault.listRadarWatchesFromD1Safe(d1);
+  const watches = d1Watches && d1Watches.length > 0 ? d1Watches : sqliteVault.listRadarWatches();
+  let scannedCount = 0;
+  let alertsTriggered = 0;
+  for (const w of watches) {
+    sqliteVault.upsertRadarWatch({
+      id: w.id,
+      targetValue: w.targetValue,
+      entityType: w.entityType,
+      expedienteId: w.expedienteId,
+      baselineIndicators: w.baselineIndicators,
+    });
+    const observed = await collectLiveDomainBaseline(w.targetValue);
+    const res = sqliteVault.evaluateRadarDrift({
+      watchId: w.id,
+      observedIndicators: observed,
+    });
+    await sqliteVault.upsertRadarWatchToD1Safe(d1, res.watch);
+    if (res.alert) {
+      await sqliteVault.saveRadarAlertToD1Safe(d1, res.alert);
+      alertsTriggered++;
+    }
+    scannedCount++;
+  }
+  return { scannedCount, alertsTriggered };
+}
 
 /**
  * Smart IOC Paste-to-Graph Raw Text Ingestor (`POST /api/ingest/raw-text`).

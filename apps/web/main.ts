@@ -418,6 +418,45 @@ function loadPreset(sessionOrExpedienteId: string): void {
 // =============================================================================
 // 4. Left Sidebar: Crisp Vector SVG Entity Palette (107 Standard Entities)
 // =============================================================================
+function centerCameraOnEntity(entityId: EntityID): void {
+  if (!store.dataStore.hasEntity(entityId)) return;
+  const targetPos = store.layoutStore.getPosition(entityId);
+  const cam = graphCanvas.getCameraState();
+  const currentCenterWorld = graphCanvas.screenToWorld(
+    cam.viewportWidth * 0.5,
+    cam.viewportHeight * 0.5
+  );
+  graphCanvas.panBy(
+    (currentCenterWorld.x - targetPos.x) * cam.zoom,
+    (currentCenterWorld.y - targetPos.y) * cam.zoom
+  );
+  selectedLinkId = null;
+  selection.selectInModel([entityId]);
+  syncSceneAndUi(false);
+}
+
+function findCanvasEntitiesMatchingQuery(rawQuery: string): MaltegoEntityData[] {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return [];
+  const matches: MaltegoEntityData[] = [];
+  for (const ent of store.dataStore.getEntities().values()) {
+    const val = getPartPrimaryValue(ent).toLowerCase();
+    const typeLower = ent.typeName.toLowerCase();
+    const notesLower = (ent.notes.value ?? '').toLowerCase();
+    let propMatch = false;
+    for (const [k, v] of ent.properties.values.entries()) {
+      if (k.toLowerCase().includes(q) || String(v ?? '').toLowerCase().includes(q)) {
+        propMatch = true;
+        break;
+      }
+    }
+    if (val.includes(q) || typeLower.includes(q) || notesLower.includes(q) || propMatch) {
+      matches.push(ent);
+    }
+  }
+  return matches;
+}
+
 function renderPalette(): void {
   const query = (document.getElementById('inp-palette-search') as HTMLInputElement).value
     .trim()
@@ -425,6 +464,41 @@ function renderPalette(): void {
   const catFilter = categorySelect.value;
   const listEl = document.getElementById('palette-list')!;
   listEl.innerHTML = '';
+
+  const isLight = themeBridge.getMode() === 'light';
+
+  if (query.length > 0) {
+    const canvasMatches = findCanvasEntitiesMatchingQuery(query);
+    if (canvasMatches.length > 0) {
+      const hdr = document.createElement('div');
+      hdr.className = 'popover-section-label';
+      hdr.style.padding = '4px 8px 2px';
+      hdr.textContent = `En el mapa activo (${canvasMatches.length}) — clic para centrar`;
+      listEl.appendChild(hdr);
+
+      for (const ent of canvasMatches.slice(0, 8)) {
+        const primaryVal = getPartPrimaryValue(ent);
+        const row = document.createElement('div');
+        row.className = 'palette-item';
+        row.style.borderLeft = '2px solid #eab308';
+        row.title = `Centrar cámara y seleccionar "${primaryVal}" en el lienzo`;
+        row.innerHTML = `
+          <div class="palette-icon-well" style="background: rgba(234,179,8,0.14); border: 1px solid rgba(234,179,8,0.45); color: #eab308">
+            🎯
+          </div>
+          <div class="palette-info">
+            <div class="palette-title">${escapeHtml(primaryVal)}</div>
+            <div class="palette-meta">En el lienzo • ${escapeHtml(ent.typeName)}</div>
+          </div>
+        `;
+        row.addEventListener('click', () => {
+          centerCameraOnEntity(ent.id);
+          appendLog(`Cámara centrada en nodo activo "${primaryVal}" (${ent.typeName}).`);
+        });
+        listEl.appendChild(row);
+      }
+    }
+  }
 
   const filtered = STANDARD_ENTITIES_CATALOG.filter((spec) => {
     if (catFilter !== 'ALL' && spec.category !== catFilter) return false;
@@ -437,7 +511,6 @@ function renderPalette(): void {
   });
 
   document.getElementById('lbl-entity-catalog-count')!.textContent = String(filtered.length);
-  const isLight = themeBridge.getMode() === 'light';
 
   for (const spec of filtered) {
     const vis = resolveCategoryVisual(spec.category);
@@ -520,7 +593,30 @@ function getDefaultSampleValue(typeName: string, displayName: string): string {
   }
 }
 
-document.getElementById('inp-palette-search')!.addEventListener('input', renderPalette);
+const inpPaletteSearchEl = document.getElementById('inp-palette-search') as HTMLInputElement;
+inpPaletteSearchEl.addEventListener('input', renderPalette);
+inpPaletteSearchEl.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') {
+    const raw = inpPaletteSearchEl.value.trim();
+    if (!raw) return;
+    const matches = findCanvasEntitiesMatchingQuery(raw);
+    if (matches[0]) {
+      centerCameraOnEntity(matches[0].id);
+      appendLog(
+        `Buscador ⌘K: centrado en "${getPartPrimaryValue(matches[0])}" (${matches[0].typeName}).`
+      );
+    } else if (raw.includes('.') || /^CVE-|^AS\d+/i.test(raw)) {
+      const centerWorld = graphCanvas.screenToWorld(
+        graphCanvas.getCameraState().viewportWidth * 0.5,
+        graphCanvas.getCameraState().viewportHeight * 0.5
+      );
+      const ent = convertTextToEntity(raw, registry);
+      store.addEntity(ent, { x: centerWorld.x, y: centerWorld.y, z: 0 });
+      centerCameraOnEntity(ent.id);
+      appendLog(`Buscador ⌘K: creado y seleccionado IOC "${getPartPrimaryValue(ent)}" (${ent.typeName}).`);
+    }
+  }
+});
 categorySelect.addEventListener('change', renderPalette);
 renderPalette();
 
@@ -770,12 +866,16 @@ function renderInspector(): void {
   const isPinned = store.layoutStore.isPinned(entity.id);
   const primaryValue = getPartPrimaryValue(entity);
 
+  const mainPropKey = registry.getEffectiveMainProperty(entity.typeName);
   const propsRows = Array.from(entity.properties.values.entries())
     .map(
       ([k, v]) => `
       <tr>
         <td>${escapeHtml(k)}</td>
-        <td>${escapeHtml(String(v ?? ''))}</td>
+        <td style="display:flex; gap:4px; align-items:center;">
+          <input type="text" class="insp-prop-input" data-prop-key="${escapeHtml(k)}" value="${escapeHtml(String(v ?? ''))}" style="flex:1; min-width:0; padding:2px 5px; font-size:11px;" />
+          ${k !== mainPropKey ? `<button type="button" class="btn btn-xs btn-quiet" data-prop-del="${escapeHtml(k)}" title="Eliminar propiedad" style="padding:1px 5px;">×</button>` : ''}
+        </td>
       </tr>`
     )
     .join('');
@@ -823,11 +923,61 @@ function renderInspector(): void {
         <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
         <tbody>${propsRows || '<tr><td colspan="2">Sin propiedades</td></tr>'}</tbody>
       </table>
+      <div style="display:flex; gap:4px; margin-top:6px;">
+        <input id="inp-new-prop-key" type="text" placeholder="campo (ej. asn)" style="flex:1; min-width:0; padding:3px 6px; font-size:11px;" />
+        <input id="inp-new-prop-val" type="text" placeholder="valor" style="flex:1; min-width:0; padding:3px 6px; font-size:11px;" />
+        <button id="btn-add-custom-prop" type="button" class="btn btn-xs btn-primary">+ Añadir</button>
+      </div>
     </div>
     <button id="insp-run-all-btn" class="btn btn-primary btn-block">
       Ejecutar pesquisa en entidad
     </button>
   `;
+
+  container.querySelectorAll<HTMLInputElement>('.insp-prop-input').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      const k = inp.getAttribute('data-prop-key');
+      if (!k) return;
+      entity.properties.values.set(k, inp.value);
+      store.updateEntity(entity);
+      syncSceneAndUi(false);
+    });
+  });
+
+  container.querySelectorAll<HTMLButtonElement>('[data-prop-del]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const k = btn.getAttribute('data-prop-del');
+      if (!k) return;
+      entity.properties.values.delete(k);
+      entity.properties.descriptors.delete(k);
+      store.updateEntity(entity);
+      syncSceneAndUi(false);
+    });
+  });
+
+  document.getElementById('btn-add-custom-prop')?.addEventListener('click', () => {
+    const kInp = document.getElementById('inp-new-prop-key') as HTMLInputElement | null;
+    const vInp = document.getElementById('inp-new-prop-val') as HTMLInputElement | null;
+    const key = kInp?.value.trim() || '';
+    const val = vInp?.value.trim() || '';
+    if (!key) return;
+    if (!entity.properties.descriptors.has(key)) {
+      entity.properties.descriptors.set(key, {
+        name: key,
+        displayName: key,
+        type: 'string',
+        nullable: true,
+        hidden: false,
+        readonly: false,
+        specialRoles: [],
+        matchingRule: 'LOOSE',
+      });
+    }
+    entity.properties.values.set(key, val);
+    store.updateEntity(entity);
+    syncSceneAndUi(false);
+    appendLog(`Propiedad "${key}" = "${val}" añadida a ${getPartPrimaryValue(entity)}.`);
+  });
 
   document.getElementById('insp-val')?.addEventListener('change', (e) => {
     const nextVal = (e.target as HTMLInputElement).value;
@@ -1435,9 +1585,20 @@ canvasEl.addEventListener('touchend', () => {
 canvasEl.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const screenPt = getCanvasMousePos(e);
+  const worldPt = graphCanvas.screenToWorld(screenPt.x, screenPt.y);
   const hitId = graphCanvas.selectAtScreenPoint(screenPt.x, screenPt.y, false);
   if (!hitId) {
     hideContextMenu();
+    const hitEdgeId = hitTestEdgeAtWorldPoint(worldPt);
+    if (hitEdgeId && store.dataStore.hasLink(hitEdgeId)) {
+      selectedLinkId = hitEdgeId;
+      selection.clearSelection();
+      syncSceneAndUi(false);
+      (document.getElementById('insp-link-label') as HTMLInputElement | null)?.focus();
+      appendLog(
+        'Enlace seleccionado en el Inspector derecho (edita etiqueta, color, invierte dirección o elimínalo).'
+      );
+    }
     return;
   }
 
@@ -1594,10 +1755,19 @@ document.getElementById('btn-fit')!.addEventListener('click', () => {
   syncSceneAndUi(false);
 });
 
+const LOCAL_AUTOSAVE_PREFIX = 'cangrejo_graph_autosave_';
+
 document.getElementById('btn-clear')!.addEventListener('click', () => {
   store.clear();
   selection.clearSelection();
+  selectedLinkId = null;
   store.undoRedoManager.clear();
+  try {
+    const activeRoom = mcpState.sessionId.trim() || 'expediente-apt29';
+    localStorage.removeItem(`${LOCAL_AUTOSAVE_PREFIX}${activeRoom}`);
+  } catch {
+    // Ignore localStorage quota/privacy errors
+  }
   syncSceneAndUi(false);
   appendLog('Grafo limpiado.');
 });
@@ -2071,6 +2241,26 @@ document.getElementById('btn-export-dossier')?.addEventListener('click', async (
   }
 });
 
+document.getElementById('btn-export-png')?.addEventListener('click', () => {
+  try {
+    renderFrame();
+    const dataUrl = canvasEl.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    const roomSlug = (mcpState.sessionId.trim() || 'expediente-apt29').replace(
+      /[^a-zA-Z0-9_-]/g,
+      '_'
+    );
+    a.download = `cangrejo_grafo_${roomSlug}_${Date.now()}.png`;
+    a.click();
+    appendLog(
+      `Captura de alta resolución PNG exportada (${store.entityCount} entidades, ${store.linkCount} enlaces).`
+    );
+  } catch (err) {
+    appendLog(`Error exportando captura PNG: ${String(err)}`);
+  }
+});
+
 document.getElementById('btn-vault-save')?.addEventListener('click', async () => {
   try {
     const payload = serializeCurrentStore();
@@ -2239,8 +2429,18 @@ function applyRemoteSessionUiEvent(ev: {
 }
 
 store.subscribe((mods) => {
-  if (isApplyingRemoteDelta) return;
   const activeRoom = mcpState.sessionId.trim() || 'expediente-apt29';
+  try {
+    if (store.entityCount > 0) {
+      localStorage.setItem(
+        `${LOCAL_AUTOSAVE_PREFIX}${activeRoom}`,
+        JSON.stringify(serializeCurrentStore())
+      );
+    }
+  } catch {
+    // Ignore localStorage quota/privacy errors
+  }
+  if (isApplyingRemoteDelta) return;
   const delta = clientCollabHub.serializeModsToDelta(
     activeRoom,
     'browser-workstation',
@@ -2318,6 +2518,25 @@ async function syncActiveMcpSessionFromServer(targetRoomId?: string): Promise<vo
         syncSceneAndUi(false);
       }
     } else {
+      try {
+        const localSaved = localStorage.getItem(`${LOCAL_AUTOSAVE_PREFIX}${roomId}`);
+        if (localSaved) {
+          const parsedLocal = JSON.parse(localSaved) as {
+            entities?: SerializedGraphEntityItem[];
+            links?: SerializedGraphLinkItem[];
+          };
+          if (Array.isArray(parsedLocal.entities) && parsedLocal.entities.length > 0) {
+            isApplyingRemoteDelta = true;
+            try {
+              hydrateStoreFromSerialized(parsedLocal.entities, parsedLocal.links ?? []);
+            } finally {
+              isApplyingRemoteDelta = false;
+            }
+          }
+        }
+      } catch {
+        // Ignore corrupted local autosave
+      }
       syncSceneAndUi(false);
     }
 

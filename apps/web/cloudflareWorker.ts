@@ -3,7 +3,7 @@ import type {
   CloudflareR2BucketLike,
 } from '../../packages/database-d1/src/index.js';
 import type { CloudflareAiBindingLike } from '../../packages/transforms/src/index.js';
-import { cangrejoHonoApp } from './honoApp.js';
+import { cangrejoHonoApp, runScheduledRadarScan } from './honoApp.js';
 
 export interface DurableObjectIdLike {
   toString(): string;
@@ -115,6 +115,18 @@ export default {
         },
         { status: 500 }
       );
+    }
+  },
+  async scheduled(
+    _controller: unknown,
+    env: CangrejoCloudflareEnv,
+    ctx?: CloudflareExecutionContextLike
+  ): Promise<void> {
+    const promise = runScheduledRadarScan(env.DB);
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(promise);
+    } else {
+      await promise;
     }
   },
 };

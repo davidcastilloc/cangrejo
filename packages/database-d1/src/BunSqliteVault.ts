@@ -1571,6 +1571,44 @@ export class BunSqliteVault {
           )`
         )
         .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_provider_keys (
+            provider TEXT PRIMARY KEY,
+            api_key TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+          )`
+        )
+        .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_radar_watches (
+            id TEXT PRIMARY KEY,
+            target_value TEXT NOT NULL,
+            entity_type TEXT NOT NULL DEFAULT 'maltego.Domain',
+            expediente_id TEXT NOT NULL DEFAULT 'expediente-apt29',
+            baseline_json TEXT NOT NULL,
+            baseline_digest_hex TEXT NOT NULL,
+            drift_count INTEGER NOT NULL DEFAULT 0,
+            last_checked_at INTEGER NOT NULL
+          )`
+        )
+        .run();
+      await d1
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_radar_alerts (
+            id TEXT PRIMARY KEY,
+            watch_id TEXT NOT NULL,
+            target_value TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            added_json TEXT NOT NULL,
+            removed_json TEXT NOT NULL,
+            baseline_digest_hex TEXT NOT NULL,
+            current_digest_hex TEXT NOT NULL,
+            detected_at INTEGER NOT NULL
+          )`
+        )
+        .run();
     } catch {
       // Ignore schema bootstrap errors on read-only or pre-migrated D1 instances
     }
@@ -1722,6 +1760,226 @@ export class BunSqliteVault {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  public async setProviderApiKeyToD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    provider: string,
+    apiKey: string
+  ): Promise<boolean> {
+    if (!d1 || typeof d1.prepare !== 'function') return false;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      await d1
+        .prepare(
+          `INSERT INTO cangrejo_provider_keys (provider, api_key, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(provider) DO UPDATE SET
+             api_key = excluded.api_key,
+             updated_at = excluded.updated_at`
+        )
+        .bind(provider.trim().toLowerCase(), apiKey.trim(), Date.now())
+        .run();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public async getProviderApiKeyFromD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    provider: string
+  ): Promise<string | null> {
+    if (!d1 || typeof d1.prepare !== 'function') return null;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      const row = await d1
+        .prepare(`SELECT api_key FROM cangrejo_provider_keys WHERE provider = ?`)
+        .bind(provider.trim().toLowerCase())
+        .first<{ api_key: string }>();
+      return row?.api_key ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async listConfiguredProvidersFromD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined
+  ): Promise<ProviderKeySummary[] | null> {
+    if (!d1 || typeof d1.prepare !== 'function') return null;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      const res = await d1
+        .prepare(
+          `SELECT provider, api_key, updated_at
+           FROM cangrejo_provider_keys
+           ORDER BY provider ASC`
+        )
+        .all<{ provider: string; api_key: string; updated_at: number }>();
+      const rows = Array.isArray(res?.results) ? res.results : [];
+      return rows.map((r) => ({
+        provider: r.provider,
+        maskedKey:
+          r.api_key.length >= 8
+            ? `${r.api_key.slice(0, 4)}••••${r.api_key.slice(-4)}`
+            : `${r.api_key.slice(0, 2)}••••`,
+        updatedAt: Number(r.updated_at ?? Date.now()),
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  public async upsertRadarWatchToD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    watch: RadarWatchRecord
+  ): Promise<boolean> {
+    if (!d1 || typeof d1.prepare !== 'function') return false;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      await d1
+        .prepare(
+          `INSERT INTO cangrejo_radar_watches (
+             id, target_value, entity_type, expediente_id, baseline_json, baseline_digest_hex, drift_count, last_checked_at
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             target_value = excluded.target_value,
+             entity_type = excluded.entity_type,
+             expediente_id = excluded.expediente_id,
+             baseline_json = excluded.baseline_json,
+             baseline_digest_hex = excluded.baseline_digest_hex,
+             drift_count = excluded.drift_count,
+             last_checked_at = excluded.last_checked_at`
+        )
+        .bind(
+          watch.id,
+          watch.targetValue,
+          watch.entityType,
+          watch.expedienteId,
+          JSON.stringify(watch.baselineIndicators),
+          watch.baselineDigestHex,
+          watch.driftCount,
+          watch.lastCheckedAt
+        )
+        .run();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public async listRadarWatchesFromD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined
+  ): Promise<RadarWatchRecord[] | null> {
+    if (!d1 || typeof d1.prepare !== 'function') return null;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      const res = await d1
+        .prepare(
+          `SELECT id, target_value, entity_type, expediente_id, baseline_json, baseline_digest_hex, drift_count, last_checked_at
+           FROM cangrejo_radar_watches
+           ORDER BY last_checked_at DESC`
+        )
+        .all<{
+          id: string;
+          target_value: string;
+          entity_type: string;
+          expediente_id: string;
+          baseline_json: string;
+          baseline_digest_hex: string;
+          drift_count: number;
+          last_checked_at: number;
+        }>();
+      const rows = Array.isArray(res?.results) ? res.results : [];
+      return rows.map((r) => ({
+        id: r.id,
+        targetValue: r.target_value,
+        entityType: r.entity_type,
+        expedienteId: r.expediente_id,
+        baselineIndicators: JSON.parse(r.baseline_json) as string[],
+        baselineDigestHex: r.baseline_digest_hex,
+        driftCount: Number(r.drift_count ?? 0),
+        lastCheckedAt: Number(r.last_checked_at ?? Date.now()),
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  public async saveRadarAlertToD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    alert: RadarDriftAlertRecord
+  ): Promise<boolean> {
+    if (!d1 || typeof d1.prepare !== 'function') return false;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      await d1
+        .prepare(
+          `INSERT INTO cangrejo_radar_alerts (
+             id, watch_id, target_value, severity, added_json, removed_json, baseline_digest_hex, current_digest_hex, detected_at
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          alert.id,
+          alert.watchId,
+          alert.targetValue,
+          alert.severity,
+          JSON.stringify(alert.addedIndicators),
+          JSON.stringify(alert.removedIndicators),
+          alert.baselineDigestHex,
+          alert.currentDigestHex,
+          alert.detectedAt
+        )
+        .run();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public async listRadarAlertsFromD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    limit = 25
+  ): Promise<RadarDriftAlertRecord[] | null> {
+    if (!d1 || typeof d1.prepare !== 'function') return null;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      const res = await d1
+        .prepare(
+          `SELECT id, watch_id, target_value, severity, added_json, removed_json, baseline_digest_hex, current_digest_hex, detected_at
+           FROM cangrejo_radar_alerts
+           ORDER BY detected_at DESC
+           LIMIT ?`
+        )
+        .bind(limit)
+        .all<{
+          id: string;
+          watch_id: string;
+          target_value: string;
+          severity: 'CRITICO' | 'ALTO' | 'INFO';
+          added_json: string;
+          removed_json: string;
+          baseline_digest_hex: string;
+          current_digest_hex: string;
+          detected_at: number;
+        }>();
+      const rows = Array.isArray(res?.results) ? res.results : [];
+      return rows.map((r) => ({
+        id: r.id,
+        watchId: r.watch_id,
+        targetValue: r.target_value,
+        severity: r.severity,
+        addedIndicators: JSON.parse(r.added_json) as string[],
+        removedIndicators: JSON.parse(r.removed_json) as string[],
+        baselineDigestHex: r.baseline_digest_hex,
+        currentDigestHex: r.current_digest_hex,
+        detectedAt: Number(r.detected_at ?? Date.now()),
+      }));
+    } catch {
+      return null;
     }
   }
 
