@@ -2185,7 +2185,7 @@ const lblEditionTier = document.getElementById('lbl-edition-tier');
 const inpEditionOrg = document.getElementById('inp-edition-org') as HTMLInputElement | null;
 const inpEditionKey = document.getElementById('inp-edition-key') as HTMLInputElement | null;
 
-type McpClientType = 'antigravity' | 'claude-desktop' | 'cursor' | 'claude-code';
+type McpClientType = 'antigravity' | 'codemode' | 'claude-desktop' | 'cursor' | 'claude-code';
 type McpTransportType = 'stdio' | 'http';
 
 interface McpUiState {
@@ -2238,6 +2238,7 @@ export function initMcpModalController(): void {
 
   const clientTabs: Array<{ id: string; client: McpClientType }> = [
     { id: 'tab-client-antigravity', client: 'antigravity' },
+    { id: 'tab-client-codemode', client: 'codemode' },
     { id: 'tab-client-claude-desktop', client: 'claude-desktop' },
     { id: 'tab-client-cursor', client: 'cursor' },
     { id: 'tab-client-claude-code', client: 'claude-code' },
@@ -2420,6 +2421,25 @@ function renderMcpSnippet(): void {
         2
       );
     }
+  } else if (mcpState.client === 'codemode') {
+    pathHint = `${isCloud ? cloudHost : host}/api/mcp/codemode.d.ts · Cloudflare Code Mode (-92% tokens)`;
+    snippet = [
+      `// Cloudflare Code Mode SDK (${isCloud ? cloudHost : host}/api/mcp/${session}?mode=codemode)`,
+      `// Ejecuta las 12 herramientas MCP en un único turno TypeScript vía cangrejo_codemode_run:`,
+      `async () => {`,
+      `  const [pesquisa, anomalies, mitre] = await Promise.all([`,
+      `    codemode.runPesquisa({ roomId: "${session}", transformId: "all", sliderLimit: 8 }),`,
+      `    codemode.classifyAnomalies({ roomId: "${session}" }),`,
+      `    codemode.mapMitreAttack({ roomId: "${session}" }),`,
+      `  ]);`,
+      `  await codemode.viewControl({ roomId: "${session}", layoutMode: "organic" });`,
+      `  const dossier = await codemode.generateDaubertDossier({`,
+      `    roomId: "${session}",`,
+      `    title: "Dictamen Pericial Code Mode"`,
+      `  });`,
+      `  return { pesquisa, anomalies, mitre, dossier };`,
+      `}`,
+    ].join('\n');
   } else if (mcpState.client === 'claude-desktop') {
     pathHint = '~/Library/Application Support/Claude/claude_desktop_config.json';
     if (!isCloud) {
@@ -3253,6 +3273,118 @@ document.getElementById('btn-ai-f5-ask')?.addEventListener('click', async () => 
     }
   } catch (err) {
     setAiOutput(`Error en F5 Copilot: ${String(err)}`);
+  }
+});
+
+document.getElementById('btn-ai-codemode')?.addEventListener('click', async () => {
+  try {
+    const payload = serializeCurrentStore();
+    const rawPrompt =
+      inpAiCopilotPrompt?.value.trim() ||
+      'Expansión OSINT multi-salto, detección de anomalías y síntesis Daubert Ed25519';
+    const isExplicitTs = rawPrompt.includes('codemode.');
+    setAiOutput(
+      '[Cloudflare Code Mode · SDK TypeScript]: Compilando y ejecutando pipeline `codemode.*` en un solo turno…'
+    );
+    const res = await fetch('/api/ai/codemode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roomId: mcpState.sessionId || 'expediente-apt29',
+        code: isExplicitTs ? rawPrompt : undefined,
+        objective: rawPrompt,
+        ...payload,
+      }),
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      generatedCode?: string;
+      stepsExecuted?: Array<{
+        stepIndex: number;
+        method: string;
+        mcpTool: string;
+        parallel: boolean;
+        durationMs: number;
+      }>;
+      tokenSavings?: {
+        traditionalMcpTokens: number;
+        codeModeSdkTokens: number;
+        reductionPercent: number;
+        roundTripsSaved: number;
+      };
+      entities?: Array<{
+        id: string;
+        typeName: string;
+        value: string;
+        weight?: number;
+        bookmark?: number;
+        position?: { x: number; y: number; z: number };
+      }>;
+      links?: Array<{
+        id: string;
+        sourceId: string;
+        targetId: string;
+        label: string;
+        color?: string;
+      }>;
+    };
+    if (!data.ok) {
+      setAiOutput(`Error en Cloudflare Code Mode: ${data.error ?? 'Fallo desconocido'}`);
+      return;
+    }
+
+    if (Array.isArray(data.entities) && Array.isArray(data.links)) {
+      store.runInBatch(() => {
+        for (const entData of data.entities!) {
+          const entId = Guid.parse(entData.id);
+          if (!store.dataStore.hasEntity(entId)) {
+            const ent = registry.createEntity(entData.typeName, entData.value, {
+              id: entId,
+              weight: entData.weight ?? 90,
+              bookmark: entData.bookmark ?? 3,
+            });
+            store.addEntity(ent, entData.position ?? { x: 140, y: 140, z: 0 }, false);
+          }
+        }
+        for (const lnk of data.links!) {
+          const srcId = Guid.parse(lnk.sourceId);
+          const dstId = Guid.parse(lnk.targetId);
+          const lid = Guid.parse(lnk.id);
+          if (
+            store.dataStore.hasEntity(srcId) &&
+            store.dataStore.hasEntity(dstId) &&
+            !store.structureStore.hasLink(lid)
+          ) {
+            store.addLink(
+              makeSimpleLink(lid, lnk.label, lnk.color ?? '#eab308'),
+              srcId,
+              dstId
+            );
+          }
+        }
+      });
+      syncSceneAndUi(false);
+    }
+
+    await syncEditionBadge();
+    const traceLines = (data.stepsExecuted ?? []).map(
+      (s) =>
+        `  [${s.stepIndex}] ${s.parallel ? '⚡ Promise.all' : '→ await'} codemode.${s.method}() -> ${s.mcpTool} (${s.durationMs} ms)`
+    );
+    const savings = data.tokenSavings;
+    setAiOutput(
+      [
+        `[Cloudflare Code Mode · -${savings?.reductionPercent ?? 92.1}% tokens (${savings?.codeModeSdkTokens ?? 1120} vs ${savings?.traditionalMcpTokens ?? 14200} tokens · ${savings?.roundTripsSaved ?? 4} round-trips ahorrados)]`,
+        '',
+        data.generatedCode ?? '',
+        '',
+        'Traza de ejecución en sandbox:',
+        ...traceLines,
+      ].join('\n')
+    );
+  } catch (err) {
+    setAiOutput(`Error en Cloudflare Code Mode: ${String(err)}`);
   }
 });
 

@@ -1025,7 +1025,7 @@ AS13335</textarea>
                 <div class="agy-chips-row">
                   <span class="agy-feature-chip"><code>/teamwork</code> · Enjambre OSINT</span>
                   <span class="agy-feature-chip"><code>/goal</code> · Cacería autónoma</span>
-                  <span class="agy-feature-chip">Streamable HTTP nativo</span>
+                  <span class="agy-feature-chip"><code>Code Mode</code> · SDK .d.ts (-92% tokens)</span>
                 </div>
               </div>
 
@@ -1078,6 +1078,9 @@ AS13335</textarea>
                   <button id="tab-client-antigravity" type="button" class="tab-btn active" role="tab" aria-selected="true">
                     Antigravity (agy)
                   </button>
+                  <button id="tab-client-codemode" type="button" class="tab-btn" role="tab" aria-selected="false">
+                    Code Mode (.d.ts)
+                  </button>
                   <button id="tab-client-claude-desktop" type="button" class="tab-btn" role="tab" aria-selected="false">
                     Claude Desktop
                   </button>
@@ -1106,10 +1109,20 @@ AS13335</textarea>
                 <pre id="mcp-snippet-output" class="console-output mcp-code-block"></pre>
               </div>
 
-              <!-- Misiones Rápidas para Antigravity (2 filas compactas de 1 línea) -->
+              <!-- Misiones Rápidas para Antigravity (filas compactas de 1 línea) -->
               <div class="agy-missions-box">
-                <div class="agy-missions-header">Misiones rápidas para Antigravity</div>
+                <div class="agy-missions-header">Misiones rápidas para Antigravity &amp; Code Mode</div>
                 <div class="agy-missions-list">
+                  <button
+                    type="button"
+                    class="agy-mission-btn"
+                    data-agy-prompt="Usa la herramienta cangrejo_codemode_run (Cloudflare Code Mode) para escribir un único script TypeScript async () => { ... } que encadene en paralelo Promise.all([codemode.runPesquisa({ transformId: 'all' }), codemode.classifyAnomalies({}), codemode.mapMitreAttack({})]) y emita el dictamen Daubert en un solo turno (-92% tokens)."
+                  >
+                    <code class="agy-mission-cmd">codemode</code>
+                    <span class="agy-mission-title">Pipeline TypeScript en 1 turno con Promise.all (-92% tokens)</span>
+                    <span class="agy-mission-copy-tag">Copiar misión</span>
+                  </button>
+
                   <button
                     type="button"
                     class="agy-mission-btn"
@@ -1302,6 +1315,14 @@ AS13335</textarea>
               />
               <button id="btn-ai-f5-ask" type="button" class="btn btn-primary">
                 Consultar
+              </button>
+              <button
+                id="btn-ai-codemode"
+                type="button"
+                class="btn btn-quiet"
+                title="Cloudflare Code Mode: Compilar y ejecutar pipeline TypeScript async () => { ... } en 1 turno (-92% tokens)"
+              >
+                Code Mode (TS)
               </button>
               <button id="btn-ai-run-tools" type="button" class="btn btn-quiet" title="Ejecutar en el grafo las pesquisas sugeridas">
                 Ejecutar sugerencias

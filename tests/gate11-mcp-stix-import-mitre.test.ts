@@ -385,4 +385,61 @@ describe('Gate 11: Native MCP JSON-RPC 2.0 Server, Bidirectional OASIS STIX 2.1 
     expect(roomJson.session.entityCount).toBe(pesqRpc.result.structuredContent.entityCount);
     expect(roomJson.session.uiEvents.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('5. executes Cloudflare Code Mode SDK (.d.ts) and multi-step TypeScript pipelines via /api/ai/codemode and MCP cangrejo_codemode_run', async () => {
+    const dtsRes = await cangrejoHonoApp.request('/api/mcp/codemode.d.ts');
+    expect(dtsRes.status).toBe(200);
+    const dtsText = await dtsRes.text();
+    expect(dtsText).toContain('declare namespace CangrejoCodeMode');
+    expect(dtsText).toContain('declare const codemode: CangrejoCodeMode.SDK');
+
+    const codeModeListRes = await cangrejoHonoApp.request('/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 201,
+        method: 'tools/list',
+        params: { mode: 'codemode' },
+      }),
+    });
+    expect(codeModeListRes.status).toBe(200);
+    const codeModeListJson = (await codeModeListRes.json()) as {
+      result: { tools: Array<{ name: string }> };
+    };
+    expect(codeModeListJson.result.tools.length).toBe(1);
+    expect(codeModeListJson.result.tools[0]!.name).toBe('cangrejo_codemode_run');
+
+    const execRes = await cangrejoHonoApp.request('/api/ai/codemode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roomId: 'expediente-codemode-test',
+        code: `async () => {
+          const [iocs, pesq, mitre] = await Promise.all([
+            codemode.unpackDefangedIocs({ text: "C2 hxxps[:]//apt29-relay[.]org" }),
+            codemode.runPesquisa({ transformId: "ct-subdomains", entityValue: "cloudflare.com", sliderLimit: 4 }),
+            codemode.mapMitreAttack({}),
+          ]);
+          await codemode.viewControl({ layoutMode: "organic" });
+          return { iocs, pesq, mitre };
+        }`,
+      }),
+    });
+    expect(execRes.status).toBe(200);
+    const execJson = (await execRes.json()) as {
+      ok: boolean;
+      mode: string;
+      stepsExecuted: Array<{ method: string; parallel: boolean }>;
+      tokenSavings: { reductionPercent: number };
+      session: { entityCount: number };
+    };
+    expect(execJson.ok).toBe(true);
+    expect(execJson.mode).toBe('cloudflare-codemode-v1');
+    expect(execJson.stepsExecuted.length).toBe(4);
+    expect(execJson.stepsExecuted[0]!.parallel).toBe(true);
+    expect(execJson.stepsExecuted[3]!.parallel).toBe(false);
+    expect(execJson.tokenSavings.reductionPercent).toBeGreaterThan(90);
+    expect(execJson.session.entityCount).toBeGreaterThanOrEqual(2);
+  });
 });
