@@ -190,8 +190,8 @@
     flex-wrap: nowrap;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 0 14px;
+    gap: 8px;
+    padding: 0 10px;
     background: var(--surface-panel);
     border-bottom: 1px solid var(--border-subtle);
     overflow-x: clip;
@@ -204,15 +204,16 @@
   .ribbon-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     flex-wrap: nowrap;
     flex-shrink: 0;
   }
 
   .ribbon-center {
-    flex: 1;
+    flex: 1 1 180px;
     justify-content: center;
-    min-width: 0;
+    min-width: 140px;
+    max-width: 300px;
   }
 
   .workstation {
@@ -294,10 +295,10 @@
     color: var(--text-primary);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    padding: 0 8px;
+    padding: 0 6px;
     font-size: 12px;
     font-weight: 500;
-    max-width: 210px;
+    max-width: 165px;
     text-overflow: ellipsis;
     cursor: pointer;
     transition: border-color 120ms ease, background-color 120ms ease;
@@ -312,18 +313,25 @@
   .ribbon-command-bar {
     height: 30px;
     width: 100%;
-    max-width: 340px;
-    padding: 0 10px;
+    min-width: 0;
+    max-width: 300px;
+    padding: 0 9px;
     background: var(--surface-sunken);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     font-size: 12px;
+    overflow: hidden;
     cursor: pointer;
     transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+  }
+
+  .ribbon-command-bar > svg,
+  .ribbon-command-bar > .kbd-hint {
+    flex-shrink: 0;
   }
 
   .ribbon-command-bar:hover {
@@ -589,6 +597,28 @@
 
   html[data-theme='light'] .theme-icon-sun {
     display: none;
+  }
+
+  /* Responsive Laptop Compaction (1024px–1440px): prevents .ribbon overflow & search bar crushing */
+  @media (max-width: 1440px) {
+    .account-prefix-label,
+    .collab-presence-label {
+      display: none;
+    }
+
+    .ribbon-select {
+      max-width: 148px;
+    }
+  }
+
+  @media (max-width: 1240px) {
+    #collab-presence-badge {
+      display: none;
+    }
+
+    .ribbon-center {
+      min-width: 115px;
+    }
   }
 
   /* Declarative Popover Menus (HTML Popover API + Polyfill Selector Support) */

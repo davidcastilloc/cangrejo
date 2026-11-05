@@ -1761,7 +1761,7 @@ async function syncActiveMcpSessionFromServer(targetRoomId?: string): Promise<vo
           if (!existingValues.has(exp.id)) {
             const opt = document.createElement('option');
             opt.value = exp.id;
-            opt.textContent = `Expediente: ${exp.title} (${exp.id})`;
+            opt.textContent = `MCP · ${exp.id}`;
             selEl.appendChild(opt);
           }
         }
