@@ -806,8 +806,13 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: grab;
+    user-select: none;
     transition: background-color 100ms ease, border-color 100ms ease;
+  }
+
+  .palette-item:active {
+    cursor: grabbing;
   }
 
   .palette-item:hover {

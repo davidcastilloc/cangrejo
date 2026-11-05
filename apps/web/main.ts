@@ -122,6 +122,39 @@ let lassoPolygonWorld: Point2D[] = [];
 let linkSourceEntityId: EntityID | null = null;
 let linkPreviewWorld: Point2D | null = null;
 let contextTargetEntityId: EntityID | null = null;
+let draggedPaletteSpec: { id: string; displayName: string } | null = null;
+
+type McpClientType = 'antigravity' | 'codemode' | 'claude-desktop' | 'cursor' | 'claude-code';
+type McpTransportType = 'stdio' | 'http';
+
+interface McpUiState {
+  client: McpClientType;
+  transport: McpTransportType;
+  editionTier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
+  licenseKey: string | null;
+  sessionId: string;
+}
+
+const MCP_STORAGE_TOKEN_KEY = 'cangrejo_mcp_auth_token';
+const AUTH_SESSION_STORAGE_KEY = 'cangrejo_auth_session_token';
+
+const mcpState: McpUiState = {
+  client: 'antigravity',
+  transport: 'http',
+  editionTier: 'COMMUNITY',
+  licenseKey: null,
+  sessionId: 'expediente-apt29',
+};
+
+type MobileSuperAppView = 'launchpad' | 'radar' | 'scanner';
+let activeMobileView: MobileSuperAppView = 'launchpad';
+
+const goldenPathEntityIds = new Set<string>();
+const goldenPathLinkIds = new Set<string>();
+const clientCollabHub = new CollaborationRoomHub();
+let isApplyingRemoteDelta = false;
+let lastProcessedUiSeq = 0;
+let activeMcpEventSource: EventSource | null = null;
 
 // Console state
 let activeConsoleTab: 'log' | 'xml' | 'json' = 'log';
@@ -411,7 +444,8 @@ function renderPalette(): void {
     row.className = 'palette-item';
     row.setAttribute('role', 'listitem');
     row.setAttribute('tabindex', '0');
-    row.title = `Añadir ${spec.displayName} (${spec.id}) al grafo`;
+    row.draggable = true;
+    row.title = `Haz clic o arrastra al lienzo para añadir ${spec.displayName} (${spec.id})`;
     row.innerHTML = `
       <div class="palette-icon-well" style="background: ${catColor}18; border: 1px solid ${catColor}45; color: ${catColor}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="${vis.svgPath}"/></svg>
@@ -421,6 +455,14 @@ function renderPalette(): void {
         <div class="palette-meta">${escapeHtml(spec.id)} • ${escapeHtml(spec.category)}</div>
       </div>
     `;
+    const spawnAtWorld = (worldX: number, worldY: number) => {
+      const sampleVal = getDefaultSampleValue(spec.id, spec.displayName);
+      const created = registry.createEntity(spec.id, sampleVal, { weight: 85 });
+      store.addEntity(created, { x: worldX, y: worldY, z: 0 });
+      selection.selectInModel([created.id]);
+      syncSceneAndUi(false);
+      appendLog(`Añadida entidad ${spec.displayName} (${sampleVal}) al grafo.`);
+    };
     const spawnFn = () => {
       const centerWorld = graphCanvas.screenToWorld(
         graphCanvas.getCameraState().viewportWidth * 0.5,
@@ -428,14 +470,22 @@ function renderPalette(): void {
       );
       const jitterX = centerWorld.x + (Math.random() - 0.5) * 180;
       const jitterY = centerWorld.y + (Math.random() - 0.5) * 160;
-      const sampleVal = getDefaultSampleValue(spec.id, spec.displayName);
-
-      const created = registry.createEntity(spec.id, sampleVal, { weight: 85 });
-      store.addEntity(created, { x: jitterX, y: jitterY, z: 0 });
-      selection.selectInModel([created.id]);
-      syncSceneAndUi(false);
-      appendLog(`Añadida entidad ${spec.displayName} (${sampleVal}) al grafo.`);
+      spawnAtWorld(jitterX, jitterY);
     };
+    row.addEventListener('dragstart', (ev) => {
+      draggedPaletteSpec = { id: spec.id, displayName: spec.displayName };
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = 'copy';
+        ev.dataTransfer.setData(
+          'application/x-cangrejo-entity',
+          JSON.stringify(draggedPaletteSpec)
+        );
+        ev.dataTransfer.setData('text/plain', spec.id);
+      }
+    });
+    row.addEventListener('dragend', () => {
+      draggedPaletteSpec = null;
+    });
     row.addEventListener('click', spawnFn);
     row.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' || ev.key === ' ') {
@@ -854,6 +904,50 @@ function getCanvasMousePos(e: MouseEvent): Point2D {
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
+canvasEl.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy';
+  }
+});
+
+canvasEl.addEventListener('drop', (e) => {
+  e.preventDefault();
+  hideContextMenu();
+  const screenPt = getCanvasMousePos(e);
+  const worldPt = graphCanvas.screenToWorld(screenPt.x, screenPt.y);
+
+  let specToSpawn = draggedPaletteSpec;
+  if (!specToSpawn && e.dataTransfer) {
+    const rawJson = e.dataTransfer.getData('application/x-cangrejo-entity');
+    if (rawJson) {
+      try {
+        specToSpawn = JSON.parse(rawJson) as { id: string; displayName: string };
+      } catch {
+        // Fallback below
+      }
+    }
+    if (!specToSpawn) {
+      const plainId = e.dataTransfer.getData('text/plain').trim();
+      const found = STANDARD_ENTITIES_CATALOG.find((s) => s.id === plainId);
+      if (found) {
+        specToSpawn = { id: found.id, displayName: found.displayName };
+      }
+    }
+  }
+  draggedPaletteSpec = null;
+  if (!specToSpawn) return;
+
+  const sampleVal = getDefaultSampleValue(specToSpawn.id, specToSpawn.displayName);
+  const created = registry.createEntity(specToSpawn.id, sampleVal, { weight: 85 });
+  store.addEntity(created, { x: worldPt.x, y: worldPt.y, z: 0 });
+  selection.selectInModel([created.id]);
+  syncSceneAndUi(false);
+  appendLog(
+    `Añadida entidad ${specToSpawn.displayName} (${sampleVal}) en (${Math.round(worldPt.x)}, ${Math.round(worldPt.y)}).`
+  );
+});
+
 canvasEl.addEventListener('mousedown', (e) => {
   hideContextMenu();
   const screenPt = getCanvasMousePos(e);
@@ -865,7 +959,28 @@ canvasEl.addEventListener('mousedown', (e) => {
 
   const hitId = graphCanvas.selectAtScreenPoint(screenPt.x, screenPt.y, e.shiftKey);
 
-  if (currentTool === 'link') {
+  // If a click-to-click link is already active and the user clicks a second node, complete the link immediately
+  if (linkSourceEntityId) {
+    if (
+      hitId &&
+      !hitId.equals(linkSourceEntityId) &&
+      store.dataStore.hasEntity(linkSourceEntityId) &&
+      store.dataStore.hasEntity(hitId)
+    ) {
+      store.addLink(
+        makeSimpleLink(Guid.generate(), 'connected to', '#3B82F6'),
+        linkSourceEntityId,
+        hitId
+      );
+      appendLog('Creado enlace dirigido manual entre las dos entidades.');
+    }
+    linkSourceEntityId = null;
+    linkPreviewWorld = null;
+    syncSceneAndUi(false);
+    return;
+  }
+
+  if (currentTool === 'link' || e.altKey) {
     if (hitId && store.dataStore.hasEntity(hitId)) {
       linkSourceEntityId = hitId;
       linkPreviewWorld = worldPt;
@@ -984,10 +1099,18 @@ window.addEventListener('mouseup', (e) => {
         targetHit
       );
       appendLog('Creado enlace dirigido manual entre las dos entidades.');
+      linkSourceEntityId = null;
+      linkPreviewWorld = null;
+      syncSceneAndUi(false);
+    } else if (!targetHit) {
+      // Released on empty space -> cancel drag link
+      linkSourceEntityId = null;
+      linkPreviewWorld = null;
+      syncSceneAndUi(false);
+    } else {
+      // Released on the same source node -> keep linkSourceEntityId active for Click-then-Click linking!
+      syncSceneAndUi(false);
     }
-    linkSourceEntityId = null;
-    linkPreviewWorld = null;
-    syncSceneAndUi(false);
   }
 });
 
@@ -1134,6 +1257,15 @@ document.querySelectorAll('#context-menu [data-transform]').forEach((btn) => {
       void executeTransformOnEntity(ent, transformId);
     }
   });
+});
+
+document.getElementById('ctx-start-link')?.addEventListener('click', () => {
+  hideContextMenu();
+  if (!contextTargetEntityId || !store.dataStore.hasEntity(contextTargetEntityId)) return;
+  linkSourceEntityId = contextTargetEntityId;
+  const pos = store.layoutStore.getPosition(contextTargetEntityId);
+  linkPreviewWorld = { x: pos.x, y: pos.y };
+  appendLog('Haz clic sobre otra entidad del lienzo para completar el enlace dirigido.');
 });
 
 document.getElementById('ctx-pin-toggle')!.addEventListener('click', () => {
@@ -1489,9 +1621,6 @@ document.getElementById('btn-encrypt-mtgj')!.addEventListener('click', async () 
   );
 });
 
-const goldenPathEntityIds = new Set<string>();
-const goldenPathLinkIds = new Set<string>();
-
 document.getElementById('btn-forensic-analytics')?.addEventListener('click', () => {
   goldenPathEntityIds.clear();
   goldenPathLinkIds.clear();
@@ -1685,11 +1814,6 @@ document.getElementById('btn-decrypt-mtgj')?.addEventListener('click', async () 
     appendLog(`Primero cifra un sobre con "Bóveda Cero .cgrj" antes de descifrar (${String(err)}).`);
   }
 });
-
-const clientCollabHub = new CollaborationRoomHub();
-let isApplyingRemoteDelta = false;
-let lastProcessedUiSeq = 0;
-let activeMcpEventSource: EventSource | null = null;
 
 function applyRemoteSessionUiEvent(ev: {
   seq: number;
@@ -1942,7 +2066,6 @@ function connectLiveMcpSessionStream(targetRoomId?: string): void {
     // Graceful fallback when EventSource is unavailable
   }
 }
-connectLiveMcpSessionStream();
 
 // =============================================================================
 // 9. 60 FPS Impeccable Style Scenegraph Renderer (Micro-Badges + Backed Edge Pills + Radar Minimap)
@@ -2387,6 +2510,11 @@ minimapEl.addEventListener('click', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hideContextMenu();
+    if (linkSourceEntityId) {
+      linkSourceEntityId = null;
+      linkPreviewWorld = null;
+      syncSceneAndUi(false);
+    }
     document.getElementById('lore-modal-backdrop')?.classList.add('hidden');
     document.getElementById('edition-modal-backdrop')?.classList.add('hidden');
     document.getElementById('ai-modal-backdrop')?.classList.add('hidden');
@@ -2471,27 +2599,6 @@ const editionModalBackdrop = document.getElementById('edition-modal-backdrop');
 const lblEditionTier = document.getElementById('lbl-edition-tier');
 const inpEditionOrg = document.getElementById('inp-edition-org') as HTMLInputElement | null;
 const inpEditionKey = document.getElementById('inp-edition-key') as HTMLInputElement | null;
-
-type McpClientType = 'antigravity' | 'codemode' | 'claude-desktop' | 'cursor' | 'claude-code';
-type McpTransportType = 'stdio' | 'http';
-
-interface McpUiState {
-  client: McpClientType;
-  transport: McpTransportType;
-  editionTier: 'COMMUNITY' | 'ORO_PRO' | 'PLATINO_ENTERPRISE';
-  licenseKey: string | null;
-  sessionId: string;
-}
-
-const MCP_STORAGE_TOKEN_KEY = 'cangrejo_mcp_auth_token';
-
-const mcpState: McpUiState = {
-  client: 'antigravity',
-  transport: 'http',
-  editionTier: 'COMMUNITY',
-  licenseKey: null,
-  sessionId: 'expediente-apt29',
-};
 
 export function initMcpModalController(): void {
   const sessionInp = document.getElementById('inp-mcp-session-id') as HTMLInputElement | null;
@@ -3894,8 +4001,6 @@ document.getElementById('btn-ai-mitre')?.addEventListener('click', async () => {
   }
 });
 
-const AUTH_SESSION_STORAGE_KEY = 'cangrejo_auth_session_token';
-
 function initAccountAuthController(): void {
   const formEl = document.getElementById('form-account-auth') as HTMLFormElement | null;
   const profileCardEl = document.getElementById('card-account-profile');
@@ -4283,9 +4388,6 @@ function initAccountAuthController(): void {
 // =============================================================================
 // 11. Cangrejo Mobile Super-App Controller (Launchpad Bento, Ego-Radar & HUD)
 // =============================================================================
-type MobileSuperAppView = 'launchpad' | 'radar' | 'scanner';
-let activeMobileView: MobileSuperAppView = 'launchpad';
-
 async function computeBytesSha256Hex(bytes: ArrayBuffer): Promise<string> {
   if (typeof crypto !== 'undefined' && crypto.subtle) {
     const digest = await crypto.subtle.digest('SHA-256', bytes);

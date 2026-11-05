@@ -532,6 +532,18 @@ describe('Gate 12: Multi-Tenant MCP Session Isolation, Atomic WAL OCC Batching, 
     expect(mainTs).toContain('cangrejo_mobile_offline_queue');
     expect(mainTs).toContain('extractEmbeddedIocsAndAliases');
 
+    // Verify zero TDZ ordering for mcpState and verify palette drag-and-drop + entity linking
+    expect(mainTs.indexOf('const mcpState: McpUiState')).toBeLessThan(
+      mainTs.indexOf('store.subscribe((mods) =>')
+    );
+    expect(mainTs.indexOf('const mcpState: McpUiState')).toBeLessThan(
+      mainTs.indexOf('function connectLiveMcpSessionStream')
+    );
+    expect(mainTs).toContain('row.draggable = true');
+    expect(mainTs).toContain("canvasEl.addEventListener('dragover'");
+    expect(mainTs).toContain("canvasEl.addEventListener('drop'");
+    expect(indexHtml).toContain('id="ctx-start-link"');
+
     // Verify mcpStdioServer forwards CANGREJO_SESSION_ID and CANGREJO_MCP_TOKEN
     const token = BunSqliteVault.issueSignedLicenseToken({
       tier: 'ORO_PRO',
