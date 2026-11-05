@@ -813,6 +813,7 @@ async function executeTransformOnEntity(
         entityValue: primaryValue,
         entityFields: fieldsObj,
         sliderLimit: 12,
+        liveNetwork: true,
       }),
     });
 
@@ -1322,14 +1323,83 @@ document.getElementById('btn-clear')!.addEventListener('click', () => {
   appendLog('Grafo limpiado.');
 });
 
-document.querySelectorAll('.tab-btn').forEach((btn) => {
+document.querySelectorAll('.tab-btn[data-tab]').forEach((btn) => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.tab-btn[data-tab]').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     activeConsoleTab = (btn as HTMLElement).getAttribute('data-tab') as 'log' | 'xml' | 'json';
     renderConsole();
   });
 });
+
+interface SerializedGraphEntityItem {
+  id: string;
+  typeName: string;
+  value: string;
+  weight?: number;
+  bookmark?: number;
+  notes?: { value: string; show: boolean };
+  properties?: Record<string, string>;
+  position?: { x: number; y: number; z?: number };
+  pinned?: boolean;
+}
+
+interface SerializedGraphLinkItem {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  label?: string;
+  color?: string;
+  isReversed?: boolean;
+  path?: Array<{ x: number; y: number }>;
+}
+
+function hydrateStoreFromSerialized(
+  entities: SerializedGraphEntityItem[],
+  links: SerializedGraphLinkItem[]
+): void {
+  store.clear();
+  selection.clearSelection();
+  store.runInBatch(() => {
+    entities.forEach((ent, idx) => {
+      const canonicalType =
+        ent.typeName === 'maltego.BTCAddress'
+          ? 'maltego.BitcoinAddress'
+          : ent.typeName === 'maltego.ASNumber'
+            ? 'maltego.AS'
+            : ent.typeName;
+      const created = registry.createEntity(canonicalType, ent.value, {
+        id: Guid.parse(ent.id),
+        weight: ent.weight ?? 90,
+        bookmark: ent.bookmark ?? -1,
+        extraProperties: ent.properties,
+      });
+      if (ent.notes) created.notes = ent.notes;
+      const angle = (idx * 1.15) % (Math.PI * 2);
+      const pos = ent.position ?? {
+        x: Math.cos(angle) * 210,
+        y: Math.sin(angle) * 210,
+        z: 0,
+      };
+      store.addEntity(created, { x: pos.x, y: pos.y, z: pos.z ?? 0 }, ent.pinned ?? false);
+    });
+    for (const lnk of links) {
+      const srcId = Guid.parse(lnk.sourceId);
+      const dstId = Guid.parse(lnk.targetId);
+      if (!store.structureStore.hasEntity(srcId) || !store.structureStore.hasEntity(dstId)) {
+        continue;
+      }
+      store.addLink(
+        makeSimpleLink(Guid.parse(lnk.id), lnk.label ?? 'related-to', lnk.color ?? '#3B82F6'),
+        srcId,
+        dstId,
+        lnk.isReversed ?? false,
+        lnk.path
+      );
+    }
+  });
+  syncSceneAndUi(false);
+}
 
 function serializeCurrentStore() {
   const entities = Array.from(store.dataStore.getEntities().values()).map((ent) => {
@@ -1446,30 +1516,7 @@ document.getElementById('inp-import-mtgx')!.addEventListener('change', async (e)
     return;
   }
 
-  store.clear();
-  selection.clearSelection();
-  store.runInBatch(() => {
-    for (const ent of data.entities!) {
-      const created = registry.createEntity(ent.typeName, ent.value, {
-        id: Guid.parse(ent.id),
-        weight: ent.weight,
-        bookmark: ent.bookmark,
-        extraProperties: ent.properties,
-      });
-      created.notes = ent.notes;
-      store.addEntity(created, ent.position, ent.pinned);
-    }
-    for (const lnk of data.links!) {
-      store.addLink(
-        makeSimpleLink(Guid.parse(lnk.id), lnk.label, lnk.color ?? '#3B82F6'),
-        Guid.parse(lnk.sourceId),
-        Guid.parse(lnk.targetId),
-        lnk.isReversed ?? false,
-        lnk.path
-      );
-    }
-  });
-  syncSceneAndUi(false);
+  hydrateStoreFromSerialized(data.entities, data.links);
   appendLog(
     `Importado archivo .mtgx "${file.name}" (${store.entityCount} entidades, ${store.linkCount} enlaces).`
   );
@@ -1492,13 +1539,23 @@ document.getElementById('btn-encrypt-mtgj')!.addEventListener('click', async () 
     appendLog(`Error cifrando .mtgj: ${data.error}`);
     return;
   }
-  consoleBuffers.json = JSON.stringify(data.envelope, null, 2);
-  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+  const jsonStr = JSON.stringify(data.envelope, null, 2);
+  consoleBuffers.json = jsonStr;
+  document.querySelectorAll('.tab-btn[data-tab]').forEach((b) => b.classList.remove('active'));
   document.querySelector('.tab-btn[data-tab="json"]')?.classList.add('active');
   activeConsoleTab = 'json';
   renderConsole();
+
+  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cangrejo_boveda_cero_${Date.now()}.cgrj`;
+  a.click();
+  URL.revokeObjectURL(url);
+
   appendLog(
-    `Bóveda Cero: Expediente .cgrj cifrado con Zero-Knowledge AES-256-GCM (PKCS7 256B padding) + firma topológica AES-GMAC.`
+    `Bóveda Cero: Expediente .cgrj cifrado con Zero-Knowledge AES-256-GCM (PKCS7 256B padding) + firma topológica AES-GMAC y descargado.`
   );
 });
 
@@ -1530,7 +1587,7 @@ document.getElementById('btn-forensic-analytics')?.addEventListener('click', () 
   }
 
   consoleBuffers.json = JSON.stringify(report, null, 2);
-  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn[data-tab]').forEach((b) => b.classList.remove('active'));
   document.querySelector('.tab-btn[data-tab="json"]')?.classList.add('active');
   activeConsoleTab = 'json';
   renderConsole();
@@ -1551,7 +1608,7 @@ document.getElementById('btn-export-stix21')?.addEventListener('click', () => {
   });
   const jsonStr = JSON.stringify(bundle, null, 2);
   consoleBuffers.json = jsonStr;
-  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn[data-tab]').forEach((b) => b.classList.remove('active'));
   document.querySelector('.tab-btn[data-tab="json"]')?.classList.add('active');
   activeConsoleTab = 'json';
   renderConsole();
@@ -1640,6 +1697,32 @@ document.getElementById('btn-vault-save')?.addEventListener('click', async () =>
   }
 });
 
+document.getElementById('btn-vault-load')?.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/vault/expedientes/expediente-activo');
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      payload?: {
+        entities?: SerializedGraphEntityItem[];
+        links?: SerializedGraphLinkItem[];
+      };
+    };
+    if (!data.ok || !data.payload?.entities) {
+      appendLog(
+        `Aviso Bóveda SQLite: ${data.error ?? 'Primero guarda un expediente con "Guardar en bóveda SQLite".'}`
+      );
+      return;
+    }
+    hydrateStoreFromSerialized(data.payload.entities, data.payload.links ?? []);
+    appendLog(
+      `Expediente "expediente-activo" restaurado desde Bóveda SQLite (${store.entityCount} entidades, ${store.linkCount} enlaces).`
+    );
+  } catch (err) {
+    appendLog(`Error restaurando de Bóveda SQLite: ${String(err)}`);
+  }
+});
+
 document.getElementById('btn-decrypt-mtgj')?.addEventListener('click', async () => {
   const passphrase = window.prompt(
     'Introduce la frase de paso para descifrar y verificar la autenticidad topológica AES-GMAC del sobre .cgrj activo en consola:',
@@ -1657,15 +1740,16 @@ document.getElementById('btn-decrypt-mtgj')?.addEventListener('click', async () 
     const data = (await res.json()) as {
       ok: boolean;
       error?: string;
-      entities?: Array<{ id: string }>;
-      links?: Array<{ id: string }>;
+      entities?: SerializedGraphEntityItem[];
+      links?: SerializedGraphLinkItem[];
     };
-    if (!data.ok) {
+    if (!data.ok || !data.entities) {
       appendLog(`Fallo de descifrado / verificación AES-GMAC: ${data.error}`);
       return;
     }
+    hydrateStoreFromSerialized(data.entities, data.links ?? []);
     appendLog(
-      `Bóveda Cero verificada con éxito (AES-GMAC intacto): ${data.entities?.length ?? 0} entidades y ${data.links?.length ?? 0} enlaces restaurados.`
+      `Bóveda Cero verificada con éxito (AES-GMAC intacto): ${store.entityCount} entidades y ${store.linkCount} enlaces restaurados en el lienzo.`
     );
   } catch (err) {
     appendLog(`Primero cifra un sobre con "Bóveda Cero .cgrj" antes de descifrar (${String(err)}).`);
@@ -1694,6 +1778,16 @@ function applyRemoteSessionUiEvent(ev: {
       isApplyingRemoteDelta = false;
     }
     syncSceneAndUi(false);
+    return;
+  }
+
+  if (ev.type === 'preset' && typeof ev.payload.presetId === 'string') {
+    isApplyingRemoteDelta = true;
+    try {
+      loadPreset(ev.payload.presetId);
+    } finally {
+      isApplyingRemoteDelta = false;
+    }
     return;
   }
 
@@ -2166,6 +2260,14 @@ function renderFrame(): void {
   requestAnimationFrame(renderFrame);
 }
 
+let lastMinimapTransform = {
+  minX: -400,
+  minY: -300,
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+};
+
 function renderMinimap(stageW: number, stageH: number): void {
   const mw = minimapEl.width;
   const mh = minimapEl.height;
@@ -2192,6 +2294,7 @@ function renderMinimap(stageW: number, stageH: number): void {
   const scale = Math.min((mw - 16) / spanX, (mh - 16) / spanY);
   const offsetX = (mw - spanX * scale) * 0.5;
   const offsetY = (mh - spanY * scale) * 0.5;
+  lastMinimapTransform = { minX, minY, scale, offsetX, offsetY };
 
   const toMini = (wx: number, wy: number) => ({
     x: offsetX + (wx - minX) * scale,
@@ -2235,8 +2338,35 @@ function renderMinimap(stageW: number, stageH: number): void {
   minimapCtx.strokeRect(v0.x, v0.y, Math.max(8, v1.x - v0.x), Math.max(6, v1.y - v0.y));
 }
 
-// Keyboard Shortcuts (Ctrl+K / Ctrl+Z / Ctrl+Y / Delete)
+minimapEl.addEventListener('click', (e) => {
+  const rect = minimapEl.getBoundingClientRect();
+  const mx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * minimapEl.width;
+  const my = ((e.clientY - rect.top) / Math.max(1, rect.height)) * minimapEl.height;
+  const { minX, minY, scale, offsetX, offsetY } = lastMinimapTransform;
+  if (scale <= 0) return;
+  const targetWorldX = minX + (mx - offsetX) / scale;
+  const targetWorldY = minY + (my - offsetY) / scale;
+  const cam = graphCanvas.getCameraState();
+  const currentCenterWorld = graphCanvas.screenToWorld(
+    cam.viewportWidth * 0.5,
+    cam.viewportHeight * 0.5
+  );
+  graphCanvas.panBy(
+    (currentCenterWorld.x - targetWorldX) * cam.zoom,
+    (currentCenterWorld.y - targetWorldY) * cam.zoom
+  );
+  syncSceneAndUi(false);
+});
+
+// Keyboard Shortcuts (Escape / Ctrl+K / Ctrl+Z / Shift+Ctrl+Z / Ctrl+Y / V,M,L,C / Cmd+1..4 / Cmd+0 / Delete)
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    hideContextMenu();
+    document.getElementById('lore-modal-backdrop')?.classList.add('hidden');
+    document.getElementById('edition-modal-backdrop')?.classList.add('hidden');
+    document.getElementById('ai-modal-backdrop')?.classList.add('hidden');
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     (document.getElementById('inp-palette-search') as HTMLInputElement)?.focus();
@@ -2244,28 +2374,55 @@ window.addEventListener('keydown', (e) => {
   }
   if (
     document.activeElement instanceof HTMLInputElement ||
-    document.activeElement instanceof HTMLTextAreaElement
+    document.activeElement instanceof HTMLTextAreaElement ||
+    document.activeElement instanceof HTMLSelectElement
   ) {
     return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     e.preventDefault();
-    if (store.undoRedoManager.undo()) syncSceneAndUi(false);
+    const changed = e.shiftKey ? store.undoRedoManager.redo() : store.undoRedoManager.undo();
+    if (changed) syncSceneAndUi(false);
   } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
     e.preventDefault();
     if (store.undoRedoManager.redo()) syncSceneAndUi(false);
-  } else if (e.key === 'Delete' || e.key === 'Backspace') {
-    const selected = Array.from(selection.getModelSelectedEntities());
-    if (selected.length > 0) {
-      store.runInBatch(() => {
-        for (const id of selected) {
-          if (store.dataStore.hasEntity(id)) {
-            store.removeEntity(id);
+  } else if ((e.ctrlKey || e.metaKey) && ['1', '2', '3', '4'].includes(e.key)) {
+    e.preventDefault();
+    const map: Record<string, LayoutMode> = {
+      '1': 'organic',
+      '2': 'hierarchical',
+      '3': 'circular',
+      '4': 'block',
+    };
+    document.querySelector<HTMLButtonElement>(`.btn-layout[data-layout="${map[e.key]}"]`)?.click();
+  } else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+    e.preventDefault();
+    document.getElementById('btn-fit')?.click();
+  } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+    const k = e.key.toLowerCase();
+    const toolMap: Record<string, CursorTool> = {
+      v: 'pointer',
+      m: 'marquee',
+      l: 'lasso',
+      c: 'link',
+    };
+    if (toolMap[k]) {
+      document.querySelector<HTMLButtonElement>(`.btn-tool[data-tool="${toolMap[k]}"]`)?.click();
+      return;
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      const selected = Array.from(selection.getModelSelectedEntities());
+      if (selected.length > 0) {
+        store.runInBatch(() => {
+          for (const id of selected) {
+            if (store.dataStore.hasEntity(id)) {
+              store.removeEntity(id);
+            }
           }
-        }
-      });
-      selection.clearSelection();
-      syncSceneAndUi(false);
+        });
+        selection.clearSelection();
+        syncSceneAndUi(false);
+      }
     }
   }
 });
@@ -2858,7 +3015,13 @@ document.getElementById('btn-paste-iocs')?.addEventListener('click', async () =>
       store.addEntity(rootEnt, data.incidentRoot!.position, false);
 
       for (const item of data.entities!) {
-        const ent = registry.createEntity(item.typeName, item.value, {
+        const canonicalType =
+          item.typeName === 'maltego.BTCAddress'
+            ? 'maltego.BitcoinAddress'
+            : item.typeName === 'maltego.ASNumber'
+              ? 'maltego.AS'
+              : item.typeName;
+        const ent = registry.createEntity(canonicalType, item.value, {
           id: Guid.parse(item.id),
           weight: item.weight,
           bookmark: 1,
@@ -2968,6 +3131,7 @@ let lastAiLatentSuggestions: Array<{
 
 document.getElementById('btn-ai-f1-unpack')?.addEventListener('click', async () => {
   const sample =
+    inpAiCopilotPrompt?.value.trim() ||
     'Reporte CTI: Conexión detectada hacia hxxps[:]//c2-Command[.]apt29-mirror[.]org/gate y correo ops[@]shadow-apt[.]ru desde 185[.]220[.]101[.]42 explotando CVE-2024-3400.';
   try {
     const res = await fetch('/api/ai/unpack-iocs', {
@@ -3044,6 +3208,9 @@ document.getElementById('btn-ai-materialize')?.addEventListener('click', async (
   try {
     let addedNodes = 0;
     let addedLinks = 0;
+    const allIds = Array.from(store.structureStore.entities.keys());
+    const selectedIds = Array.from(selection.getModelSelectedEntities());
+    const anchorId = selectedIds[0] ?? allIds[0] ?? null;
 
     store.runInBatch(() => {
       for (let idx = 0; idx < lastAiUnpackedItems.length; idx++) {
@@ -3057,6 +3224,14 @@ document.getElementById('btn-ai-materialize')?.addEventListener('click', async (
         const angle = (idx / Math.max(1, lastAiUnpackedItems.length)) * Math.PI * 2;
         store.addEntity(ent, { x: Math.cos(angle) * 280, y: Math.sin(angle) * 280, z: 0 }, false);
         addedNodes++;
+        if (anchorId && !anchorId.equals(id) && store.dataStore.hasEntity(anchorId)) {
+          store.addLink(
+            makeSimpleLink(Guid.generate(), 'AI unpacked IOC', '#EAB308'),
+            anchorId,
+            id
+          );
+          addedLinks++;
+        }
       }
 
       for (const sug of lastAiLatentSuggestions) {
@@ -3073,9 +3248,11 @@ document.getElementById('btn-ai-materialize')?.addEventListener('click', async (
       }
     });
 
+    lastAiUnpackedItems = [];
+    lastAiLatentSuggestions = [];
     syncSceneAndUi(false);
     setAiOutput(
-      `[Materialización IA Completada]: +${addedNodes} entidades IOC desofuscadas y +${addedLinks} enlaces latentes Vectorize RRF (#A855F7) añadidos al grafo.`
+      `[Materialización IA Completada]: +${addedNodes} entidades IOC desofuscadas y +${addedLinks} enlaces añadidos al grafo.`
     );
   } catch (err) {
     setAiOutput(`Error al materializar hallazgos IA: ${String(err)}`);
@@ -3299,6 +3476,13 @@ let lastCopilotToolCalls: Array<{
   reason: string;
 }> = [];
 
+inpAiCopilotPrompt?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('btn-ai-f5-ask')?.click();
+  }
+});
+
 document.getElementById('btn-ai-f5-ask')?.addEventListener('click', async () => {
   try {
     const payload = serializeCurrentStore();
@@ -3519,10 +3703,21 @@ document.getElementById('btn-ai-run-tools')?.addEventListener('click', async () 
 
 document.getElementById('btn-import-stix21')?.addEventListener('click', async () => {
   try {
-    const bundle = Stix21Exporter.exportFromStore(store, {
-      expedienteTitle: 'Bundle STIX 2.1 Verificado',
-      caseTier: 'ORO',
-    });
+    let bundle: unknown;
+    try {
+      const parsedConsole = JSON.parse(consoleBuffers.json) as { type?: string };
+      if (parsedConsole && parsedConsole.type === 'bundle') {
+        bundle = parsedConsole;
+      }
+    } catch {
+      // Fallback to exporting current store bundle
+    }
+    if (!bundle) {
+      bundle = Stix21Exporter.exportFromStore(store, {
+        expedienteTitle: 'Bundle STIX 2.1 Verificado',
+        caseTier: 'ORO',
+      });
+    }
     const res = await fetch('/api/import/stix21', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3535,10 +3730,15 @@ document.getElementById('btn-import-stix21')?.addEventListener('click', async ()
       computedDigestHex: string;
       entityCount: number;
       linkCount: number;
+      entities?: SerializedGraphEntityItem[];
+      links?: SerializedGraphLinkItem[];
     };
     if (data.ok) {
+      if (data.entities && data.entities.length > 0) {
+        hydrateStoreFromSerialized(data.entities, data.links ?? []);
+      }
       appendLog(
-        `[Importador STIX 2.1]: ${data.entityCount} entidades y ${data.linkCount} relaciones verificadas • Custodia SHA-256 (${data.computedDigestHex.slice(0, 16)}…): ${
+        `[Importador STIX 2.1]: ${data.entityCount} entidades y ${data.linkCount} relaciones verificadas e hidratadas • Custodia SHA-256 (${data.computedDigestHex.slice(0, 16)}…): ${
           data.custodyVerified ? 'ÍNTEGRA' : 'MANIPULADA'
         } (${data.custodyReason})`
       );

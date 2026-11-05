@@ -898,9 +898,15 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     const executePesquisaPromise = (async (): Promise<Record<string, unknown>> => {
       const entities: OutgoingTransformEntity[] = [];
       const messages: Array<{ type: 'Inform' | 'Debug' | 'PartialError'; text: string }> = [];
+      const isIpv4Value = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value);
+      const isBtcValue =
+        entityType.toLowerCase().includes('bitcoin') ||
+        entityType.toLowerCase().includes('btc') ||
+        /^(?:bc1[a-zA-HJ-NP-Z0-9]{25,89}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(value);
+      const isDomainLike = !isIpv4Value && !isBtcValue && !/^[a-fA-F0-9]{64}$/.test(value);
 
     // 1. Live DNS A/AAAA Resolution
-    if (transformId === 'dns-to-ip' || transformId === 'all') {
+    if (transformId === 'dns-to-ip' || (transformId === 'all' && isDomainLike)) {
       const host = value.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '');
       try {
         const ipv4s = await dns.resolve4(host);
@@ -945,7 +951,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     }
 
     // 2. Live DNS MX Resolution
-    if (transformId === 'dns-to-mx' || transformId === 'all') {
+    if (transformId === 'dns-to-mx' || (transformId === 'all' && isDomainLike)) {
       const host = value.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '');
       try {
         const mxs = await dns.resolveMx(host);
@@ -982,7 +988,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     }
 
     // 3. Live DNS NS Resolution
-    if (transformId === 'dns-to-ns' || transformId === 'all') {
+    if (transformId === 'dns-to-ns' || (transformId === 'all' && isDomainLike)) {
       const host = value.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '');
       try {
         const nss = await dns.resolveNs(host);
@@ -1066,7 +1072,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     }
 
     // 4. Certificate Transparency & Subdomains Recon (Live crt.sh + Deterministic SAN Fallback)
-    if (transformId === 'ct-subdomains' || transformId === 'all') {
+    if (transformId === 'ct-subdomains' || (transformId === 'all' && isDomainLike)) {
       const baseDomain = value
         .replace(/^https?:\/\//i, '')
         .replace(/\/.*$/, '')
@@ -1318,7 +1324,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     }
 
     // 8. Cryptocurrency Trace
-    if (transformId === 'crypto-trace') {
+    if (transformId === 'crypto-trace' || (transformId === 'all' && isBtcValue)) {
       entities.push({
         typeName: 'maltego.BitcoinAddress',
         value: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
@@ -2531,7 +2537,11 @@ cangrejoHonoApp.post('/api/ingest/raw-text', async (c) => {
   try {
     const rawBody = await c.req.json();
     const parsed = RawTextIngestRequestSchema.parse(rawBody);
-    const text = parsed.text;
+    const text = parsed.text
+      .replace(/hxxps?/gi, (m) => m.replace(/xx/i, 'tt'))
+      .replace(/\[\.\]/g, '.')
+      .replace(/\[@\]/g, '@')
+      .replace(/\[:\]/g, ':');
     const centerX = parsed.centerX ?? 0;
     const centerY = parsed.centerY ?? 0;
 
@@ -2582,6 +2592,12 @@ cangrejoHonoApp.post('/api/ingest/raw-text', async (c) => {
         linkLabel: 'routed ASN',
         linkColor: '#a78bfa',
         regex: /\bAS\d{2,10}\b/gi,
+      },
+      {
+        typeName: 'maltego.Alias',
+        linkLabel: 'observed handle',
+        linkColor: '#eab308',
+        regex: /(?:^|\s)@[a-zA-Z0-9_.-]{2,36}\b/g,
       },
       {
         typeName: 'maltego.Domain',
