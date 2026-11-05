@@ -259,8 +259,114 @@ function syncSceneAndUi(runLayoutAfter = false): void {
 }
 
 // =============================================================================
-// 3. Live MCP Session & Vault Expediente Synchronization (Zero Simulated Cases)
+// 3. Live MCP Session & Initial Graph Map Synchronization
 // =============================================================================
+function populateBaseGraphMap(presetOrSessionId: string): void {
+  store.clear();
+  selection.clearSelection();
+  store.undoRedoManager.clear();
+
+  if (presetOrSessionId === 'cloudflare' || presetOrSessionId === 'expediente-activo') {
+    store.runInBatch(() => {
+      const d1 = registry.createEntity('maltego.Domain', 'cloudflare.com', {
+        weight: 100,
+        bookmark: 4,
+      });
+      d1.notes = { value: 'Clic derecho -> DNS A / MX / NS en vivo', show: true };
+      store.addEntity(d1, { x: -180, y: 0, z: 0 });
+
+      const d2 = registry.createEntity('maltego.Domain', 'github.com', {
+        weight: 100,
+        bookmark: 2,
+      });
+      d2.notes = { value: 'Clic derecho -> Ejecutar Todos los Transforms', show: true };
+      store.addEntity(d2, { x: 180, y: 0, z: 0 });
+
+      selection.selectInModel([d1.id]);
+    });
+  } else {
+    store.runInBatch(() => {
+      const actor = registry.createEntity('maltego.ThreatActor', 'APT29 (Midnight Blizzard)', {
+        weight: 100,
+        bookmark: 0,
+        extraProperties: { mitre_id: 'G0016', attribution: 'SVR Foreign Intelligence' },
+      });
+      actor.notes = {
+        value: 'Primary threat actor targeting diplomatic & cloud tenants.',
+        show: true,
+      };
+      store.addEntity(actor, { x: 0, y: -150, z: 0 }, true);
+
+      const cve = registry.createEntity('maltego.CVE', 'CVE-2024-21412', {
+        weight: 95,
+        bookmark: 1,
+        extraProperties: { cvss: '8.1 HIGH', vector: 'SmartScreen Bypass' },
+      });
+      store.addEntity(cve, { x: -250, y: -10, z: 0 });
+
+      const hash = registry.createEntity(
+        'maltego.Hash',
+        '94b8f12c77d0e1a9bc82144f0019c8a21e7731094b8f12c77d0e1a9bc82144f0',
+        {
+          weight: 90,
+          bookmark: 0,
+          extraProperties: { family: 'WINELOADER Stage-2', algorithm: 'SHA-256' },
+        }
+      );
+      store.addEntity(hash, { x: 0, y: -10, z: 0 });
+
+      const c2Domain = registry.createEntity('maltego.Domain', 'cloudflare.com', {
+        weight: 95,
+        bookmark: 4,
+        extraProperties: { registrar: 'Cloudflare Inc.', role: 'Redirector / CDN Front' },
+      });
+      c2Domain.notes = {
+        value: 'Haz clic derecho aquí o pulsa "Ejecutar pesquisa" para DNS A/MX/NS en vivo.',
+        show: true,
+      };
+      store.addEntity(c2Domain, { x: 250, y: -10, z: 0 });
+
+      const c2Ip = registry.createEntity('maltego.IPv4Address', '104.16.132.229', {
+        weight: 90,
+        bookmark: 3,
+        extraProperties: { asn: 'AS13335' },
+      });
+      store.addEntity(c2Ip, { x: 250, y: 150, z: 0 });
+
+      store.addLink(makeSimpleLink(Guid.generate(), 'weaponizes', '#EF4444'), actor.id, cve.id);
+      store.addLink(makeSimpleLink(Guid.generate(), 'deploys loader', '#EF4444'), actor.id, hash.id);
+      store.addLink(
+        makeSimpleLink(Guid.generate(), 'beacons HTTPS', '#3B82F6'),
+        hash.id,
+        c2Domain.id
+      );
+      store.addLink(
+        makeSimpleLink(Guid.generate(), 'resolves A', '#38BDF8'),
+        c2Domain.id,
+        c2Ip.id
+      );
+
+      const leafSubs = ['auth', 'vpn-gw', 'mail-relay', 'update-srv', 'telemetry', 'cdn-static'];
+      leafSubs.forEach((sub, idx) => {
+        const subEnt = registry.createEntity(
+          'maltego.DNSName',
+          `${sub}.svr-ops-telemetry.net`,
+          { weight: 70 }
+        );
+        store.addEntity(subEnt, { x: -280 + idx * 100, y: 155, z: 0 });
+        store.addLink(
+          makeSimpleLink(Guid.generate(), 'DGA fallback', '#8B5CF6'),
+          hash.id,
+          subEnt.id
+        );
+      });
+
+      selection.selectInModel([c2Domain.id]);
+    });
+  }
+  syncSceneAndUi(false);
+}
+
 function loadPreset(sessionOrExpedienteId: string): void {
   const cleanId = sessionOrExpedienteId.trim() || 'expediente-apt29';
   mcpState.sessionId = cleanId;
@@ -268,6 +374,7 @@ function loadPreset(sessionOrExpedienteId: string): void {
   if (sessionInp && sessionInp.value !== cleanId) {
     sessionInp.value = cleanId;
   }
+  populateBaseGraphMap(cleanId);
   renderMcpSnippet();
   connectLiveMcpSessionStream(cleanId);
   void syncActiveMcpSessionFromServer(cleanId);
@@ -1708,7 +1815,11 @@ async function syncActiveMcpSessionFromServer(targetRoomId?: string): Promise<vo
       countEl.textContent = String(data.analysts.length);
     }
 
-    if (Array.isArray(data.session?.entities) && Array.isArray(data.session?.links)) {
+    if (
+      Array.isArray(data.session?.entities) &&
+      data.session.entities.length > 0 &&
+      Array.isArray(data.session?.links)
+    ) {
       isApplyingRemoteDelta = true;
       try {
         hydrateStoreFromSerialized(data.session.entities, data.session.links);
@@ -1801,6 +1912,7 @@ function connectLiveMcpSessionStream(targetRoomId?: string): void {
         if (
           parsed.type === 'init' &&
           Array.isArray(parsed.session?.entities) &&
+          parsed.session.entities.length > 0 &&
           Array.isArray(parsed.session?.links)
         ) {
           isApplyingRemoteDelta = true;
@@ -4987,5 +5099,5 @@ initMcpModalController();
 initAccountAuthController();
 initMobileSuperAppController();
 void syncEditionBadge();
-void syncActiveMcpSessionFromServer();
+loadPreset('expediente-apt29');
 requestAnimationFrame(renderFrame);

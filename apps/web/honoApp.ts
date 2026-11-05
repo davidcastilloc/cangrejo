@@ -3082,6 +3082,52 @@ function loadSessionPresetIntoStore(
       } catch {
         // Ignore malformed payload
       }
+    } else if (presetId === 'cloudflare' || presetId === 'expediente-activo') {
+      const d1 = registry.createEntity('maltego.Domain', 'cloudflare.com', { weight: 100, bookmark: 4 });
+      const d2 = registry.createEntity('maltego.Domain', 'github.com', { weight: 100, bookmark: 2 });
+      store.addEntity(d1, { x: -180, y: 0, z: 0 });
+      store.addEntity(d2, { x: 180, y: 0, z: 0 });
+      session.selectedEntityIds = [d1.id.toString()];
+    } else if (presetId !== 'clean') {
+      const actor = registry.createEntity('maltego.ThreatActor', 'APT29 (Midnight Blizzard)', {
+        weight: 100,
+        bookmark: 0,
+        extraProperties: { mitre_id: 'G0016', attribution: 'SVR Foreign Intelligence' },
+      });
+      const cve = registry.createEntity('maltego.CVE', 'CVE-2024-21412', {
+        weight: 95,
+        bookmark: 1,
+        extraProperties: { cvss: '8.1 HIGH', vector: 'SmartScreen Bypass' },
+      });
+      const hash = registry.createEntity(
+        'maltego.Hash',
+        '94b8f12c77d0e1a9bc82144f0019c8a21e7731094b8f12c77d0e1a9bc82144f0',
+        {
+          weight: 90,
+          bookmark: 0,
+          extraProperties: { family: 'WINELOADER Stage-2', algorithm: 'SHA-256' },
+        }
+      );
+      const c2Domain = registry.createEntity('maltego.Domain', 'cloudflare.com', {
+        weight: 95,
+        bookmark: 4,
+        extraProperties: { registrar: 'Cloudflare Inc.', role: 'Redirector / CDN Front' },
+      });
+      const c2Ip = registry.createEntity('maltego.IPv4Address', '104.16.132.229', {
+        weight: 90,
+        bookmark: 3,
+        extraProperties: { asn: 'AS13335' },
+      });
+      store.addEntity(actor, { x: 0, y: -150, z: 0 }, true);
+      store.addEntity(cve, { x: -250, y: -10, z: 0 });
+      store.addEntity(hash, { x: 0, y: -10, z: 0 });
+      store.addEntity(c2Domain, { x: 250, y: -10, z: 0 });
+      store.addEntity(c2Ip, { x: 250, y: 150, z: 0 });
+      store.addLink(makeSimpleLink(Guid.generate(), 'weaponizes', '#EF4444'), actor.id, cve.id);
+      store.addLink(makeSimpleLink(Guid.generate(), 'deploys loader', '#EF4444'), actor.id, hash.id);
+      store.addLink(makeSimpleLink(Guid.generate(), 'beacons HTTPS', '#3B82F6'), hash.id, c2Domain.id);
+      store.addLink(makeSimpleLink(Guid.generate(), 'resolves A', '#38BDF8'), c2Domain.id, c2Ip.id);
+      session.selectedEntityIds = [c2Domain.id.toString()];
     }
   });
   emitSessionFullSync(session);
