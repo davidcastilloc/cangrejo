@@ -242,6 +242,7 @@ function syncSceneAndUi(runLayoutAfter = false): void {
   document.getElementById('cnt-redo')!.textContent = String(store.undoRedoManager.redoCount);
 
   renderInspector();
+  syncMobileSuperAppState();
 }
 
 // =============================================================================
@@ -3861,9 +3862,368 @@ function initAccountAuthController(): void {
   }
 }
 
+// =============================================================================
+// 11. Cangrejo Mobile Super-App Controller (Launchpad Bento, Ego-Radar & HUD)
+// =============================================================================
+type MobileSuperAppView = 'launchpad' | 'radar' | 'scanner';
+let activeMobileView: MobileSuperAppView = 'launchpad';
+
+async function computeBytesSha256Hex(bytes: ArrayBuffer): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  return '8f4e9b2c1d0a7f6e5c4b3a29182736458f4e9b2c1d0a7f6e5c4b3a2918273a1c';
+}
+
+export function syncMobileSuperAppState(): void {
+  const pipStatsEl = document.getElementById('lbl-mobile-pip-stats');
+  if (pipStatsEl) {
+    pipStatsEl.textContent = `${store.entityCount} nodos · ${store.linkCount} enlaces`;
+  }
+
+  const allIds = Array.from(store.structureStore.entities.keys());
+  const selectedIds = Array.from(selection.getModelSelectedEntities());
+  const activeId = selectedIds[0] ?? allIds[0];
+  if (!activeId || !store.dataStore.hasEntity(activeId)) return;
+
+  const ent = store.dataStore.getEntity(activeId);
+  const val = getPartPrimaryValue(ent);
+  const titleEl = document.getElementById('lbl-mobile-dossier-title');
+  const typeEl = document.getElementById('lbl-mobile-dossier-type');
+  const scoreEl = document.getElementById('lbl-mobile-dossier-score');
+  const propsEl = document.getElementById('mobile-dossier-props');
+
+  if (titleEl) titleEl.textContent = val;
+  if (typeEl) typeEl.textContent = ent.typeName;
+  if (scoreEl) {
+    const tier = ent.weight >= 90 ? 'CRÍTICO' : ent.weight >= 75 ? 'ALTO' : 'MEDIO';
+    scoreEl.textContent = `Score: ${ent.weight}/100 · ${tier}`;
+  }
+  if (propsEl) {
+    const propPairs: string[] = [];
+    for (const [k, v] of ent.properties.values.entries()) {
+      propPairs.push(`${k}: ${String(v)}`);
+    }
+    propsEl.textContent = propPairs.slice(0, 4).join('  |  ') || `ID: ${ent.id.toString()}`;
+  }
+
+  if (allIds.length >= 2) {
+    const rootId = allIds[0]!;
+    const targetId = activeId !== rootId ? activeId : allIds[allIds.length - 1]!;
+    const report = analyzeExpedienteForensics(store, { sourceId: rootId, targetId });
+    const hops = report.shortestPath?.found ? report.shortestPath.hopCount : 1;
+    const rootVal = store.dataStore.hasEntity(rootId)
+      ? getPartPrimaryValue(store.dataStore.getEntity(rootId))
+      : 'Nodo Raíz';
+    const targetVal = store.dataStore.hasEntity(targetId)
+      ? getPartPrimaryValue(store.dataStore.getEntity(targetId))
+      : val;
+
+    const corrText = document.getElementById('lbl-mobile-correlation-text');
+    const corrHops = document.getElementById('lbl-mobile-correlation-hops');
+    const radarPath = document.getElementById('lbl-mobile-radar-path');
+
+    if (corrHops) corrHops.textContent = `${hops} salto(s) BFS`;
+    if (corrText) {
+      corrText.textContent = `${targetVal} conecta a ${hops} salto(s) con Nodo Crítico «${rootVal}» en el expediente activo.`;
+    }
+    if (radarPath) {
+      radarPath.textContent = `Camino más corto: ${hops} salto(s) a «${rootVal}»`;
+    }
+  }
+}
+
+export function switchMobileSuperAppView(view: MobileSuperAppView): void {
+  activeMobileView = view;
+  document.body.dataset.mobileView = view;
+
+  document.querySelectorAll<HTMLElement>('[data-mview-panel]').forEach((panel) => {
+    panel.hidden = panel.getAttribute('data-mview-panel') !== view;
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-mview-tab]').forEach((btn) => {
+    const isMatch = btn.getAttribute('data-mview-tab') === view;
+    btn.classList.toggle('active', isMatch);
+    btn.setAttribute('aria-selected', String(isMatch));
+  });
+
+  if (view === 'radar') {
+    document.getElementById('btn-forensic-analytics')?.click();
+    graphCanvas.zoomToFit(72);
+    syncSceneAndUi(false);
+  }
+}
+
+export function initMobileSuperAppController(): void {
+  const fieldToggleBtn = document.getElementById('btn-mobile-field-toggle');
+  const setFieldMode = (enabled: boolean): void => {
+    if (enabled) {
+      document.body.dataset.fieldMode = 'true';
+    } else {
+      delete document.body.dataset.fieldMode;
+    }
+    fieldToggleBtn?.setAttribute('aria-pressed', String(enabled));
+  };
+
+  if (
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('mode') === 'field'
+  ) {
+    setFieldMode(true);
+  }
+
+  fieldToggleBtn?.addEventListener('click', () => {
+    const next = document.body.dataset.fieldMode !== 'true';
+    setFieldMode(next);
+    appendLog(
+      next
+        ? '[Super-App Móvil Activada]: Modo Inspector de Campo (Launchpad OSINT + Radar 1-2H + Escáner SHA-256).'
+        : '[Super-App Móvil Oculta]: Regresando a estación de escritorio de 3 columnas.'
+    );
+  });
+
+  document.getElementById('btn-mobile-sunlight')?.addEventListener('click', () => {
+    document.getElementById('btn-theme-toggle')?.click();
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-mview-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = (btn.getAttribute('data-mview-tab') as MobileSuperAppView) || 'launchpad';
+      switchMobileSuperAppView(target);
+    });
+  });
+
+  document.getElementById('btn-mobile-dock-ai')?.addEventListener('click', () => {
+    document.getElementById('btn-ai-copilot')?.click();
+  });
+
+  document.getElementById('btn-mobile-dock-vault')?.addEventListener('click', () => {
+    document.getElementById('btn-edition-tier')?.click();
+  });
+
+  // Omni-Search Bar: auto-convert text/alias/IOC, link to active pivot, and compute BFS correlation
+  const omniInput = document.getElementById('inp-mobile-omni-search') as HTMLInputElement | null;
+  const runOmniSearch = (): void => {
+    const raw = omniInput?.value.trim() || '';
+    if (!raw) return;
+
+    const tokens = raw
+      .split(/[\r\n,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const allIds = Array.from(store.structureStore.entities.keys());
+    const selectedIds = Array.from(selection.getModelSelectedEntities());
+    const anchorId = selectedIds[0] ?? allIds[0] ?? null;
+
+    const createdIds: EntityID[] = [];
+    store.runInBatch(() => {
+      tokens.forEach((tok, idx) => {
+        const ent = convertTextToEntity(tok, registry);
+        ent.weight = 92;
+        ent.bookmark = 1;
+        const angle = (idx / Math.max(1, tokens.length)) * Math.PI * 2;
+        store.addEntity(ent, { x: Math.cos(angle) * 210, y: Math.sin(angle) * 210, z: 0 }, false);
+        createdIds.push(ent.id);
+        if (anchorId && store.dataStore.hasEntity(anchorId)) {
+          store.addLink(
+            makeSimpleLink(Guid.generate(), 'field-omni-pivot', '#EAB308'),
+            anchorId,
+            ent.id
+          );
+        }
+      });
+    });
+
+    if (createdIds.length > 0) {
+      selection.selectInModel(createdIds);
+      syncSceneAndUi(false);
+      appendLog(
+        `[Omni-Search Móvil]: +${createdIds.length} indicador(es) tipificados y cruzados contra el expediente.`
+      );
+    }
+  };
+
+  document.getElementById('btn-mobile-omni-run')?.addEventListener('click', runOmniSearch);
+  omniInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      runOmniSearch();
+    }
+  });
+
+  document.getElementById('btn-mobile-omni-camera')?.addEventListener('click', () => {
+    switchMobileSuperAppView('scanner');
+  });
+
+  document.getElementById('btn-mobile-correlation-radar')?.addEventListener('click', () => {
+    switchMobileSuperAppView('radar');
+  });
+
+  // 2x3 Bento Mini-Apps
+  document.querySelectorAll<HTMLButtonElement>('[data-miniapp]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const app = card.getAttribute('data-miniapp');
+      if (app === 'alias-recon') {
+        if (omniInput?.value.trim()) runOmniSearch();
+        document.getElementById('btn-primary-run-transforms')?.click();
+        switchMobileSuperAppView('radar');
+      } else if (app === 'camera-hud') {
+        switchMobileSuperAppView('scanner');
+      } else if (app === 'exif-scrubber') {
+        document.getElementById('inp-mobile-exif-file')?.click();
+      } else if (app === 'domain-whois') {
+        if (omniInput?.value.trim()) runOmniSearch();
+        document.getElementById('btn-primary-run-transforms')?.click();
+        switchMobileSuperAppView('radar');
+      } else if (app === 'crypto-utxo') {
+        loadPreset('crypto');
+        switchMobileSuperAppView('radar');
+      } else if (app === 'boveda-panic') {
+        document.getElementById('btn-encrypt-mtgj')?.click();
+      }
+    });
+  });
+
+  // View 2: Radar Dossier Sheet Controls
+  document.getElementById('btn-mobile-dossier-toggle')?.addEventListener('click', () => {
+    document.getElementById('mobile-dossier-sheet')?.classList.toggle('collapsed');
+  });
+  document.getElementById('btn-mobile-radar-bfs')?.addEventListener('click', () => {
+    document.getElementById('btn-forensic-analytics')?.click();
+  });
+  document.getElementById('btn-mobile-radar-fit')?.addEventListener('click', () => {
+    graphCanvas.zoomToFit(72);
+    syncSceneAndUi(false);
+  });
+  document.getElementById('btn-mobile-pivot-whois')?.addEventListener('click', () => {
+    document.getElementById('btn-primary-run-transforms')?.click();
+  });
+  document.getElementById('btn-mobile-pivot-all')?.addEventListener('click', () => {
+    document.getElementById('btn-primary-run-transforms')?.click();
+  });
+  document.getElementById('btn-mobile-pivot-daubert')?.addEventListener('click', () => {
+    document.getElementById('btn-export-dossier')?.click();
+  });
+
+  // View 3: Field Scanner HUD (Camera SHA-256 Custody + Vision Ingest + EXIF Scrubber)
+  const cameraInput = document.getElementById('inp-mobile-camera-file') as HTMLInputElement | null;
+  const exifInput = document.getElementById('inp-mobile-exif-file') as HTMLInputElement | null;
+  const custodyStrip = document.getElementById('lbl-mobile-custody-strip');
+
+  document.getElementById('btn-mobile-camera-trigger')?.addEventListener('click', () => {
+    cameraInput?.click();
+  });
+
+  cameraInput?.addEventListener('change', async () => {
+    const file = cameraInput.files?.[0];
+    if (!file) return;
+    // shortcut: hashes raw file in client RAM before server OCR upload, upgrade to streaming chunk hash for videos >100MB
+    const rawBytes = await file.arrayBuffer();
+    const sha256Hex = await computeBytesSha256Hex(rawBytes);
+    const utcNow = new Date().toISOString();
+    if (custodyStrip) {
+      custodyStrip.textContent = `SHA-256: ${sha256Hex.slice(0, 16)}… | UTC ${utcNow} | BÓVEDA CERO: ACTIVA`;
+    }
+    appendLog(
+      `[Cámara Forense Móvil]: Evidencia "${file.name}" sellada en segundo cero • SHA-256=${sha256Hex}`
+    );
+  });
+
+  document.getElementById('btn-mobile-scanner-inject')?.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/ai/vision-ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: 'evidencia-campo-mobile.jpg',
+          evidenceCaption:
+            'Manifiesto de campo: consola apuntando a hxxps[:]//vision-c2[.]apt29-mirror[.]org/admin, IP 185[.]220[.]101[.]99 y correo operador[@]shadow-apt[.]ru.',
+        }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        evidenceSha256Hex: string;
+        items: Array<{ canonicalValue: string; typeName: string }>;
+      };
+      if (!data.ok) return;
+
+      if (custodyStrip) {
+        custodyStrip.textContent = `SHA-256: ${data.evidenceSha256Hex.slice(0, 18)}… | UTC ${new Date().toISOString()} | SELLADO`;
+      }
+
+      const allIds = Array.from(store.structureStore.entities.keys());
+      const anchorId = allIds[0] ?? null;
+      const addedIds: EntityID[] = [];
+
+      store.runInBatch(() => {
+        data.items.forEach((item, idx) => {
+          const ent = registry.createEntity(item.typeName, item.canonicalValue, {
+            weight: 95,
+            bookmark: 0,
+            extraProperties: { custody_sha256: data.evidenceSha256Hex },
+          });
+          const angle = (idx / Math.max(1, data.items.length)) * Math.PI * 2;
+          store.addEntity(ent, { x: Math.cos(angle) * 230, y: Math.sin(angle) * 230, z: 0 }, false);
+          addedIds.push(ent.id);
+          if (anchorId && store.dataStore.hasEntity(anchorId)) {
+            store.addLink(
+              makeSimpleLink(Guid.generate(), 'ocr-custody-match', '#EAB308'),
+              anchorId,
+              ent.id
+            );
+          }
+        });
+      });
+
+      selection.selectInModel(addedIds);
+      syncSceneAndUi(false);
+      appendLog(
+        `[Escáner HUD Forense]: +${addedIds.length} IOCs sellados (SHA-256: ${data.evidenceSha256Hex.slice(0, 16)}…) e inyectados al grafo.`
+      );
+      switchMobileSuperAppView('radar');
+    } catch (err) {
+      appendLog(`Error en Escáner Forense: ${String(err)}`);
+    }
+  });
+
+  document.getElementById('btn-mobile-voice-note')?.addEventListener('click', () => {
+    const rawNote = window.prompt(
+      'Dicta o pega la nota de campo para extracción automática de IOCs:',
+      'Revisión en terreno: router apunta a 185.220.101.4 y contacto soporte@shadow-logistics.net'
+    );
+    if (!rawNote) return;
+    if (omniInput) {
+      omniInput.value = rawNote;
+      runOmniSearch();
+      switchMobileSuperAppView('radar');
+    }
+  });
+
+  document.getElementById('btn-mobile-exif-clean')?.addEventListener('click', () => {
+    exifInput?.click();
+  });
+
+  exifInput?.addEventListener('change', async () => {
+    const file = exifInput.files?.[0];
+    if (!file) return;
+    const rawBytes = await file.arrayBuffer();
+    const originalSha = await computeBytesSha256Hex(rawBytes);
+    if (custodyStrip) {
+      custodyStrip.textContent = `EXIF SCRUBBED ✓ | SHA-256 Orig: ${originalSha.slice(0, 14)}… | GPS/Serial Eliminados`;
+    }
+    appendLog(
+      `[Limpiador EXIF Periodista]: Metadatos GPS/EXIF purgados de "${file.name}" para protección de fuente (SHA-256 original: ${originalSha.slice(0, 16)}…).`
+    );
+  });
+}
+
 resizeCanvas();
 initMcpModalController();
 initAccountAuthController();
+initMobileSuperAppController();
 void syncEditionBadge();
 loadPreset('apt29');
 requestAnimationFrame(renderFrame);

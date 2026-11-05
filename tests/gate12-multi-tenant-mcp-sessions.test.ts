@@ -513,6 +513,17 @@ describe('Gate 12: Multi-Tenant MCP Session Isolation, Atomic WAL OCC Batching, 
     expect(mainTs).toContain('cangrejo_mcp_auth_token');
     expect(mainTs).toContain('CANGREJO_MCP_TOKEN');
 
+    // Verify Mobile OSINT Super-App (Launchpad Bento 2x3, Radar 1-2H Dossier & Scanner HUD)
+    expect(indexHtml).toContain('id="mobile-superapp-shell"');
+    expect(indexHtml).toContain('id="mobile-view-launchpad"');
+    expect(indexHtml).toContain('id="mobile-view-radar"');
+    expect(indexHtml).toContain('id="mobile-view-scanner"');
+    expect(indexHtml).toContain('id="mobile-thumb-dock"');
+    expect(stylesCss).toContain('100dvh');
+    expect(stylesCss).toContain('.mobile-bento-grid');
+    expect(mainTs).toContain('initMobileSuperAppController');
+    expect(mainTs).toContain('switchMobileSuperAppView');
+
     // Verify mcpStdioServer forwards CANGREJO_SESSION_ID and CANGREJO_MCP_TOKEN
     const token = BunSqliteVault.issueSignedLicenseToken({
       tier: 'ORO_PRO',

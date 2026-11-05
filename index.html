@@ -317,6 +317,20 @@
             </span>
 
             <button
+              id="btn-mobile-field-toggle"
+              type="button"
+              class="status-pill status-pill-btn"
+              title="Activar o previsualizar la Super-App Móvil de Inspector de Campo (Launchpad OSINT, Radar 1-2 saltos y Escáner HUD)"
+              aria-pressed="false"
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4" y="1.5" width="8" height="13" rx="1.5" />
+                <path d="M7.5 12h1" />
+              </svg>
+              <span>Modo Campo</span>
+            </button>
+
+            <button
               id="btn-theme-toggle"
               type="button"
               class="status-pill status-pill-btn btn-theme-icon"
@@ -687,6 +701,279 @@ AS13335</textarea>
             <pre id="console-output" class="console-output">Cangrejo v1.0 listo. Haz clic derecho sobre cualquier nodo del expediente o pulsa «Ejecutar pesquisa» para iniciar el análisis de vínculos en vivo.</pre>
           </div>
         </aside>
+
+        <!-- =====================================================================
+             CANGREJO MOBILE SUPER-APP SHELL (3-View Tactical OSINT & Field Suite)
+             ===================================================================== -->
+        <section
+          id="mobile-superapp-shell"
+          class="mobile-superapp-shell"
+          aria-label="Cangrejo Mobile Super-App para Investigadores, Periodistas y Forenses"
+        >
+          <!-- VISTA 1 (Opción A): Super-App Launchpad (Navaja Suiza OSINT) -->
+          <div id="mobile-view-launchpad" data-mview-panel="launchpad" class="mobile-view-panel">
+            <div class="mobile-status-strip">
+              <span class="mobile-gold-badge">CANGREJO // FIELD OSINT</span>
+              <span id="lbl-mobile-live-room" class="mobile-live-pill">● EXP-APT29 (LIVE)</span>
+              <button
+                id="btn-mobile-sunlight"
+                type="button"
+                class="mobile-sunlight-btn"
+                title="Alternar modo solar de alto contraste WCAG AAA (≥ 7:1)"
+              >
+                SUNLIGHT AAA
+              </button>
+            </div>
+
+            <div class="mobile-section-label">FORENSIC OMNI-SEARCH</div>
+            <div class="mobile-omni-bar">
+              <input
+                id="inp-mobile-omni-search"
+                type="text"
+                class="mobile-omni-input"
+                placeholder="Pegar alias, teléfono, email, dominio, wallet o texto…"
+                aria-label="Buscador universal de indicadores OSINT"
+              />
+              <button
+                id="btn-mobile-omni-camera"
+                type="button"
+                class="mobile-omni-icon-btn"
+                title="Abrir escáner de cámara forense SHA-256"
+                aria-label="Abrir cámara forense"
+              >
+                📷
+              </button>
+              <button
+                id="btn-mobile-omni-run"
+                type="button"
+                class="btn btn-primary mobile-omni-submit"
+                title="Extraer indicador, cruzar contra el expediente y lanzar pesquisa"
+              >
+                Cruzar
+              </button>
+            </div>
+
+            <div class="mobile-section-label">TACTICAL MINI-APPS 2×3 BENTO</div>
+            <div class="mobile-bento-grid" role="group" aria-label="Mini-herramientas de investigación">
+              <button type="button" data-miniapp="alias-recon" class="mobile-bento-card">
+                <span class="mobile-bento-icon" aria-hidden="true">🧬</span>
+                <strong class="mobile-bento-title">Huella Digital &amp; Alias</strong>
+                <span class="mobile-bento-tag mobile-tag-amber">Cross-source Pivot</span>
+              </button>
+
+              <button type="button" data-miniapp="camera-hud" class="mobile-bento-card">
+                <span class="mobile-bento-icon" aria-hidden="true">📸</span>
+                <strong class="mobile-bento-title">Cámara Forense SHA-256</strong>
+                <span class="mobile-bento-tag">Tamper-evident OCR</span>
+              </button>
+
+              <button type="button" data-miniapp="exif-scrubber" class="mobile-bento-card">
+                <span class="mobile-bento-icon" aria-hidden="true">🛰️</span>
+                <strong class="mobile-bento-title">Geo &amp; EXIF Recon</strong>
+                <span class="mobile-bento-tag mobile-tag-cyan">Scrubber Periodista</span>
+              </button>
+
+              <button type="button" data-miniapp="domain-whois" class="mobile-bento-card">
+                <span class="mobile-bento-icon" aria-hidden="true">🕸️</span>
+                <strong class="mobile-bento-title">Red Societaria &amp; Dominios</strong>
+                <span class="mobile-bento-tag mobile-tag-amber">WHOIS · RDAP · CT</span>
+              </button>
+
+              <button type="button" data-miniapp="crypto-utxo" class="mobile-bento-card">
+                <span class="mobile-bento-icon" aria-hidden="true">⛓️</span>
+                <strong class="mobile-bento-title">Rastreador Cripto UTXO</strong>
+                <span class="mobile-bento-tag">Blockchain Peel-Chain</span>
+              </button>
+
+              <button type="button" data-miniapp="boveda-panic" class="mobile-bento-card">
+                <span class="mobile-bento-icon" aria-hidden="true">🔐</span>
+                <strong class="mobile-bento-title">Bóveda Cero .cgrj</strong>
+                <span class="mobile-bento-tag mobile-tag-danger">AES-256-GCM · Pánico</span>
+              </button>
+            </div>
+
+            <div class="mobile-section-label">HIGH-PRIORITY TARGET CORRELATION</div>
+            <div id="mobile-correlation-card" class="mobile-correlation-card">
+              <div class="mobile-correlation-head">
+                <span class="mobile-alert-badge">⚠️ MATCH A 2 SALTOS</span>
+                <span id="lbl-mobile-correlation-hops" class="tabular mobile-correlation-meta">BFS Activo</span>
+              </div>
+              <p id="lbl-mobile-correlation-text" class="mobile-correlation-body">
+                104.16.132.229 conecta a 2 saltos con Nodo Crítico «APT29 (Midnight Blizzard)» vía cloudflare.com.
+              </p>
+              <div class="mobile-correlation-actions">
+                <button id="btn-mobile-correlation-radar" type="button" class="btn btn-quiet btn-xs">
+                  Ver en Radar 1-2 Saltos →
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- VISTA 2 (Opción B): Overlay Radar Egocéntrico + Ficha de Objetivo Deslizable -->
+          <div id="mobile-view-radar" data-mview-panel="radar" class="mobile-view-panel mobile-radar-overlay" hidden>
+            <div class="mobile-radar-top-hud">
+              <button id="btn-mobile-radar-bfs" type="button" class="mobile-radar-path-pill">
+                <span aria-hidden="true">⚠️</span>
+                <span id="lbl-mobile-radar-path">Camino más corto: 2 saltos al Objetivo Principal</span>
+              </button>
+              <button id="btn-mobile-radar-fit" type="button" class="btn btn-quiet btn-xs">
+                Centrar 1-Hop
+              </button>
+            </div>
+
+            <div id="mobile-dossier-sheet" class="mobile-dossier-sheet">
+              <button
+                id="btn-mobile-dossier-toggle"
+                type="button"
+                class="mobile-sheet-handle-btn"
+                aria-label="Expandir o contraer ficha de objetivo"
+              >
+                <span class="mobile-sheet-handle-bar"></span>
+              </button>
+              <div class="mobile-dossier-header">
+                <span class="mobile-dossier-kicker">FICHA DE OBJETIVO // DOSSIER EN VIVO</span>
+                <span id="lbl-mobile-dossier-score" class="mobile-score-pill tabular">Score: 95/100 · CRÍTICO</span>
+              </div>
+              <div class="mobile-dossier-target-row">
+                <strong id="lbl-mobile-dossier-title" class="mobile-dossier-title">cloudflare.com</strong>
+                <span id="lbl-mobile-dossier-type" class="mobile-dossier-type tabular">maltego.Domain</span>
+              </div>
+              <div class="mobile-dossier-actions">
+                <button id="btn-mobile-pivot-whois" type="button" class="btn btn-primary btn-xs">
+                  ⚡ Pesquisa DNS/WHOIS
+                </button>
+                <button id="btn-mobile-pivot-all" type="button" class="btn btn-quiet btn-xs">
+                  🔍 Pivote Total OSINT
+                </button>
+                <button id="btn-mobile-pivot-daubert" type="button" class="btn btn-quiet btn-xs">
+                  📄 Acta Daubert
+                </button>
+              </div>
+              <div id="mobile-dossier-props" class="mobile-dossier-props tabular"></div>
+            </div>
+          </div>
+
+          <!-- VISTA 3 (Opción C): Visor de Campo AR/OCR + Sello Forense SHA-256 & EXIF Scrubber -->
+          <div id="mobile-view-scanner" data-mview-panel="scanner" class="mobile-view-panel" hidden>
+            <div class="mobile-scanner-viewfinder">
+              <div class="mobile-scanner-doc-sim">
+                <div class="mobile-scanner-doc-title">EVIDENCIA DE CAMPO // MANIFIESTO O CAPTURA</div>
+                <div id="mobile-scanner-boxes" class="mobile-scanner-boxes">
+                  <div class="mobile-ocr-box mobile-ocr-amber">
+                    <span class="mobile-ocr-tag">IP ADDRESS · YA EN GRAFO (2 SALTOS)</span>
+                    <code id="lbl-scanner-ioc-1">185.220.101.99</code>
+                  </div>
+                  <div class="mobile-ocr-box mobile-ocr-cyan">
+                    <span class="mobile-ocr-tag">EMAIL · NUEVO IOC DETECTADO</span>
+                    <code id="lbl-scanner-ioc-2">operador@shadow-apt.ru</code>
+                  </div>
+                  <div class="mobile-ocr-box mobile-ocr-cyan">
+                    <span class="mobile-ocr-tag">URL C2 · DEFANGED IOC</span>
+                    <code id="lbl-scanner-ioc-3">vision-c2.apt29-mirror.org</code>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PiP Mini-Graph en Esquina Superior Derecha -->
+              <div class="mobile-scanner-pip" title="Topología del expediente en tiempo real">
+                <span class="mobile-pip-label">PiP · LIVE GRAPH</span>
+                <div id="lbl-mobile-pip-stats" class="mobile-pip-stats tabular">11 nodos · 10 enlaces</div>
+              </div>
+            </div>
+
+            <!-- Cintillo de Cadena de Custodia SHA-256 -->
+            <div id="lbl-mobile-custody-strip" class="mobile-custody-strip tabular">
+              SHA-256: 8f4e9b2c1d0a...3a1c | UTC LIVE | BÓVEDA CERO: ACTIVA
+            </div>
+
+            <input
+              id="inp-mobile-camera-file"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style="display: none"
+            />
+            <input
+              id="inp-mobile-exif-file"
+              type="file"
+              accept="image/*"
+              style="display: none"
+            />
+
+            <div class="mobile-scanner-controls">
+              <button
+                id="btn-mobile-scanner-inject"
+                type="button"
+                class="btn btn-primary mobile-shutter-btn"
+              >
+                ● [SELLAR SHA-256 E INYECTAR AL GRAFO]
+              </button>
+              <div class="mobile-scanner-mode-row">
+                <button id="btn-mobile-camera-trigger" type="button" class="btn btn-quiet btn-xs">
+                  📷 [ESCANEAR DOC/CÁMARA]
+                </button>
+                <button id="btn-mobile-voice-note" type="button" class="btn btn-quiet btn-xs">
+                  🎙️ [NOTA DE VOZ / TEXTO IA]
+                </button>
+                <button id="btn-mobile-exif-clean" type="button" class="btn btn-quiet btn-xs">
+                  🛡️ [LIMPIADOR EXIF]
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Barra de Pulgar Fija (Mobile Thumb Dock) -->
+        <nav id="mobile-thumb-dock" class="mobile-thumb-dock" aria-label="Navegación táctica de pulgar">
+          <button
+            type="button"
+            data-mview-tab="launchpad"
+            class="mobile-dock-btn active"
+            aria-label="Super-App Launchpad"
+          >
+            <span class="mobile-dock-icon" aria-hidden="true">🧰</span>
+            <span class="mobile-dock-label">Super-App</span>
+          </button>
+
+          <button
+            type="button"
+            data-mview-tab="radar"
+            class="mobile-dock-btn"
+            aria-label="Radar de Grafo 1 a 2 saltos"
+          >
+            <span class="mobile-dock-icon" aria-hidden="true">🕸️</span>
+            <span class="mobile-dock-label">Radar 1-2H</span>
+          </button>
+
+          <button
+            type="button"
+            data-mview-tab="scanner"
+            class="mobile-dock-cta"
+            aria-label="Capturar IOC con Cámara Forense SHA-256"
+          >
+            <span>[+ CAPTURAR IOC]</span>
+          </button>
+
+          <button
+            id="btn-mobile-dock-ai"
+            type="button"
+            class="mobile-dock-btn"
+            aria-label="Abrir Comisario IA"
+          >
+            <span class="mobile-dock-icon" aria-hidden="true">🤖</span>
+            <span class="mobile-dock-label">Copiloto IA</span>
+          </button>
+
+          <button
+            id="btn-mobile-dock-vault"
+            type="button"
+            class="mobile-dock-btn"
+            aria-label="Bóveda y Cuenta"
+          >
+            <span class="mobile-dock-icon" aria-hidden="true">🛡️</span>
+            <span class="mobile-dock-label">Custodia</span>
+          </button>
+        </nav>
       </main>
 
       <!-- Manifiesto Cangrejo de Oro y Atajos de Teclado (Hallmark v2.0) -->

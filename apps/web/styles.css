@@ -2500,4 +2500,617 @@
     max-height: 165px;
     min-height: 110px;
   }
+
+  /* ==========================================================================
+     CANGREJO MOBILE SUPER-APP (Launchpad Bento, Ego-Graph Radar & Scanner HUD)
+     ========================================================================== */
+  .mobile-superapp-shell,
+  .mobile-thumb-dock {
+    display: none;
+  }
+
+  body[data-field-mode='true'] #btn-mobile-field-toggle {
+    background: var(--brand-gold-bg);
+    border-color: var(--brand-gold-border);
+    color: var(--brand-gold-text);
+  }
+
+  @media (max-width: 860px) {
+    #app {
+      height: 100dvh;
+    }
+
+    .ribbon-center,
+    .ribbon-breadcrumb-sep,
+    #btn-load-preset,
+    .sidebar-left,
+    .sidebar-right,
+    .canvas-dock-wrapper,
+    .minimap-container,
+    .canvas-hud {
+      display: none !important;
+    }
+
+    .workstation {
+      position: relative;
+      grid-template-columns: 1fr !important;
+      height: calc(100dvh - 48px);
+      padding-bottom: 58px;
+    }
+
+    .mobile-superapp-shell {
+      display: flex;
+      flex-direction: column;
+      position: absolute;
+      inset: 0 0 58px 0;
+      z-index: 25;
+      pointer-events: none;
+    }
+
+    .mobile-thumb-dock {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.45fr 1fr 1fr;
+      align-items: center;
+      gap: 6px;
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 58px;
+      padding: 6px 10px;
+      background: var(--surface-panel);
+      border-top: 1px solid var(--border-default);
+      z-index: 40;
+    }
+  }
+
+  /* Desktop Field-Preview Drawer Mode (when toggled via #btn-mobile-field-toggle) */
+  @media (min-width: 861px) {
+    body[data-field-mode='true'] .mobile-superapp-shell {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 56px;
+      right: 16px;
+      bottom: 74px;
+      width: 410px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-popover);
+      overflow: hidden;
+      z-index: 35;
+      pointer-events: none;
+    }
+
+    body[data-field-mode='true'] .mobile-thumb-dock {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.45fr 1fr 1fr;
+      align-items: center;
+      gap: 6px;
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      width: 410px;
+      height: 58px;
+      padding: 6px 10px;
+      background: var(--surface-panel);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-popover);
+      z-index: 40;
+    }
+  }
+
+  .mobile-view-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    background: var(--surface-canvas);
+    overflow-y: auto;
+    pointer-events: auto;
+  }
+
+  .mobile-view-panel[hidden] {
+    display: none !important;
+  }
+
+  .mobile-status-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .mobile-gold-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--brand-gold-bg);
+    border: 1px solid var(--brand-gold-border);
+    color: var(--brand-gold-text);
+    letter-spacing: 0.03em;
+  }
+
+  .mobile-live-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    background: rgba(16, 185, 129, 0.14);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: var(--text-primary);
+  }
+
+  .mobile-sunlight-btn {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-panel-elevated);
+    border: 1px solid var(--border-default);
+    color: var(--text-subtle);
+    cursor: pointer;
+  }
+
+  .mobile-section-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+
+  .mobile-omni-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    background: var(--surface-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+  }
+
+  .mobile-omni-input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 12.5px;
+  }
+
+  .mobile-omni-icon-btn {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-panel-elevated);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 15px;
+  }
+
+  .mobile-omni-submit {
+    height: 36px;
+    padding: 0 12px;
+  }
+
+  .mobile-bento-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .mobile-bento-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+    min-height: 92px;
+    padding: 10px;
+    text-align: left;
+    background: var(--surface-panel);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+
+  .mobile-bento-card:hover,
+  .mobile-bento-card:focus-visible {
+    border-color: var(--accent-primary);
+    background: var(--surface-panel-elevated);
+  }
+
+  .mobile-bento-icon {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .mobile-bento-title {
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--text-primary);
+  }
+
+  .mobile-bento-tag {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    padding: 2px 5px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+  }
+
+  .mobile-tag-amber {
+    background: var(--brand-gold-bg);
+    border-color: var(--brand-gold-border);
+    color: var(--brand-gold-text);
+  }
+
+  .mobile-tag-cyan {
+    background: rgba(56, 189, 248, 0.14);
+    border-color: rgba(56, 189, 248, 0.4);
+    color: var(--text-primary);
+  }
+
+  .mobile-tag-danger {
+    background: rgba(239, 68, 68, 0.14);
+    border-color: rgba(239, 68, 68, 0.42);
+    color: var(--text-primary);
+  }
+
+  .mobile-correlation-card {
+    background: var(--surface-panel);
+    border: 1px solid var(--brand-gold-border);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .mobile-correlation-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .mobile-alert-badge {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--brand-gold-text);
+  }
+
+  .mobile-correlation-meta {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .mobile-correlation-body {
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.38;
+  }
+
+  .mobile-correlation-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* VISTA 2: Radar Overlay (transparent top so WebGPU/Canvas2D shows through) */
+  .mobile-radar-overlay {
+    background: transparent;
+    justify-content: space-between;
+    pointer-events: none;
+    padding: 10px;
+  }
+
+  .mobile-radar-top-hud {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    pointer-events: auto;
+  }
+
+  .mobile-radar-path-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+    background: rgba(239, 68, 68, 0.18);
+    border: 1px solid rgba(239, 68, 68, 0.55);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .mobile-dossier-sheet {
+    background: var(--surface-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: 8px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: auto;
+    box-shadow: var(--shadow-popover);
+  }
+
+  .mobile-dossier-sheet.collapsed .mobile-dossier-actions,
+  .mobile-dossier-sheet.collapsed .mobile-dossier-props {
+    display: none;
+  }
+
+  .mobile-sheet-handle-btn {
+    width: 100%;
+    height: 16px;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .mobile-sheet-handle-bar {
+    width: 38px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border-strong);
+  }
+
+  .mobile-dossier-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .mobile-dossier-kicker {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+
+  .mobile-score-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: var(--radius-sm);
+    background: rgba(239, 68, 68, 0.16);
+    border: 1px solid rgba(239, 68, 68, 0.48);
+    color: var(--text-primary);
+  }
+
+  .mobile-dossier-target-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .mobile-dossier-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .mobile-dossier-type {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--brand-gold-text);
+  }
+
+  .mobile-dossier-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .mobile-dossier-props {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 6px 8px;
+    max-height: 96px;
+    overflow-y: auto;
+  }
+
+  /* VISTA 3: Field Scanner HUD */
+  .mobile-scanner-viewfinder {
+    position: relative;
+    flex: 1;
+    min-height: 210px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+
+  .mobile-scanner-doc-sim {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mobile-scanner-doc-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+
+  .mobile-scanner-boxes {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .mobile-ocr-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 9px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-panel);
+    border: 1px solid var(--border-default);
+  }
+
+  .mobile-ocr-amber {
+    border-color: var(--accent-primary);
+    background: var(--brand-gold-bg);
+  }
+
+  .mobile-ocr-cyan {
+    border-color: var(--accent-instrument);
+    background: rgba(56, 189, 248, 0.12);
+  }
+
+  .mobile-ocr-tag {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+
+  .mobile-ocr-box code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .mobile-scanner-pip {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 6px 9px;
+    background: var(--surface-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mobile-pip-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--brand-gold-text);
+  }
+
+  .mobile-pip-stats {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-primary);
+  }
+
+  .mobile-custody-strip {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 6px 9px;
+    background: var(--surface-panel);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-subtle);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-scanner-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mobile-shutter-btn {
+    height: 40px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .mobile-scanner-mode-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  /* Thumb Dock Buttons */
+  .mobile-dock-btn {
+    height: 44px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .mobile-dock-btn.active {
+    background: var(--surface-panel-elevated);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+  }
+
+  .mobile-dock-icon {
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .mobile-dock-cta {
+    height: 42px;
+    background: var(--accent-primary);
+    color: var(--text-on-accent);
+    border: 1px solid var(--accent-hover);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
