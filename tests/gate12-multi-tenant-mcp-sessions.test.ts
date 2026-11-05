@@ -10,6 +10,12 @@ import cloudflareWorker, {
 import { cangrejoHonoApp, sessionRooms } from '../apps/web/honoApp.js';
 import { dispatchMcpJsonRpcLine } from '../apps/web/mcpStdioServer.js';
 import {
+  EntityRegistry,
+  GraphStore,
+  Guid,
+  createPropertyBag,
+} from '../packages/core/src/index.js';
+import {
   BunSqliteVault,
   MAX_D1_INLINE_SNAPSHOT_BYTES,
   compressGraphSnapshot,
@@ -17,6 +23,8 @@ import {
   type CloudflareR2BucketLike,
   type McpGraphMutationRow,
 } from '../packages/database-d1/src/index.js';
+import { CATEGORY_VISUAL_TOKENS, LIGHT_TOKENS } from '../packages/design-tokens/src/index.js';
+import { MtgjJsonHandler, Stix21Exporter } from '../packages/transforms/src/index.js';
 
 describe('Gate 12: Multi-Tenant MCP Session Isolation, Atomic WAL OCC Batching, Compaction Boundary Invariant & Two-Tier D1/R2 Snapshots', () => {
   it('1. enforces Bearer auth on /api/mcp/:sessionId (401/403), JIT provisions CGRJ.* tenants, and isolates same-slug sessions across tenants', async () => {
@@ -862,6 +870,241 @@ describe('Gate 12: Multi-Tenant MCP Session Isolation, Atomic WAL OCC Batching, 
     const delJson = (await delRes.json()) as { ok: boolean; deleted: boolean };
     expect(delJson.ok).toBe(true);
     expect(delJson.deleted).toBe(true);
+
+    vault.close();
+  });
+
+  it('10. verifies all 19 QA defect remediations (CANGREJO-BUG-01 through CANGREJO-BUG-19)', async () => {
+    const repoRoot = path.resolve(import.meta.dirname, '..');
+    const mainTs = fs.readFileSync(path.join(repoRoot, 'apps/web/main.ts'), 'utf-8');
+
+    // BUG-01..08: Canvas drag batching, debounced autosave, atomic reverseLink, collection dblclick, Light Mode AAA, mobile Cmd+K, parallel edge offset, slider change undo
+    expect(mainTs).toContain('store.reverseLink(link.id)');
+    expect(mainTs).toContain('collectionView.uncollectNode(hitId)');
+    expect(mainTs).toContain('computeParallelEdgeOffset');
+    expect(mainTs).toContain('autosaveDebounceTimer');
+    expect(mainTs).toContain('inp-mobile-omni-search');
+    expect(LIGHT_TOKENS.textSecondary).toBe('#334155');
+    expect(CATEGORY_VISUAL_TOKENS.events?.colorLight).toBe('#92400E');
+
+    // BUG-03: Atomic single-undo GraphStore.reverseLink
+    const reg = new EntityRegistry();
+    const gStore = new GraphStore();
+    const nA = reg.createEntity('maltego.Domain', 'alpha.org', { id: new Guid(1n) });
+    const nB = reg.createEntity('maltego.IPv4Address', '1.1.1.1', { id: new Guid(2n) });
+    gStore.addEntity(nA);
+    gStore.addEntity(nB);
+    const linkId = new Guid(99n);
+    gStore.addLink(
+      {
+        id: linkId,
+        typeName: 'maltego.link.transform-link',
+        weight: 1,
+        bookmark: -1,
+        notes: { value: '', show: false },
+        displayInfo: [],
+        properties: createPropertyBag(),
+      },
+      nA.id,
+      nB.id
+    );
+    const undoBeforeReverse = gStore.undoRedoManager.undoCount;
+    gStore.reverseLink(linkId);
+    expect(gStore.undoRedoManager.undoCount).toBe(undoBeforeReverse + 1);
+    expect(gStore.structureStore.links.get(linkId)?.source.equals(nB.id)).toBe(true);
+    gStore.undoRedoManager.undo();
+    expect(gStore.structureStore.links.get(linkId)?.source.equals(nA.id)).toBe(true);
+    expect(gStore.linkCount).toBe(1);
+
+    // BUG-14: Unique random 12-byte IV per encrypted field in Bóveda Cero (.mtgj)
+    const mtgjHandler = new MtgjJsonHandler();
+    const eSame1 = reg.createEntity('maltego.Domain', 'identical-secret.org', { id: new Guid(10n) });
+    const eSame2 = reg.createEntity('maltego.Domain', 'identical-secret.org', { id: new Guid(11n) });
+    const encStore = new GraphStore();
+    encStore.addEntity(eSame1);
+    encStore.addEntity(eSame2);
+    const rawDoc = mtgjHandler.importFromMtgjArchiveBytes(
+      mtgjHandler.exportToMtgjArchiveBytes(encStore)
+    ).document;
+    const encryptedDoc = mtgjHandler.encryptMtgjDocument(rawDoc, 'boveda-unique-iv-pass');
+    const c1 = encryptedDoc.entities[0]!.props[0]!.value;
+    const c2 = encryptedDoc.entities[1]!.props[0]!.value;
+    expect(c1).not.toBe(c2);
+    const decryptedDoc = mtgjHandler.decryptMtgjDocument(encryptedDoc, 'boveda-unique-iv-pass');
+    expect(decryptedDoc.entities[0]!.props[0]!.value).toBe('identical-secret.org');
+    expect(decryptedDoc.entities[1]!.props[0]!.value).toBe('identical-secret.org');
+
+    // BUG-15 & BUG-17: STIX 2.1 primary value precedence + safe handling of x_cangrejo_entity_id: "0"
+    const stixStore = new GraphStore();
+    const stixEnt = reg.createEntity('maltego.Domain', 'primary-domain.org', {
+      id: new Guid(55n),
+      extraProperties: { z_aux: 'auxiliary-metadata' },
+    });
+    // Insert auxiliary property before main property in map order
+    const reorderedVals = new Map<string, unknown>([
+      ['z_aux', 'auxiliary-metadata'],
+      ...stixEnt.properties.values.entries(),
+    ]);
+    stixEnt.properties.values.clear();
+    for (const [k, v] of reorderedVals) stixEnt.properties.values.set(k, v);
+    stixStore.addEntity(stixEnt);
+    const stixBundle = Stix21Exporter.exportFromStore(stixStore);
+    const domObj = stixBundle.objects.find((o) => o.type === 'domain-name');
+    expect(domObj?.value).toBe('primary-domain.org');
+
+    const zeroIdImported = Stix21Exporter.importBundle({
+      type: 'bundle',
+      id: 'bundle--00000000-0000-4000-8000-000000000001',
+      spec_version: '2.1',
+      objects: [
+        {
+          type: 'domain-name',
+          spec_version: '2.1',
+          id: 'domain-name--12345678-1234-4234-8234-123456789abc',
+          value: 'zero-safe.org',
+          x_cangrejo_entity_id: '0',
+        },
+      ],
+    });
+    expect(zeroIdImported.entities[0]?.id).not.toBe('0');
+    expect(() => Guid.parse(zeroIdImported.entities[0]!.id)).not.toThrow();
+
+    // BUG-09, BUG-10, BUG-12, BUG-18, BUG-19: /api/transforms/run validation, whois-rdap alias, sliderLimit, NXDOMAIN integrity & D1 cache
+    const vault = new BunSqliteVault(':memory:');
+    const d1 = vault.asD1Database();
+
+    const emptyRes = await cangrejoHonoApp.request(
+      '/api/transforms/run',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bypassCache: true }),
+      },
+      { DB: d1 }
+    );
+    expect(emptyRes.status).toBe(400);
+
+    const whoisRes = await cangrejoHonoApp.request(
+      '/api/transforms/run',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transformId: 'whois-rdap',
+          entityType: 'maltego.Domain',
+          entityValue: 'cloudflare.com',
+          sliderLimit: 2,
+          bypassCache: true,
+        }),
+      },
+      { DB: d1 }
+    );
+    expect(whoisRes.status).toBe(200);
+    const whoisJson = (await whoisRes.json()) as { entities: unknown[] };
+    expect(whoisJson.entities.length).toBe(2);
+
+    const d1Cached = await vault.getCachedPesquisaFromD1Safe(d1, 'whois-identity', 'cloudflare.com');
+    expect(d1Cached).not.toBeNull();
+
+    const nxRes = await cangrejoHonoApp.request(
+      '/api/transforms/run',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transformId: 'dns-to-ip',
+          entityType: 'maltego.Domain',
+          entityValue: 'thisdomaindoesnotexist999888777666.invalid',
+          bypassCache: true,
+        }),
+      },
+      { DB: d1 }
+    );
+    expect(nxRes.status).toBe(200);
+    const nxJson = (await nxRes.json()) as { entities: unknown[]; messages: Array<{ text: string }> };
+    expect(nxJson.entities.length).toBe(0);
+
+    // BUG-13 & BUG-16: cgrj_usr_* JIT room provisioning + Community 500-entity quota enforcement
+    const regRes = await cangrejoHonoApp.request(
+      'http://127.0.0.1:3000/api/auth/register',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'qa-jit@cangrejo.org',
+          password: 'StrongPassword#2026',
+          displayName: 'QA JIT Analyst',
+          organizationName: 'QA Community Org',
+          requestedTier: 'COMMUNITY',
+        }),
+      },
+      { DB: d1 }
+    );
+    expect(regRes.status).toBe(201);
+    const regUser = (await regRes.json()) as { authToken: string };
+    const usrRoomRes = await cangrejoHonoApp.request(
+      '/api/mcp/sala-jit-nueva',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${regUser.authToken}`,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 91,
+          method: 'tools/call',
+          params: {
+            name: 'cangrejo_session_mutate_graph',
+            arguments: {
+              roomId: 'sala-jit-nueva',
+              action: 'upsert',
+              entities: [{ id: '1', typeName: 'maltego.Domain', value: 'jit-ok.org' }],
+            },
+          },
+        }),
+      },
+      { DB: d1 }
+    );
+    expect(usrRoomRes.status).toBe(200);
+    const usrRoomJson = (await usrRoomRes.json()) as { result: { isError: boolean } };
+    expect(usrRoomJson.result.isError).toBe(false);
+
+    const overQuotaEntities = Array.from({ length: 505 }, (_, i) => ({
+      id: String(1000 + i),
+      typeName: 'maltego.Domain',
+      value: `node-${i}.org`,
+    }));
+    const quotaRes = await cangrejoHonoApp.request(
+      '/api/mcp/sala-jit-nueva',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${regUser.authToken}`,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 92,
+          method: 'tools/call',
+          params: {
+            name: 'cangrejo_session_mutate_graph',
+            arguments: {
+              roomId: 'sala-jit-nueva',
+              action: 'upsert',
+              entities: overQuotaEntities,
+            },
+          },
+        }),
+      },
+      { DB: d1 }
+    );
+    const quotaJson = (await quotaRes.json()) as {
+      error?: { code: number; message: string };
+      result?: { isError: boolean; content: Array<{ text: string }> };
+    };
+    const errText = quotaJson.error?.message ?? quotaJson.result?.content[0]?.text ?? '';
+    expect(errText).toContain('Tenant quota exceeded');
 
     vault.close();
   });

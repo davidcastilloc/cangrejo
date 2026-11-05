@@ -1588,6 +1588,18 @@ export class BunSqliteVault {
         .run();
       await d1
         .prepare(
+          `CREATE TABLE IF NOT EXISTS cangrejo_pesquisa_cache (
+            cache_key TEXT PRIMARY KEY,
+            transform_id TEXT NOT NULL,
+            target_value TEXT NOT NULL,
+            response_json TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+          )`
+        )
+        .run();
+      await d1
+        .prepare(
           `CREATE TABLE IF NOT EXISTS cangrejo_provider_keys (
             provider TEXT PRIMARY KEY,
             api_key TEXT NOT NULL,
@@ -1790,6 +1802,70 @@ export class BunSqliteVault {
           entry.discoveredCount,
           entry.elapsedMs,
           entry.createdAt ?? Date.now()
+        )
+        .run();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public async getCachedPesquisaFromD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    transformId: string,
+    targetValue: string
+  ): Promise<Record<string, unknown> | null> {
+    if (!d1 || typeof d1.prepare !== 'function') return null;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      const cacheKey = BunSqliteVault.buildPesquisaCacheKey(transformId, targetValue);
+      const row = await d1
+        .prepare(
+          `SELECT response_json
+           FROM cangrejo_pesquisa_cache
+           WHERE cache_key = ? AND expires_at > ?`
+        )
+        .bind(cacheKey, Date.now())
+        .first<{ response_json: string }>();
+      if (!row || typeof row.response_json !== 'string') return null;
+      const parsed = JSON.parse(row.response_json) as unknown;
+      return typeof parsed === 'object' && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async setCachedPesquisaToD1Safe(
+    d1: CloudflareD1DatabaseLike | undefined,
+    transformId: string,
+    targetValue: string,
+    responsePayload: Record<string, unknown>,
+    ttlMs = 300_000
+  ): Promise<boolean> {
+    if (!d1 || typeof d1.prepare !== 'function') return false;
+    try {
+      await this.ensureD1TablesSafe(d1);
+      const cacheKey = BunSqliteVault.buildPesquisaCacheKey(transformId, targetValue);
+      const now = Date.now();
+      const expiresAt = now + Math.max(1_000, ttlMs);
+      await d1
+        .prepare(
+          `INSERT INTO cangrejo_pesquisa_cache (cache_key, transform_id, target_value, response_json, expires_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(cache_key) DO UPDATE SET
+             response_json = excluded.response_json,
+             expires_at = excluded.expires_at,
+             created_at = excluded.created_at`
+        )
+        .bind(
+          cacheKey,
+          transformId.trim(),
+          targetValue.trim(),
+          JSON.stringify(responsePayload),
+          expiresAt,
+          now
         )
         .run();
       return true;
@@ -2234,8 +2310,10 @@ export class BunSqliteVault {
     }
   ): Promise<void> {
     await BunSqliteVault.ensureMcpSessionD1TablesSafe(d1);
-    const maxSessions = params.tier === 'PLATINO_ENTERPRISE' ? 25 : 5;
-    const maxEntities = params.tier === 'PLATINO_ENTERPRISE' ? 100_000 : 25_000;
+    const maxSessions =
+      params.tier === 'PLATINO_ENTERPRISE' ? 25 : params.tier === 'ORO_PRO' ? 5 : 2;
+    const maxEntities =
+      params.tier === 'PLATINO_ENTERPRISE' ? 100_000 : params.tier === 'ORO_PRO' ? 25_000 : 500;
     const caseTier = params.tier === 'PLATINO_ENTERPRISE' ? 'PLATINO' : 'ORO';
 
     const upsertTenantStmt = d1
@@ -2247,8 +2325,9 @@ export class BunSqliteVault {
         VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
         ON CONFLICT(tenant_id) DO UPDATE SET
           tier = excluded.tier,
-          organization_name = excluded.organization_name,
-          license_signature_hash = excluded.license_signature_hash,
+          organization_name = COALESCE(NULLIF(excluded.organization_name, ''), cangrejo_tenant_metadata.organization_name),
+          license_signature_hash = COALESCE(excluded.license_signature_hash, cangrejo_tenant_metadata.license_signature_hash),
+          max_entities_per_session = excluded.max_entities_per_session,
           updated_at = unixepoch()`
       )
       .bind(

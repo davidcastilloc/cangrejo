@@ -651,7 +651,8 @@ function getSessionSnapshotSummary(session: CangrejoSessionRoomState) {
 
 function normalizeIncomingDeltaEntity(raw: unknown): SerializedEntityDelta {
   const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
-  const id = typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : Guid.generate().toString();
+  const rawId = typeof obj.id === 'string' ? obj.id.trim() : '';
+  const id = rawId && rawId !== '0' && !/^0+$/.test(rawId) ? rawId : Guid.generate().toString();
   const posObj =
     typeof obj.position === 'object' && obj.position !== null
       ? (obj.position as Record<string, unknown>)
@@ -686,8 +687,10 @@ function normalizeIncomingDeltaEntity(raw: unknown): SerializedEntityDelta {
 
 function normalizeIncomingDeltaLink(raw: unknown): SerializedLinkDelta {
   const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const rawId = typeof obj.id === 'string' ? obj.id.trim() : '';
+  const id = rawId && rawId !== '0' && !/^0+$/.test(rawId) ? rawId : Guid.generate().toString();
   return {
-    id: typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : Guid.generate().toString(),
+    id,
     typeName: typeof obj.typeName === 'string' ? obj.typeName : 'maltego.link.transform-link',
     sourceId: String(obj.sourceId ?? obj.source ?? ''),
     targetId: String(obj.targetId ?? obj.target ?? ''),
@@ -888,19 +891,33 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
         ? 'ip-to-asn'
         : rawTransformId === 'dns-resolve'
           ? 'dns-to-ip'
-          : rawTransformId === 'whois-rdap'
-            ? 'whois-to-contacts'
+          : rawTransformId === 'whois-rdap' || rawTransformId === 'whois-to-contacts'
+            ? 'whois-identity'
             : rawTransformId || 'all';
     const entityType =
       typeof rawBody.entityType === 'string' ? rawBody.entityType : 'maltego.Domain';
-    const value = normalizeEntityValue(rawBody.entityValue);
+    const value = normalizeEntityValue(rawBody.entityValue ?? rawBody.value);
+    if (!value || value.trim().length === 0) {
+      return c.json(
+        {
+          ok: false,
+          error: 'Missing or empty required field: entityValue',
+          entities: [],
+          messages: [{ type: 'PartialError', text: 'entityValue is required' }],
+        },
+        400
+      );
+    }
     const normalizedFields = normalizeEntityFields(rawBody.entityFields);
     const sliderLimit = typeof rawBody.sliderLimit === 'number' ? rawBody.sliderLimit : 12;
     const bypassCache = rawBody.bypassCache === true;
     const cacheKey = BunSqliteVault.buildPesquisaCacheKey(transformId, value);
+    const activeD1 = extractD1Binding(c.env);
 
     if (!bypassCache) {
-      const cached = sqliteVault.getCachedPesquisa(transformId, value);
+      const cached =
+        sqliteVault.getCachedPesquisa(transformId, value) ??
+        (await sqliteVault.getCachedPesquisaFromD1Safe(activeD1, transformId, value));
       if (cached) {
         c.header('X-Cangrejo-Cache', 'HIT');
         const mergedCached = {
@@ -938,11 +955,42 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
         /^(?:bc1[a-zA-HJ-NP-Z0-9]{25,89}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(value);
       const isDomainLike = !isIpv4Value && !isBtcValue && !/^[a-fA-F0-9]{64}$/.test(value);
 
+    const subTimeoutMs = transformId === 'all' ? 1500 : 4500;
+
     // 1. Live DNS A/AAAA Resolution
     if (transformId === 'dns-to-ip' || (transformId === 'all' && isDomainLike)) {
       const host = value.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '');
       try {
-        const ipv4s = await dns.resolve4(host);
+        let ipv4s: string[] = [];
+        try {
+          ipv4s = await dns.resolve4(host);
+        } catch (dnsErr: unknown) {
+          const dohRes = await fetch(
+            `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`,
+            {
+              headers: { accept: 'application/dns-json' },
+              signal: AbortSignal.timeout(1200),
+            }
+          ).catch(() => null);
+          if (dohRes?.ok) {
+            const dohJson = (await dohRes.json()) as {
+              Status?: number;
+              Answer?: Array<{ type?: number; data?: string }>;
+            };
+            if (dohJson.Status === 0 && Array.isArray(dohJson.Answer)) {
+              ipv4s = dohJson.Answer.filter(
+                (a) => a.type === 1 && typeof a.data === 'string' && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(a.data)
+              ).map((a) => a.data!);
+            } else {
+              throw Object.assign(new Error(`NXDOMAIN or NODATA for ${host}`), { code: 'NXDOMAIN' });
+            }
+          } else {
+            throw dnsErr;
+          }
+        }
+        if (ipv4s.length === 0) {
+          throw Object.assign(new Error(`No A records for ${host}`), { code: 'NODATA' });
+        }
         for (const ip of ipv4s.slice(0, 6)) {
           entities.push({
             typeName: 'maltego.IPv4Address',
@@ -961,25 +1009,19 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
           type: 'Inform',
           text: `[DNS A] Resolved ${ipv4s.length} IPv4 record(s) for ${host}`,
         });
-      } catch {
-        const hash = Array.from(host).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) & 0xff, 42);
-        const fallbackIp = `104.21.${(hash % 200) + 10}.${((hash * 7) % 240) + 10}`;
-        entities.push({
-          typeName: 'maltego.IPv4Address',
-          value: fallbackIp,
-          weight: 90,
-          fields: {
-            'ipv4-address': fallbackIp,
-            source: 'Passive DNS Cache',
-          },
-          linkLabel: 'passive A record',
-          linkColor: '#38bdf8',
-          forensicTier: 'PLATA',
-        });
-        messages.push({
-          type: 'Inform',
-          text: `[Passive DNS] Returned cached A record ${fallbackIp} for ${host}`,
-        });
+      } catch (err: unknown) {
+        const code = (err as { code?: string })?.code ?? '';
+        if (code === 'ENOTFOUND' || code === 'NODATA' || code === 'NXDOMAIN') {
+          messages.push({
+            type: 'Inform',
+            text: `[DNS A] No A records found for ${host} (NXDOMAIN / NODATA).`,
+          });
+        } else {
+          messages.push({
+            type: 'PartialError',
+            text: `[DNS A] Resolution failed for ${host}: ${err instanceof Error ? err.message : 'DNS lookup error'}`,
+          });
+        }
       }
     }
 
@@ -1116,7 +1158,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
         try {
           const ctRes = await fetch(
             `https://crt.sh/?q=%25.${encodeURIComponent(baseDomain)}&output=json`,
-            { signal: AbortSignal.timeout(1800) }
+            { signal: AbortSignal.timeout(subTimeoutMs) }
           );
           if (ctRes.ok) {
             const ctRows = (await ctRes.json()) as Array<{
@@ -1369,7 +1411,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       if (rawBody.liveNetwork === true) {
         try {
           const rdapRes = await fetch(`https://rdap.org/domain/${encodeURIComponent(clean)}`, {
-            signal: AbortSignal.timeout(1800),
+            signal: AbortSignal.timeout(subTimeoutMs),
           });
           if (rdapRes.ok) {
             const rdapJson = (await rdapRes.json()) as {
@@ -1434,7 +1476,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
         try {
           const mpRes = await fetch(
             `https://mempool.space/api/address/${encodeURIComponent(value)}/txs`,
-            { signal: AbortSignal.timeout(1800) }
+            { signal: AbortSignal.timeout(subTimeoutMs) }
           );
           if (mpRes.ok) {
             const txs = (await mpRes.json()) as Array<{
@@ -1806,6 +1848,10 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       }
     }
 
+    if (sliderLimit > 0 && entities.length > sliderLimit) {
+      entities.splice(sliderLimit);
+    }
+
     const inputEntity = registry.createEntity(entityType, value, {
       extraProperties: normalizedFields,
     });
@@ -1896,6 +1942,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       };
 
       sqliteVault.setCachedPesquisaSafe(transformId, value, responsePayload);
+      await sqliteVault.setCachedPesquisaToD1Safe(activeD1, transformId, value, responsePayload);
       return responsePayload;
     })();
 
@@ -4130,27 +4177,40 @@ async function resolveMcpSessionRoom(
   const r2 = extractR2Binding(c.env);
 
   let meta = await BunSqliteVault.getMcpSessionMeta(activeD1, dbSessionId);
-  if (!meta && mcpCtx.token && mcpCtx.token.startsWith('CGRJ.')) {
-    const verified = BunSqliteVault.verifySignedLicenseToken(mcpCtx.token);
-    if (verified.valid && verified.claims) {
-      const sigHex = mcpCtx.token.split('.')[3] ?? '';
-      const sigHash = crypto.createHash('sha256').update(sigHex).digest('hex');
-      const expiresEpoch =
-        typeof verified.claims.expiresAt === 'number'
-          ? Math.floor(verified.claims.expiresAt / 1000)
-          : Math.floor(Date.now() / 1000) + 86400 * 365;
+  if (!meta && mcpCtx.token) {
+    if (mcpCtx.token.startsWith('CGRJ.')) {
+      const verified = BunSqliteVault.verifySignedLicenseToken(mcpCtx.token);
+      if (verified.valid && verified.claims) {
+        const sigHex = mcpCtx.token.split('.')[3] ?? '';
+        const sigHash = crypto.createHash('sha256').update(sigHex).digest('hex');
+        const expiresEpoch =
+          typeof verified.claims.expiresAt === 'number'
+            ? Math.floor(verified.claims.expiresAt / 1000)
+            : Math.floor(Date.now() / 1000) + 86400 * 365;
+        await BunSqliteVault.provisionMcpSessionJit(activeD1, {
+          tenantId,
+          tier: verified.claims.tier,
+          organizationName: verified.claims.organizationName,
+          licenseSignatureHash: sigHash,
+          creditsRemaining: verified.claims.credits ?? 0,
+          dbSessionId,
+          rawSessionId,
+          expiresEpoch,
+        });
+      }
+    } else {
       await BunSqliteVault.provisionMcpSessionJit(activeD1, {
         tenantId,
-        tier: verified.claims.tier,
-        organizationName: verified.claims.organizationName,
-        licenseSignatureHash: sigHash,
-        creditsRemaining: verified.claims.credits ?? 0,
+        tier: mcpCtx.tier,
+        organizationName: '',
+        licenseSignatureHash: null,
+        creditsRemaining: 0,
         dbSessionId,
         rawSessionId,
-        expiresEpoch,
+        expiresEpoch: Math.floor(Date.now() / 1000) + 30 * 86400,
       });
-      meta = await BunSqliteVault.getMcpSessionMeta(activeD1, dbSessionId);
     }
+    meta = await BunSqliteVault.getMcpSessionMeta(activeD1, dbSessionId);
   }
 
   const d1LastSeq = meta?.last_seq ?? 0;
@@ -5263,6 +5323,25 @@ async function executeCangrejoMcpToolCall(
           // Default action === 'upsert'
           const rawEntities = Array.isArray(args.entities) ? args.entities : [];
           const rawLinks = Array.isArray(args.links) ? args.links : [];
+          const mcpCtxForQuota = getMcpContext(c);
+          const maxEntitiesQuota =
+            mcpCtxForQuota.tier === 'PLATINO_ENTERPRISE'
+              ? 100_000
+              : mcpCtxForQuota.tier === 'ORO_PRO'
+                ? 25_000
+                : 500;
+          let newEntityAdditions = 0;
+          for (const rawEnt of rawEntities) {
+            const norm = normalizeIncomingDeltaEntity(rawEnt);
+            if (!store.dataStore.hasEntity(Guid.parse(norm.id))) {
+              newEntityAdditions++;
+            }
+          }
+          if (store.entityCount + newEntityAdditions > maxEntitiesQuota) {
+            throw new Error(
+              `Tenant quota exceeded: Maximum ${maxEntitiesQuota} entities allowed for ${mcpCtxForQuota.tier} tier.`
+            );
+          }
           const upsertedEntityIds: string[] = [];
           const upsertedLinkIds: string[] = [];
 

@@ -1,4 +1,4 @@
-import type { GraphStore } from '@cangrejo/core';
+import { getPartPrimaryValue, type GraphStore } from '@cangrejo/core';
 
 export interface Stix21Object {
   type: string;
@@ -208,11 +208,14 @@ export class Stix21Exporter {
       stixIdByEntityId.set(entity.id.toString(), stixId);
       objectRefs.push(stixId);
 
-      let displayValue = entity.id.toString();
-      for (const [, val] of entity.properties.values) {
-        if (typeof val === 'string' && val.trim().length > 0) {
-          displayValue = val.trim();
-          break;
+      let displayValue = getPartPrimaryValue(entity).trim();
+      if (!displayValue) {
+        displayValue = entity.id.toString();
+        for (const [, val] of entity.properties.values) {
+          if (typeof val === 'string' && val.trim().length > 0) {
+            displayValue = val.trim();
+            break;
+          }
         }
       }
 
@@ -438,7 +441,7 @@ export class Stix21Exporter {
 
     nonRelObjects.forEach((obj, idx) => {
       const id =
-        typeof obj.x_cangrejo_entity_id === 'string' && /^\d+$/.test(obj.x_cangrejo_entity_id)
+        typeof obj.x_cangrejo_entity_id === 'string' && /^[1-9]\d*$/.test(obj.x_cangrejo_entity_id)
           ? obj.x_cangrejo_entity_id
           : String(800000 + idx + 1);
       const rawValue =
@@ -487,7 +490,7 @@ export class Stix21Exporter {
 
       relCounter++;
       const linkId =
-        typeof obj.x_cangrejo_link_id === 'string' && /^\d+$/.test(obj.x_cangrejo_link_id)
+        typeof obj.x_cangrejo_link_id === 'string' && /^[1-9]\d*$/.test(obj.x_cangrejo_link_id)
           ? obj.x_cangrejo_link_id
           : String(900000 + relCounter);
       const label =

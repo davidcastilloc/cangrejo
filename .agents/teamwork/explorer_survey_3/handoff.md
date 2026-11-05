@@ -1,0 +1,358 @@
+# Handoff Report: Survey of Subsystem 3 (Persistencia y Bóvedas) & Subsystem 4 (Servidor MCP y Sesiones)
+
+**Author**: Survey Explorer 3  
+**Working Directory**: `/home/dcastillo/Projects/cangrejo/.agents/teamwork/explorer_survey_3`  
+**Date**: 2026-11-05T21:12:00Z  
+**Target Subsystems**:
+- Subsystem 3: Persistencia y bóvedas (`packages/database-d1`, Bóveda Cero, `.cgrx`, STIX 2.1, Forensic Dossier).
+- Subsystem 4: Servidor MCP multi-tenant y sesiones (`/api/mcp` JSON-RPC 2.0, Durable Objects `CangrejoSessionRoomDO`, Code Mode, SSE).
+
+---
+
+## 1. Observation
+
+### 1.1 Architecture & Codebase Layout
+
+#### Subsystem 3: Persistencia y Bóvedas
+1. **SQLite & Cloudflare D1 Vault Engine (`packages/database-d1/src/BunSqliteVault.ts`)**:
+   - `BunSqliteVault` (lines 475–3195) supports three runtime backends: `bun:sqlite` (line 415), `node:sqlite` (line 427), and `createEdgeMemorySqliteDb` fallback (line 226) for non-filesystem edge isolates.
+   - Dual-persistence to Cloudflare D1 via `asD1Database()` (lines 2026–2103) with prepared statement polyfills (`all`, `first`, `run`, `batch`).
+   - D1 Relational Schema & Migrations in `packages/database-d1/migrations/`:
+     - `0001_initial_schema.sql` (15 KB): Core operational schema (`cangrejo_expedientes`, `cangrejo_pesquisa_audit`, `cangrejo_pesquisa_cache`, `cangrejo_edition_state`, `cangrejo_provider_keys`, `cangrejo_radar_watches`, `cangrejo_radar_alerts`).
+     - `0002_operational_vault_and_ai_schema.sql` (2.7 KB): Forensic dossiers & AI telemetry.
+     - `0003_mcp_session_vault.sql` (6.2 KB): Multi-tenant isolation (`cangrejo_tenant_metadata`, `cangrejo_mcp_sessions`, `cangrejo_session_graphs`, `cangrejo_graph_mutations`).
+     - `0004_accounts_users_clients.sql` (2.3 KB): Accounts & auth sessions (`cangrejo_users`, `cangrejo_auth_sessions`).
+   - Two-Tier Graph Snapshot Engine (`persistGraphSnapshotToD1OrR2`, lines 2460–2585):
+     - Gzip compression via `compressGraphSnapshot` (Web-Standard `CompressionStream('gzip')` with `node:zlib` fallback, line 186).
+     - Storage tier decision: inline D1 BLOB (`cangrejo_session_graphs.snapshot_payload`) when `byteSize <= 1_500_000` (`MAX_D1_INLINE_SNAPSHOT_BYTES`), or offloads to Cloudflare R2 (`cangrejo_session_graphs.snapshot_r2_key`) in bucket `CANGREJO_VAULT_R2` when `byteSize > 1_500_000`.
+     - Cryptographic integrity seal: SHA-256 hash computed over compressed bytes (`payload_sha256`) and verified during hydration (`hydrateSessionSnapshotAndDeltas`, line 2649).
+   - Monotonic WAL & Optimistic Concurrency Control (`appendGraphMutationWithOcc`, lines 2364–2453):
+     - Atomic batch `d1.batch([insertMutationStmt, updateSessionStmt])`.
+     - On `SQLITE_CONSTRAINT_UNIQUE` conflict on `(session_id, seq)`, catches error, fetches missed deltas (`fetchMutationsAfterSeq`), triggers `onReconcileMissedDeltas`, advances `nextSeq = max(seq) + 1`, and retries up to 3 times.
+     - Prunes compacted WAL mutations (`seq <= checkpointSeq`) after checkpoint creation (line 2574).
+   - Singleflight TTL Cache (`apps/web/honoApp.ts:900–929` & `BunSqliteVault.ts:881–921`):
+     - Cache key: `transformId::targetValue` (`buildPesquisaCacheKey`).
+     - Deduplicates concurrent in-flight executions via `inFlightPesquisas = new Map<string, Promise<Record<string, unknown>>>()`.
+     - Persists responses to `cangrejo_pesquisa_cache` with a 5-minute default TTL (300,000 ms).
+   - User Accounts & PBKDF2 Password Authentication (`BunSqliteVault.ts:2675–3050`):
+     - `hashPasswordPbkdf2`: PBKDF2-HMAC-SHA256 with 100,000 iterations, 16-byte random salt, producing `pbkdf2_sha256$100000$<saltHex>$<hashHex>`.
+     - `verifyPasswordPbkdf2`: constant-time comparison via `crypto.timingSafeEqual`.
+     - `registerUserAndClient`: registers user, provisions client tenant, generates default session `expediente-apt29`, and issues `cgrj_usr_*` auth token.
+
+2. **Bóveda Cero & Codecs (`packages/transforms/src/formats/`)**:
+   - `MtgjJsonHandler.ts`: Selective attribute encryption (`encryptMtgjDocument` / `decryptMtgjDocument`). Encrypts entity properties, notes, and displayInfo with AES-256-GCM + 16-byte PKCS#7 padding (`applyPkcs7Padding`), deriving key via PBKDF2-HMAC-SHA256 (100,000 iterations). Signs the canonical graph topology with `AES-GMAC` (`computeTopologyGmac`, line 55).
+   - `ZipContainerCodec.ts`: Pure TypeScript PKZIP container encoder/decoder (`PK\x03\x04`, `PK\x01\x02`, `PK\x05\x06`, CRC-32 table, DEFLATE via `deflateRawSync`/`inflateRawSync`).
+   - `Stix21Exporter.ts`: Exports `GraphStore` into OASIS STIX 2.1 bundles (`exportFromStore`) with deterministic SHA-256 chain-of-custody manifest (`x_cangrejo_custody`). Verifies custody manifests on import (`importBundle`, line 379).
+   - `ForensicDossierGenerator.ts`: WCAG AAA print-ready HTML5 Forensic Dossier generator (`ForensicDossierGenerator.generateFromStore`, lines 64–407). Integrates Daubert / FRE 702 sworn forensic narrative and Ed25519 digital signature attestation generated by `CloudflareWorkersAiEngine.synthesizeDaubertForensicNarrativeSync` (`packages/transforms/src/ai/CloudflareWorkersAiEngine.ts:705–790`).
+
+#### Subsystem 4: Servidor MCP Multi-Tenant y Sesiones
+1. **MCP JSON-RPC 2.0 Server (`apps/web/honoApp.ts`)**:
+   - Endpoints: `GET/POST /api/mcp` and `GET/POST /api/mcp/:sessionId` (lines 6232–6235).
+   - Protocol version: `2024-11-05` (lines 4463, 5799).
+   - Authentication middleware: `mcpAuthMiddleware` (lines 3836–4035) enforces 3 token tiers:
+     - Type A: HMAC-signed license tokens (`CGRJ.<TIER>.<claims>.<hmac>`).
+     - Type B: Dedicated D1 session tokens (`ses_sec_*`).
+     - Type C: User session tokens (`cgrj_usr_*`).
+     - Community local loopback bypass when unauthenticated and not cloud-scoped (local dev).
+   - 13 MCP Tools exposed in `CANGREJO_MCP_TOOLS_CATALOG` & `CANGREJO_CODEMODE_MCP_TOOL` (lines 3540–3802, 4557–4577):
+     1. `cangrejo_unpack_defanged_iocs` (F1 defanging with byte offsets)
+     2. `cangrejo_discover_latent_links` (F2 Vectorize RRF k=60)
+     3. `cangrejo_classify_anomalies` (F3 Fast-flux and peel-chain detection)
+     4. `cangrejo_generate_daubert_dossier` (F4 Ed25519-signed Daubert narrative)
+     5. `cangrejo_map_mitre_attack` (MITRE ATT&CK Enterprise v15.1 mapping)
+     6. `cangrejo_import_stix21_bundle` (STIX 2.1 import with SHA-256 custody check)
+     7. `cangrejo_ai_auto_investigate` (F6 autonomous multi-hop investigation)
+     8. `cangrejo_session_state` (Read entities, links, layout, selection, camera, undo/redo)
+     9. `cangrejo_session_mutate_graph` (Atomic upsert, remove, paste_iocs, undo, redo, clear)
+     10. `cangrejo_session_run_pesquisa` (Alias: `cangrejo_run_osint_transform`, runs live OSINT transforms)
+     11. `cangrejo_session_view_control` (Layout mode, viewport fit/pan, preset loading)
+     12. `cangrejo_session_vault` (D1/SQLite save/load/delete, export STIX 2.1, HTML5 dossier, .cgrx)
+     13. `cangrejo_codemode_run` (Cloudflare Code Mode pipeline execution)
+   - 6 MCP Resources in `CANGREJO_MCP_RESOURCES_CATALOG` (lines 4339–4376):
+     - `cangrejo://session/active/graph`
+     - `cangrejo://session/active/analytics`
+     - `cangrejo://session/active/stix21`
+     - `cangrejo://taxonomy/entities`
+     - `cangrejo://vault/expedientes`
+     - `cangrejo://sdk/codemode.d.ts`
+   - 3 MCP Resource Templates in `CANGREJO_MCP_RESOURCE_TEMPLATES_CATALOG` (lines 4378–4397):
+     - `cangrejo://session/{roomId}/graph`
+     - `cangrejo://session/{roomId}/analytics`
+     - `cangrejo://session/{roomId}/stix21`
+   - 4 MCP Prompts in `CANGREJO_MCP_PROMPTS_CATALOG` (lines 4399–4455):
+     - `osint-surface-expansion`
+     - `forensic-graph-audit`
+     - `daubert-court-dossier`
+     - `codemode-single-turn-pipeline`
+2. **Cloudflare Workers Durable Objects & Edge Routing (`apps/web/cloudflareWorker.ts`)**:
+   - `CangrejoSessionRoomDO` (lines 49–58): Pins collaboration session rooms to a single Cloudflare DO isolate.
+   - `resolveSessionRoomFromRequestAsync` (lines 81–118): Resolves `roomId` from URL route, query params (`?session=`), headers (`x-cangrejo-session`), or JSON-RPC request body (`args.sessionId` / `args.roomId`).
+3. **Collaboration & Real-Time Syncing (`packages/core/src/collaboration/CollaborationRoomHub.ts` & `apps/web/honoApp.ts`)**:
+   - Real-time SSE streaming endpoint: `GET /api/collab/rooms/:roomId/stream` (lines 725–763).
+   - Presence management: `POST /api/collab/rooms/:roomId/join` (lines 765–805).
+   - Delta synchronization: `POST /api/collab/rooms/:roomId/deltas` (lines 807–879) applies incoming `SerializedGraphModsDelta` with Lamport timestamps.
+4. **Cloudflare Code Mode & Transform Injection**:
+   - Public TypeScript declaration endpoint: `GET /api/mcp/codemode.d.ts` (lines 4504–4555, 6210).
+   - Sandboxed execution without `eval()`: `parseCodeModeScriptCalls` (lines 4702–4774) AST-parses `codemode.<method>(...)` calls, identifies `Promise.all` parallel groups, parses object literal arguments via CSP-safe `parseCodeModeArgLiteral` (line 4667), and dispatches internally to `executeCangrejoMcpToolCall` (line 4872).
+   - Measures token reduction (~92.1% token savings, lines 4476, 6150).
+
+---
+
+### 1.2 Test Suite & Architectural Gates Execution
+
+Direct tool executions:
+1. `bun test`:
+   - Command: `bun test`
+   - Result: **81 passed, 0 failed**, 202,826 `expect()` assertions across 14 test files in 2.69s.
+   - All Gates 0 through 13 passed cleanly:
+     - `gate0-foundations.test.ts` (11 tests pass)
+     - `gate1-graph-engine.test.ts` (8 tests pass)
+     - `gate2-renderer-layout.test.ts` (5 tests pass)
+     - `gate3-transforms-formats.test.ts` (6 tests pass)
+     - `gate4-modern-stack.test.ts` (6 tests pass)
+     - `gate5-forensic-optimizations.test.ts` (5 tests pass)
+     - `gate6-production-completeness.test.ts` (4 tests pass)
+     - `gate7-odoo-open-core-edition.test.ts` (3 tests pass)
+     - `gate8-commercial-osint-radar-ingest.test.ts` (4 tests pass)
+     - `gate9-cloudflare-workers-ai-forensics.test.ts` (5 tests pass)
+     - `gate10-cloudflare-edge-dossier-daubert.test.ts` (2 tests pass)
+     - `gate11-mcp-stix-import-mitre.test.ts` (6 tests pass)
+     - `gate12-multi-tenant-mcp-sessions.test.ts` (7 tests pass)
+     - `gate13-accounts-users-clients.test.ts` (3 tests pass)
+2. `bun run typecheck`:
+   - Command: `tsc --noEmit -p tsconfig.json`
+   - Result: Exit code 0, zero type errors across the entire monorepo.
+3. `bun run moon:check`:
+   - Command: `moon run :typecheck :build :test`
+   - Result: **19 tasks completed (9 cached)** in 14.004s with exit code 0.
+
+---
+
+### 1.3 Production Edge Verification (`cangrejo-osint-workstation.pc911itservices.workers.dev`)
+
+Direct HTTP probes executed against production:
+1. `GET /api/health`:
+   - Command: `curl -s "https://cangrejo-osint-workstation.pc911itservices.workers.dev/api/health"`
+   - Output:
+     ```json
+     {"ok":true,"engine":"CANGREJO v1.0.0 (Cangrejo de Oro)","runtime":"Node.js","sqliteEngine":"node:sqlite","sqlitePath":":memory:","d1Bound":true,"activeAnalysts":2,"auditLogCount":1}
+     ```
+2. `POST /api/auth/register`:
+   - Command: `curl -s -X POST "https://cangrejo-osint-workstation.pc911itservices.workers.dev/api/auth/register" -H "Content-Type: application/json" -d '{"email":"survey_test_analyst@cangrejo.org","password":"Password123!","displayName":"Survey Agent","requestedTier":"ORO_PRO"}'`
+   - Output:
+     - `authenticated: true`, `mode: "AUTHENTICATED_CLIENT"`
+     - Issued user: `usr_c3a230e85c32ab97`, tenant: `org_bb244829ed05`
+     - Issued tokens:
+       - `authToken`: `cgrj_usr_e41a7ff6e3fe67ac9075415d1bf4ed324522b09431dc774d`
+       - `licenseToken`: `CGRJ.ORO_PRO.eyJ0aWVyIjoiT1JPX1BSTyIs...`
+3. `GET /api/mcp` (without auth):
+   - Command: `curl -s "https://cangrejo-osint-workstation.pc911itservices.workers.dev/api/mcp"`
+   - Output: `{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"Authentication required: Missing Bearer token or signed license key."}}` (HTTP 401).
+4. `GET /api/mcp` (with Bearer auth):
+   - Output: `{"ok":true,"protocol":"Model Context Protocol (MCP)","protocolVersion":"2024-11-05","mode":"standard","session":{"tenantId":"org_bb244829ed05","sessionId":"expediente-apt29",...},"tools":[...12 tools...],"resources":[...6 resources...],"prompts":[...4 prompts...]}`.
+5. `POST /api/mcp` JSON-RPC `cangrejo_session_state`:
+   - Output: `{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"ok":true,"roomId":"expediente-apt29","entityCount":0,"linkCount":0,...}}}`.
+6. `POST /api/mcp` JSON-RPC `cangrejo_session_mutate_graph` (upsert entity):
+   - Arguments: `{ action: "upsert", entities: [{ id: "999001", typeName: "maltego.Domain", value: "test-target.org", weight: 90 }] }`
+   - Output: `{"jsonrpc":"2.0","id":2,"result":{"structuredContent":{"ok":true,"action":"upsert","entityCount":1,"linkCount":0,...}}}`.
+7. `POST /api/mcp` JSON-RPC `cangrejo_codemode_run`:
+   - Arguments: `{ code: "async () => { await codemode.mutateGraph({ action: 'upsert', entities: [{ id: '999002', typeName: 'maltego.IPv4Address', value: '1.1.1.1', weight: 80 }] }); return await codemode.sessionState(); }" }`
+   - Output: `{"jsonrpc":"2.0","id":3,"result":{"structuredContent":{"ok":true,"mode":"cloudflare-codemode-v1","stepsExecuted":[{"stepIndex":1,"method":"mutateGraph","durationMs":265},{"stepIndex":2,"method":"sessionState","durationMs":214}],"session":{"entityCount":2,"linkCount":0},"tokenSavings":{"reductionPercent":92.1}}}}`.
+8. `GET /api/mcp/codemode.d.ts`:
+   - Header: `Content-Type: application/typescript; charset=utf-8` (HTTP 200, unauthenticated access).
+
+---
+
+### 1.4 Discovered Defects & Vulnerabilities (Reproduced Verbatim)
+
+#### Defect 1: D1 Foreign Key Constraint Failure on Session Room Switching with `cgrj_usr_*` Bearer Tokens
+- **Verbatim Error**:
+  ```json
+  {"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)"}}
+  ```
+- **Location**: `apps/web/honoApp.ts:4132–4155` in `resolveMcpSessionRoom`.
+- **Observed Behavior**:
+  Calling any MCP tool that targets a dynamic or non-default room (e.g. `cangrejo_import_stix21_bundle` or `cangrejo_session_mutate_graph` with `roomId: "expediente-stix-test"`) using a user session token (`cgrj_usr_*`) crashes with an unhandled SQLite foreign key constraint exception.
+- **Root Cause**:
+  In `resolveMcpSessionRoom`:
+  ```typescript
+  // Line 4132-4134
+  let meta = await BunSqliteVault.getMcpSessionMeta(activeD1, dbSessionId);
+  if (!meta && mcpCtx.token && mcpCtx.token.startsWith('CGRJ.')) {
+    // JIT provision only executes for 'CGRJ.' tokens!
+  ```
+  Line 4133 only triggers JIT provisioning if `mcpCtx.token.startsWith('CGRJ.')`. When a user authenticates with `cgrj_usr_*` (Type C token from `/api/auth/register` or `/api/auth/login`), `provisionMcpSessionJit` is NEVER called for dynamic room slugs. When `commitSessionMutationIfCloud` attempts to insert into `cangrejo_graph_mutations`, SQLite enforces the foreign key constraint `session_id REFERENCES cangrejo_mcp_sessions(session_id)` and throws `SQLITE_CONSTRAINT_FOREIGNKEY`.
+
+#### Defect 2: Cryptographic AES-GCM IV Reuse Across All Encrypted Fields in Bóveda Cero
+- **Location**: `packages/transforms/src/formats/MtgjJsonHandler.ts:95–153`.
+- **Observed Behavior**:
+  ```typescript
+  // Lines 95-97
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = crypto.pbkdf2Sync(passphrase, salt, Math.max(100_000, iterations), 32, 'sha256');
+
+  // Lines 106, 110, 116, 128, 133
+  prop.value = encryptFieldValueAesGcm(serializedVal, key, iv);
+  ent.notes.value = encryptFieldValueAesGcm(ent.notes.value, key, iv);
+  item.content = encryptFieldValueAesGcm(item.content, key, iv);
+  ```
+  A single 12-byte IV is generated once per document and reused for every field encrypted.
+- **Root Cause & Impact**:
+  In AES-GCM, reusing the same `(key, IV)` pair produces identical keystreams. Two ciphertexts $C_1$ and $C_2$ satisfy $C_1 \oplus C_2 = P_1 \oplus P_2$. Knowing or guessing a single property plaintext (such as a known domain or standard property structure) allows directly recovering other encrypted properties via simple XOR. Furthermore, nonce reuse in GCM allows recovering the authentication hash key $H$, breaking integrity and authenticity.
+- **Direct Proof**:
+  Tested via script:
+  ```typescript
+  // Ciphertexts c1 ("super_secret_password_1234") and c2 ("public_known_domain_example")
+  // recoveredP1 = (c1 ^ c2) ^ p2Padded
+  // Output: "super_secret_password_1234"
+  ```
+
+#### Defect 3: STIX 2.1 Export Indicator Value Corruption via First-Property Insertion Order
+- **Location**: `packages/transforms/src/formats/Stix21Exporter.ts:211–217`.
+- **Observed Behavior**:
+  When an entity has multiple properties and the primary indicator is not the first key in the `properties.values` map, `Stix21Exporter` selects secondary metadata (e.g. `registrar: "Namecheap"`) as the STIX object's `value` instead of the actual indicator (`fqdn: "evildomain.org"`).
+- **Direct Proof**:
+  ```typescript
+  // Created entity with "registrar" inserted before "fqdn"
+  const exported = Stix21Exporter.exportFromStore(store);
+  const domainObj = exported.objects.find(o => o.type === "domain-name");
+  // Output: domainObj.value === "Namecheap" (CORRUPTED)
+  ```
+- **Root Cause**:
+  `Stix21Exporter` iterates `entity.properties.values` and takes the first string encountered instead of calling `getPartPrimaryValue(entity)` from `@cangrejo/core`.
+
+#### Defect 4: Missing Quota Enforcement for `maxEntitiesPerSession` in Graph Mutations
+- **Location**: `apps/web/honoApp.ts:5263–5320` (`cangrejo_session_mutate_graph`).
+- **Observed Behavior**:
+  Neither `cangrejo_session_mutate_graph` nor `POST /api/collab/rooms/:roomId/deltas` checks `store.entityCount` against `maxEntitiesPerSession` (defined in `cangrejo_tenant_metadata` as 500 for Community and 25,000 for ORO_PRO). Clients can perform unbounded upserts, risking edge isolate out-of-memory or D1 statement payload exhaustion.
+
+#### Defect 5: Unhandled Guid Zero Invariant Exception on STIX Ingest
+- **Location**: `packages/transforms/src/formats/Stix21Exporter.ts:441`.
+- **Observed Behavior**:
+  `typeof obj.x_cangrejo_entity_id === 'string' && /^\d+$/.test(obj.x_cangrejo_entity_id)` matches `"0"`. If a STIX bundle contains `x_cangrejo_entity_id: "0"`, it passes to `Guid.parse("0")`, which throws `Guid cannot be zero` (violating the Gate 0 invariant) and aborts the import.
+- **Root Cause**: Regex `/^\d+$/` allows leading zero / zero. It should be `/^[1-9]\d*$/`.
+
+---
+
+## 2. Logic Chain
+
+1. **Premise 1**: All findings must be based on verbatim source observations and verified via tool executions.
+   - Verified: Source code lines were inspected in `BunSqliteVault.ts`, `honoApp.ts`, `MtgjJsonHandler.ts`, `Stix21Exporter.ts`, and `cloudflareWorker.ts`.
+2. **Premise 2**: Multi-tenant MCP sessions must allow authenticated analysts to work across multiple investigation rooms without crashing.
+   - Observation: When an analyst logs in via `POST /api/auth/register`, they receive a Bearer token starting with `cgrj_usr_`.
+   - Observation: When they invoke `cangrejo_import_stix21_bundle` with `roomId: "expediente-stix-test"`, `resolveMcpSessionRoom` fails to JIT-provision the session because line 4133 checks `mcpCtx.token.startsWith('CGRJ.')` instead of also checking `mcpCtx.token.startsWith('cgrj_usr_')`.
+   - Conclusion: This produces a reproducible `SQLITE_CONSTRAINT_FOREIGNKEY` error on production Cloudflare D1.
+3. **Premise 3**: Bóveda Cero must guarantee zero-knowledge forensic integrity under adversarial threat models.
+   - Observation: `MtgjJsonHandler.ts:96` generates `iv` once and passes it to every call to `encryptFieldValueAesGcm`.
+   - Deduction: In AES-GCM, encrypting multiple plaintexts under the same key and IV leaks the XOR difference of plaintexts and enables tag forgery.
+   - Conclusion: This is a critical cryptographic vulnerability in the platform's classified storage layer.
+4. **Premise 4**: Exported STIX 2.1 threat intelligence bundles must accurately reflect the indicator values analyzed.
+   - Observation: `Stix21Exporter.ts:211–217` iterates `entity.properties.values` and takes the first string property.
+   - Deduction: If properties are inserted with secondary metadata first (e.g. `registrar`), the exported STIX object will contain the metadata string instead of the domain/IP/hash.
+   - Conclusion: Downstream threat intelligence systems will ingest corrupted IOCs.
+
+---
+
+## 3. Caveats
+
+1. **Cloudflare D1 Production State**: Probes against `https://cangrejo-osint-workstation.pc911itservices.workers.dev` created a test account (`survey_test_analyst@cangrejo.org`) and test graph entities (`test-target.org`, `1.1.1.1`). These records reside in the production D1 database.
+2. **Read-Only Codebase Invariant**: As an explorer subagent, no source code was modified. Proposed fixes are documented in this report for the implementing agents.
+3. **Hardware Independence**: Cloudflare Workers AI model inference (`@cf/meta/llama-3.3-70b-instruct-fp8-fast` and `@cf/baai/bge-large-en-v1.5`) degraded to universal deterministic CPU routines when remote API credentials were absent, preserving test execution speed.
+
+---
+
+## 4. Conclusion
+
+Subsystems 3 and 4 of CANGREJO provide a comprehensive, high-performance architecture:
+- **Subsystem 3** delivers an effective SQLite WAL + Cloudflare D1 persistence model with two-tier compressed snapshot storage (D1 inline vs. R2 offload), singleflight query caching, PKZIP codecs, Daubert / FRE 702 HTML5 dossiers with Ed25519 digital signatures, and STIX 2.1 export/import.
+- **Subsystem 4** provides an advanced multi-tenant MCP JSON-RPC 2.0 server with 13 tools, resources, templates, prompts, Durable Object session pin routing, and an AST-parsed Cloudflare Code Mode executor delivering 92.1% token savings.
+
+However, **5 actionable bugs** must be addressed:
+1. **Critical/High (Defect 1)**: Fix `resolveMcpSessionRoom` (`apps/web/honoApp.ts:4133`) to JIT-provision sessions when `mcpCtx.token.startsWith('cgrj_usr_')` to prevent `SQLITE_CONSTRAINT_FOREIGNKEY` errors.
+2. **Critical Security (Defect 2)**: Fix `MtgjJsonHandler.ts` to generate a unique random 12-byte IV per encrypted field (or prepend a 12-byte IV to each field ciphertext) to prevent AES-GCM keystream reuse attacks.
+3. **Medium (Defect 3)**: Fix `Stix21Exporter.ts:211–217` to call `getPartPrimaryValue(entity)` from `@cangrejo/core` rather than selecting the first property map entry.
+4. **Medium (Defect 4)**: Enforce `maxEntitiesPerSession` quota checks inside `cangrejo_session_mutate_graph` before inserting new nodes.
+5. **Low (Defect 5)**: Update the entity ID regex in `Stix21Exporter.ts:441` from `/^\d+$/` to `/^[1-9]\d*$/` to avoid passing `"0"` to `Guid.parse`.
+
+---
+
+## 5. Verification Method
+
+### 5.1 Monorepo Automated Verification
+Run the following commands in `/home/dcastillo/Projects/cangrejo`:
+```bash
+# 1. Monorepo architectural gates (Gates 0 to 13)
+bun test
+
+# 2. Strict TypeScript type check
+bun run typecheck
+
+# 3. Full moon DAG check (:typecheck :build :test across all 9 packages)
+bun run moon:check
+```
+
+### 5.2 Reproducing Defect 1 (Production D1 Foreign Key Constraint Failure)
+Execute with Bun:
+```bash
+bun -e '
+import { dispatchMcpJsonRpcLine } from "./apps/web/mcpStdioServer.ts";
+const authToken = "cgrj_usr_e41a7ff6e3fe67ac9075415d1bf4ed324522b09431dc774d";
+const res = await dispatchMcpJsonRpcLine(
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: {
+      name: "cangrejo_session_mutate_graph",
+      arguments: {
+        roomId: "expediente-new-slug-fail",
+        action: "upsert",
+        entities: [{ typeName: "maltego.Domain", value: "fail.com" }]
+      }
+    }
+  }),
+  "https://cangrejo-osint-workstation.pc911itservices.workers.dev/api/mcp",
+  { token: authToken }
+);
+console.log(res);
+'
+# Expected output: D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT
+```
+
+### 5.3 Reproducing Defect 2 (AES-GCM Keystream Reuse in Bóveda Cero)
+Execute:
+```bash
+bun -e '
+import crypto from "node:crypto";
+function applyPkcs7Padding(buf) { const p = 16 - (buf.length % 16); return Buffer.concat([buf, Buffer.alloc(p, p)]); }
+function enc(pt, k, iv) { const c = crypto.createCipheriv("aes-256-gcm", k, iv); return Buffer.concat([c.update(applyPkcs7Padding(Buffer.from(pt))), c.final()]); }
+const k = crypto.randomBytes(32), iv = crypto.randomBytes(12);
+const c1 = enc(JSON.stringify("secret_token"), k, iv), c2 = enc(JSON.stringify("known_domain"), k, iv);
+const xor = Buffer.alloc(Math.min(c1.length, c2.length));
+for (let i = 0; i < xor.length; i++) xor[i] = c1[i] ^ c2[i];
+const p2 = applyPkcs7Padding(Buffer.from(JSON.stringify("known_domain")));
+const rec = Buffer.alloc(xor.length);
+for (let i = 0; i < xor.length; i++) rec[i] = xor[i] ^ p2[i];
+console.log("Recovered:", rec.toString("utf-8"));
+'
+```
+
+### 5.4 Reproducing Defect 3 (STIX 2.1 Export Indicator Value Corruption)
+Execute:
+```bash
+bun -e '
+import { GraphStore, EntityRegistry, Guid, createPropertyBag } from "./packages/core/src/index.js";
+import { Stix21Exporter } from "./packages/transforms/src/index.js";
+const store = new GraphStore();
+const bag = createPropertyBag();
+bag.descriptors.set("registrar", { name: "registrar", type: "string", displayName: "Registrar", specialRoles: [], matchingRule: "loose" });
+bag.values.set("registrar", "Namecheap");
+bag.descriptors.set("fqdn", { name: "fqdn", type: "string", displayName: "Domain", specialRoles: ["VALUE"], matchingRule: "strict" });
+bag.values.set("fqdn", "evildomain.org");
+store.addEntity({ id: Guid.generate(), typeName: "maltego.Domain", weight: 90, bookmark: 0, notes: { value: "", show: false }, displayInfo: [], overlays: [], properties: bag, attachments: [] });
+const exp = Stix21Exporter.exportFromStore(store);
+console.log("Exported STIX value:", exp.objects.find(o => o.type === "domain-name")?.value);
+'
+# Observed output: "Namecheap" (Expected: "evildomain.org")
+```

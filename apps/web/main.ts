@@ -664,6 +664,24 @@ document.getElementById('btn-smart-paste')!.addEventListener('click', () => {
 // =============================================================================
 // 5. Right Sidebar: Entity & Edge Inspector + Bookmark Swatch Palette
 // =============================================================================
+function computeParallelEdgeOffset(linkId: LinkID, srcId: EntityID, dstId: EntityID): number {
+  const canonicalA = srcId.toString() < dstId.toString() ? srcId : dstId;
+  const canonicalB = srcId.toString() < dstId.toString() ? dstId : srcId;
+  const parallelIds: LinkID[] = [];
+  for (const [lid, edge] of store.structureStore.links.entries()) {
+    const matchesForward = edge.source.equals(canonicalA) && edge.target.equals(canonicalB);
+    const matchesReverse = edge.source.equals(canonicalB) && edge.target.equals(canonicalA);
+    if (matchesForward || matchesReverse) {
+      parallelIds.push(lid);
+    }
+  }
+  if (parallelIds.length <= 1) return 0;
+  parallelIds.sort((a, b) => a.toString().localeCompare(b.toString()));
+  const idx = parallelIds.findIndex((id) => id.equals(linkId));
+  if (idx < 0) return 0;
+  return (idx - (parallelIds.length - 1) * 0.5) * 30;
+}
+
 function hitTestEdgeAtWorldPoint(worldPt: Point2D): LinkID | null {
   const viewEntitiesMap = collectionView.getViewEntities();
   const zoom = Math.max(0.35, graphCanvas.getCameraState().zoom);
@@ -676,32 +694,42 @@ function hitTestEdgeAtWorldPoint(worldPt: Point2D): LinkID | null {
     const srcVe = viewEntitiesMap.get(vl.sourceViewEntityId);
     const dstVe = viewEntitiesMap.get(vl.targetViewEntityId);
     if (!srcVe || !dstVe) continue;
-    const firstUnderlying = vl.underlyingLinks.values().next().value;
-    if (!firstUnderlying || !store.dataStore.hasLink(firstUnderlying)) continue;
 
-    const ax = srcVe.position.x;
-    const ay = srcVe.position.y;
-    const bx = dstVe.position.x;
-    const by = dstVe.position.y;
-    const dx = bx - ax;
-    const dy = by - ay;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq < 1) continue;
+    for (const underlyingId of vl.underlyingLinks.values()) {
+      if (!store.dataStore.hasLink(underlyingId)) continue;
+      const edge = store.structureStore.links.get(underlyingId);
+      const ax = srcVe.position.x;
+      const ay = srcVe.position.y;
+      const bx = dstVe.position.x;
+      const by = dstVe.position.y;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1) continue;
+      const len = Math.sqrt(lenSq);
+      const nx = -dy / len;
+      const ny = dx / len;
+      const curveOffset = edge
+        ? computeParallelEdgeOffset(underlyingId, edge.source, edge.target)
+        : 0;
 
-    // Point-to-segment distance
-    const t = Math.max(0, Math.min(1, ((worldPt.x - ax) * dx + (worldPt.y - ay) * dy) / lenSq));
-    const projX = ax + t * dx;
-    const projY = ay + t * dy;
-    const dist = Math.hypot(worldPt.x - projX, worldPt.y - projY);
+      // Midpoint of quadratic curve (at t = 0.5, B(0.5) = midpoint + 0.5 * controlOffset)
+      const midX = (ax + bx) * 0.5 + nx * curveOffset;
+      const midY = (ay + by) * 0.5 + ny * curveOffset;
+      const inPill =
+        Math.abs(worldPt.x - midX) <= 44 / zoom && Math.abs(worldPt.y - midY) <= 12 / zoom;
 
-    // Midpoint label pill hit box (easier clicking on the label pill)
-    const midX = (ax + bx) * 0.5;
-    const midY = (ay + by) * 0.5;
-    const inPill = Math.abs(worldPt.x - midX) <= 44 / zoom && Math.abs(worldPt.y - midY) <= 12 / zoom;
+      // Approximate distance to curved or straight edge
+      const t = Math.max(0, Math.min(1, ((worldPt.x - ax) * dx + (worldPt.y - ay) * dy) / lenSq));
+      const bell = 4 * t * (1 - t);
+      const projX = ax + t * dx + nx * curveOffset * bell;
+      const projY = ay + t * dy + ny * curveOffset * bell;
+      const dist = Math.hypot(worldPt.x - projX, worldPt.y - projY);
 
-    if (inPill || dist < closestDist) {
-      closestDist = inPill ? 0 : dist;
-      closestLinkId = firstUnderlying;
+      if (inPill || dist < closestDist) {
+        closestDist = inPill ? 0 : dist;
+        closestLinkId = underlyingId;
+      }
     }
   }
   return closestLinkId;
@@ -764,10 +792,17 @@ function renderInspector(): void {
         appendLog(`Etiqueta del enlace actualizada a "${nextLabel}".`);
       });
 
+      const initialLinkWeight = link.weight;
       document.getElementById('insp-link-weight')?.addEventListener('input', (ev) => {
         const nextWeight = Number((ev.target as HTMLInputElement).value);
         const wLbl = document.getElementById('lbl-insp-link-weight');
         if (wLbl) wLbl.textContent = String(nextWeight);
+        link.weight = nextWeight;
+        renderFrame();
+      });
+      document.getElementById('insp-link-weight')?.addEventListener('change', (ev) => {
+        const nextWeight = Number((ev.target as HTMLInputElement).value);
+        link.weight = initialLinkWeight;
         store.updateLink({ ...link, weight: nextWeight });
         syncSceneAndUi(false);
       });
@@ -782,10 +817,7 @@ function renderInspector(): void {
       });
 
       document.getElementById('btn-insp-reverse-link')?.addEventListener('click', () => {
-        store.runInBatch(() => {
-          store.removeLink(link.id);
-          store.addLink(link, edge.target, edge.source);
-        });
+        store.reverseLink(link.id);
         syncSceneAndUi(false);
         appendLog(`Dirección del enlace invertida (${dstName} → ${srcName}).`);
       });
@@ -987,9 +1019,16 @@ function renderInspector(): void {
     syncSceneAndUi(false);
   });
 
+  const initialEntityWeight = entity.weight;
   document.getElementById('insp-weight')?.addEventListener('input', (e) => {
     const nextWeight = Number((e.target as HTMLInputElement).value);
     document.getElementById('lbl-insp-weight')!.textContent = String(nextWeight);
+    entity.weight = nextWeight;
+    renderFrame();
+  });
+  document.getElementById('insp-weight')?.addEventListener('change', (e) => {
+    const nextWeight = Number((e.target as HTMLInputElement).value);
+    entity.weight = initialEntityWeight;
     store.updateEntity({ ...entity, weight: nextWeight });
     syncSceneAndUi(false);
   });
@@ -1259,6 +1298,12 @@ canvasEl.addEventListener('dblclick', (e) => {
   const hitId = graphCanvas.selectAtScreenPoint(screenPt.x, screenPt.y, false);
   if (hitId) {
     const ent = store.dataStore.tryGetEntity(hitId);
+    if (!ent && collectionView.getViewEntities().get(hitId)?.isCollectionNode) {
+      collectionView.uncollectNode(hitId);
+      syncSceneAndUi(false);
+      appendLog('Colección expandida en sus entidades subyacentes.');
+      return;
+    }
     if (ent) {
       const currentVal = getPartPrimaryValue(ent);
       const nextVal = window.prompt('Editar valor principal de la entidad:', currentVal);
@@ -1384,7 +1429,7 @@ window.addEventListener('mousemove', (e) => {
   const worldPt = graphCanvas.screenToWorld(screenPt.x, screenPt.y);
 
   if (draggingEntityId) {
-    store.setEntityPosition(draggingEntityId, { x: worldPt.x, y: worldPt.y, z: 0 });
+    store.layoutStore.setPosition(draggingEntityId, { x: worldPt.x, y: worldPt.y, z: 0 });
     syncSceneAndUi(false);
     return;
   }
@@ -1417,9 +1462,14 @@ window.addEventListener('mouseup', (e) => {
   const screenPt = getCanvasMousePos(e);
 
   if (draggingEntityId) {
-    const endPos = store.layoutStore.getPosition(draggingEntityId);
+    const draggedId = draggingEntityId;
+    const endPos = store.layoutStore.getPosition(draggedId);
     if (Math.hypot(endPos.x - dragStartWorldPos.x, endPos.y - dragStartWorldPos.y) > 2) {
-      store.setEntityPinned(draggingEntityId, true);
+      store.layoutStore.setPosition(draggedId, dragStartWorldPos);
+      store.runInBatch(() => {
+        store.setEntityPosition(draggedId, endPos);
+        store.setEntityPinned(draggedId, true);
+      });
     }
     draggingEntityId = null;
     syncSceneAndUi(false);
@@ -1571,9 +1621,14 @@ canvasEl.addEventListener(
 
 canvasEl.addEventListener('touchend', () => {
   if (draggingEntityId) {
-    const endPos = store.layoutStore.getPosition(draggingEntityId);
+    const draggedId = draggingEntityId;
+    const endPos = store.layoutStore.getPosition(draggedId);
     if (Math.hypot(endPos.x - dragStartWorldPos.x, endPos.y - dragStartWorldPos.y) > 2) {
-      store.setEntityPinned(draggingEntityId, true);
+      store.layoutStore.setPosition(draggedId, dragStartWorldPos);
+      store.runInBatch(() => {
+        store.setEntityPosition(draggedId, endPos);
+        store.setEntityPinned(draggedId, true);
+      });
     }
     draggingEntityId = null;
     syncSceneAndUi(false);
@@ -2518,32 +2573,48 @@ function applyRemoteSessionUiEvent(ev: {
   }
 }
 
+let autosaveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let collabDeltaThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingCollabDelta: SerializedGraphModsDelta | null = null;
+
 store.subscribe((mods) => {
   const activeRoom = mcpState.sessionId.trim() || 'expediente-apt29';
-  try {
-    if (store.entityCount > 0) {
-      localStorage.setItem(
-        `${LOCAL_AUTOSAVE_PREFIX}${activeRoom}`,
-        JSON.stringify(serializeCurrentStore())
-      );
+  if (autosaveDebounceTimer) clearTimeout(autosaveDebounceTimer);
+  autosaveDebounceTimer = setTimeout(() => {
+    try {
+      if (store.entityCount > 0) {
+        localStorage.setItem(
+          `${LOCAL_AUTOSAVE_PREFIX}${activeRoom}`,
+          JSON.stringify(serializeCurrentStore())
+        );
+      }
+    } catch {
+      // Ignore localStorage quota/privacy errors
     }
-  } catch {
-    // Ignore localStorage quota/privacy errors
-  }
+  }, 350);
+
   if (isApplyingRemoteDelta) return;
-  const delta = clientCollabHub.serializeModsToDelta(
+  pendingCollabDelta = clientCollabHub.serializeModsToDelta(
     activeRoom,
     'browser-workstation',
     store,
     mods
   );
-  void fetch(`/api/collab/rooms/${encodeURIComponent(activeRoom)}/deltas`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(delta),
-  }).catch(() => {
-    // Graceful no-op when running offline
-  });
+  if (!collabDeltaThrottleTimer) {
+    collabDeltaThrottleTimer = setTimeout(() => {
+      collabDeltaThrottleTimer = null;
+      const toSend = pendingCollabDelta;
+      pendingCollabDelta = null;
+      if (!toSend) return;
+      void fetch(`/api/collab/rooms/${encodeURIComponent(activeRoom)}/deltas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toSend),
+      }).catch(() => {
+        // Graceful no-op when running offline
+      });
+    }, 80);
+  }
 });
 
 async function syncActiveMcpSessionFromServer(targetRoomId?: string): Promise<void> {
@@ -2765,30 +2836,6 @@ function renderFrame(): void {
       continue;
     }
 
-    const firstUnderlying = vl.underlyingLinks.values().next().value;
-    const isSelectedEdge =
-      firstUnderlying !== undefined &&
-      selectedLinkId !== null &&
-      firstUnderlying.equals(selectedLinkId);
-    const isGoldenEdge =
-      firstUnderlying !== undefined && goldenPathLinkIds.has(firstUnderlying.toString());
-    const physLink = firstUnderlying ? store.dataStore.tryGetLink(firstUnderlying) : undefined;
-    const colorVal = physLink?.properties.values.get('maltego.link.color');
-    const edgeColor = isSelectedEdge
-      ? activeTokens.borderFocus
-      : isGoldenEdge
-        ? '#F59E0B'
-        : vl.isProxy
-          ? activeTokens.edgeProxy
-          : typeof colorVal === 'string'
-            ? colorVal
-            : activeTokens.edgeDefault;
-    const edgeLabel = vl.isProxy
-      ? `${vl.underlyingLinks.size} links`
-      : physLink
-        ? getPartPrimaryValue(physLink)
-        : '';
-
     const srcPos = srcVe.position;
     const dstPos = dstVe.position;
     const dx = dstPos.x - srcPos.x;
@@ -2796,62 +2843,102 @@ function renderFrame(): void {
     const dist = Math.hypot(dx, dy);
     if (dist < 1) continue;
 
-    ctx.save();
-    ctx.strokeStyle = edgeColor;
-    ctx.lineWidth = isSelectedEdge ? 3.2 : isGoldenEdge ? 2.8 : vl.isProxy ? 2.0 : 1.5;
-    if (vl.isProxy) {
-      ctx.setLineDash([6, 4]);
-    }
-    ctx.beginPath();
-    ctx.moveTo(srcPos.x, srcPos.y);
-    ctx.lineTo(dstPos.x, dstPos.y);
-    ctx.stroke();
+    const underlyingList = vl.isProxy ? [undefined] : Array.from(vl.underlyingLinks.values());
+    for (const currentUnderlying of underlyingList) {
+      const isSelectedEdge =
+        currentUnderlying !== undefined &&
+        selectedLinkId !== null &&
+        currentUnderlying.equals(selectedLinkId);
+      const isGoldenEdge =
+        currentUnderlying !== undefined && goldenPathLinkIds.has(currentUnderlying.toString());
+      const physLink = currentUnderlying ? store.dataStore.tryGetLink(currentUnderlying) : undefined;
+      const physEdge = currentUnderlying ? store.structureStore.links.get(currentUnderlying) : undefined;
+      const colorVal = physLink?.properties.values.get('maltego.link.color');
+      const edgeColor = isSelectedEdge
+        ? activeTokens.borderFocus
+        : isGoldenEdge
+          ? '#F59E0B'
+          : vl.isProxy
+            ? activeTokens.edgeProxy
+            : typeof colorVal === 'string'
+              ? colorVal
+              : activeTokens.edgeDefault;
+      const edgeLabel = vl.isProxy
+        ? `${vl.underlyingLinks.size} links`
+        : physLink
+          ? getPartPrimaryValue(physLink)
+          : '';
 
-    // Directed Arrowhead
-    const ux = dx / dist;
-    const uy = dy / dist;
-    const arrowTipX = dstPos.x - ux * 34;
-    const arrowTipY = dstPos.y - uy * 24;
-    const arrowLen = 8;
-    const arrowWing = 4;
+      const curveOffset =
+        !vl.isProxy && currentUnderlying && physEdge
+          ? computeParallelEdgeOffset(currentUnderlying, physEdge.source, physEdge.target)
+          : 0;
+      const nx = -dy / dist;
+      const ny = dx / dist;
+      const ctrlX = (srcPos.x + dstPos.x) * 0.5 + nx * curveOffset * 2;
+      const ctrlY = (srcPos.y + dstPos.y) * 0.5 + ny * curveOffset * 2;
+      const midX = (srcPos.x + dstPos.x) * 0.5 + nx * curveOffset;
+      const midY = (srcPos.y + dstPos.y) * 0.5 + ny * curveOffset;
 
-    ctx.setLineDash([]);
-    ctx.fillStyle = edgeColor;
-    ctx.beginPath();
-    ctx.moveTo(arrowTipX, arrowTipY);
-    ctx.lineTo(
-      arrowTipX - ux * arrowLen - uy * arrowWing,
-      arrowTipY - uy * arrowLen + ux * arrowWing
-    );
-    ctx.lineTo(
-      arrowTipX - ux * arrowLen + uy * arrowWing,
-      arrowTipY - uy * arrowLen - ux * arrowWing
-    );
-    ctx.closePath();
-    ctx.fill();
-
-    // Pill-Shielded Edge Label (Backed Plate eliminating text occlusion)
-    if (cam.zoom >= 0.45 && edgeLabel) {
-      const midX = (srcPos.x + dstPos.x) * 0.5;
-      const midY = (srcPos.y + dstPos.y) * 0.5;
-      ctx.font = '500 10px "Atkinson Hyperlegible Mono", monospace';
-      const textMetrics = ctx.measureText(edgeLabel);
-      const pillW = textMetrics.width + 12;
-      const pillH = 16;
-
-      drawRoundedRect(ctx, midX - pillW * 0.5, midY - pillH * 0.5, pillW, pillH, 3);
-      ctx.fillStyle = activeTokens.edgeLabelBg;
-      ctx.fill();
-      ctx.lineWidth = isSelectedEdge ? 1.8 : 1;
-      ctx.strokeStyle = isSelectedEdge ? activeTokens.borderFocus : activeTokens.edgeLabelBorder;
+      ctx.save();
+      ctx.strokeStyle = edgeColor;
+      ctx.lineWidth = isSelectedEdge ? 3.2 : isGoldenEdge ? 2.8 : vl.isProxy ? 2.0 : 1.5;
+      if (vl.isProxy) {
+        ctx.setLineDash([6, 4]);
+      }
+      ctx.beginPath();
+      ctx.moveTo(srcPos.x, srcPos.y);
+      if (Math.abs(curveOffset) > 0.5) {
+        ctx.quadraticCurveTo(ctrlX, ctrlY, dstPos.x, dstPos.y);
+      } else {
+        ctx.lineTo(dstPos.x, dstPos.y);
+      }
       ctx.stroke();
 
-      ctx.fillStyle = activeTokens.edgeLabelText;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(edgeLabel, midX, midY + 0.5);
+      // Directed Arrowhead
+      const ux = dx / dist;
+      const uy = dy / dist;
+      const arrowTipX = dstPos.x - ux * 34;
+      const arrowTipY = dstPos.y - uy * 24;
+      const arrowLen = 8;
+      const arrowWing = 4;
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = edgeColor;
+      ctx.beginPath();
+      ctx.moveTo(arrowTipX, arrowTipY);
+      ctx.lineTo(
+        arrowTipX - ux * arrowLen - uy * arrowWing,
+        arrowTipY - uy * arrowLen + ux * arrowWing
+      );
+      ctx.lineTo(
+        arrowTipX - ux * arrowLen + uy * arrowWing,
+        arrowTipY - uy * arrowLen - ux * arrowWing
+      );
+      ctx.closePath();
+      ctx.fill();
+
+      // Pill-Shielded Edge Label (Backed Plate eliminating text occlusion)
+      if (cam.zoom >= 0.45 && edgeLabel) {
+        ctx.font = '500 10px "Atkinson Hyperlegible Mono", monospace';
+        const textMetrics = ctx.measureText(edgeLabel);
+        const pillW = textMetrics.width + 12;
+        const pillH = 16;
+
+        drawRoundedRect(ctx, midX - pillW * 0.5, midY - pillH * 0.5, pillW, pillH, 3);
+        ctx.fillStyle = activeTokens.edgeLabelBg;
+        ctx.fill();
+        ctx.lineWidth = isSelectedEdge ? 1.8 : 1;
+        ctx.strokeStyle = isSelectedEdge ? activeTokens.borderFocus : activeTokens.edgeLabelBorder;
+        ctx.stroke();
+
+        ctx.fillStyle = activeTokens.edgeLabelText;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(edgeLabel, midX, midY + 0.5);
+      }
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   // Link Builder preview line
@@ -2989,10 +3076,10 @@ function renderFrame(): void {
       const chipW = 24;
       const chipH = 16;
       drawRoundedRect(ctx, x0 + cardW - chipW - 6, y0 + 6, chipW, chipH, 3);
-      ctx.fillStyle = activeTokens.accentPrimary;
+      ctx.fillStyle = isLight ? '#1E40AF' : activeTokens.accentPrimary;
       ctx.fill();
       ctx.font = '700 9.5px "Atkinson Hyperlegible Mono", monospace';
-      ctx.fillStyle = '#111315';
+      ctx.fillStyle = isLight ? '#FFFFFF' : '#111315';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(chipText, x0 + cardW - chipW * 0.5 - 6, y0 + 14);
@@ -3165,7 +3252,14 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
-    (document.getElementById('inp-palette-search') as HTMLInputElement)?.focus();
+    const paletteSearchEl = document.getElementById('inp-palette-search') as HTMLInputElement | null;
+    const mobileSearchEl = document.getElementById('inp-mobile-omni-search') as HTMLInputElement | null;
+    if (window.innerWidth <= 860 || (paletteSearchEl && paletteSearchEl.offsetParent === null)) {
+      document.querySelector<HTMLElement>('.mobile-tab-btn[data-mobile-view="radar"]')?.click();
+      mobileSearchEl?.focus();
+    } else {
+      paletteSearchEl?.focus();
+    }
     return;
   }
   if (

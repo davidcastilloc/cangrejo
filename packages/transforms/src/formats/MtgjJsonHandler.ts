@@ -31,22 +31,32 @@ function removePkcs7Padding(buf: Buffer, blockSize = 16): Buffer {
   return buf.subarray(0, buf.length - padLen);
 }
 
-function encryptFieldValueAesGcm(plaintext: string, key: Buffer, iv: Buffer): string {
+function encryptFieldValueAesGcm(plaintext: string, key: Buffer): string {
+  const fieldIv = crypto.randomBytes(12);
   const padded = applyPkcs7Padding(Buffer.from(plaintext, 'utf-8'), 16);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, fieldIv);
   const enc = Buffer.concat([cipher.update(padded), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return Buffer.concat([enc, tag]).toString('base64');
+  return Buffer.concat([fieldIv, enc, tag]).toString('base64');
 }
 
-function decryptFieldValueAesGcm(ciphertextB64: string, key: Buffer, iv: Buffer): string {
+function decryptFieldValueAesGcm(ciphertextB64: string, key: Buffer, legacyIv?: Buffer): string {
   const raw = Buffer.from(ciphertextB64, 'base64');
-  if (raw.length < 16) {
-    throw new Error('Invalid AES-256-GCM field ciphertext: missing 16-byte auth tag.');
+  if (raw.length >= 44 && raw.length % 16 === 12) {
+    const fieldIv = raw.subarray(0, 12);
+    const enc = raw.subarray(12, raw.length - 16);
+    const tag = raw.subarray(raw.length - 16);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, fieldIv);
+    decipher.setAuthTag(tag);
+    const padded = Buffer.concat([decipher.update(enc), decipher.final()]);
+    return removePkcs7Padding(padded, 16).toString('utf-8');
+  }
+  if (!legacyIv || raw.length < 16) {
+    throw new Error('Invalid AES-256-GCM field ciphertext: missing per-field IV or 16-byte auth tag.');
   }
   const enc = raw.subarray(0, raw.length - 16);
   const tag = raw.subarray(raw.length - 16);
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, legacyIv);
   decipher.setAuthTag(tag);
   const padded = Buffer.concat([decipher.update(enc), decipher.final()]);
   return removePkcs7Padding(padded, 16).toString('utf-8');
@@ -103,17 +113,17 @@ export class MtgjJsonHandler {
       for (let pi = 0; pi < ent.props.length; pi++) {
         const prop = ent.props[pi]!;
         const serializedVal = JSON.stringify(prop.value);
-        prop.value = encryptFieldValueAesGcm(serializedVal, key, iv);
+        prop.value = encryptFieldValueAesGcm(serializedVal, key);
         encryptedFields.push(`/entities/${ei}/props/${pi}/value`);
       }
       if (ent.notes && ent.notes.value.length > 0) {
-        ent.notes.value = encryptFieldValueAesGcm(ent.notes.value, key, iv);
+        ent.notes.value = encryptFieldValueAesGcm(ent.notes.value, key);
         encryptedFields.push(`/entities/${ei}/notes/value`);
       }
       if (ent.displayInfo) {
         for (let di = 0; di < ent.displayInfo.length; di++) {
           const item = ent.displayInfo[di]!;
-          item.content = encryptFieldValueAesGcm(item.content, key, iv);
+          item.content = encryptFieldValueAesGcm(item.content, key);
           encryptedFields.push(`/entities/${ei}/displayInfo/${di}/content`);
         }
       }
@@ -125,18 +135,19 @@ export class MtgjJsonHandler {
         for (let pi = 0; pi < link.props.length; pi++) {
           const prop = link.props[pi]!;
           const serializedVal = JSON.stringify(prop.value);
-          prop.value = encryptFieldValueAesGcm(serializedVal, key, iv);
+          prop.value = encryptFieldValueAesGcm(serializedVal, key);
           encryptedFields.push(`/links/${li}/props/${pi}/value`);
         }
       }
       if (link.notes && link.notes.value.length > 0) {
-        link.notes.value = encryptFieldValueAesGcm(link.notes.value, key, iv);
+        link.notes.value = encryptFieldValueAesGcm(link.notes.value, key);
         encryptedFields.push(`/links/${li}/notes/value`);
       }
     }
 
     const gmacB64 = computeTopologyGmac(cloned, key, iv);
-    const rootCipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const rootIv = crypto.randomBytes(12);
+    const rootCipher = crypto.createCipheriv('aes-256-gcm', key, rootIv);
     rootCipher.update(Buffer.from(cloned.id, 'utf-8'));
     rootCipher.final();
     const tagB64 = rootCipher.getAuthTag().toString('base64');

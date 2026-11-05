@@ -366,6 +366,43 @@ export class GraphStore extends AbstractBatchUpdatable {
     });
   }
 
+  /**
+   * Atomically swaps a link's `source` and `target` endpoints inside a single undoable command.
+   */
+  public reverseLink(linkId: LinkID): void {
+    const existingLink = this.dataStore.tryGetLink(linkId);
+    const edge = this.structureStore.links.get(linkId);
+    if (!existingLink || !edge) return;
+
+    const linkSnap = cloneLinkData(existingLink);
+    const sourceSnap = edge.source;
+    const targetSnap = edge.target;
+    const reversedSnap = edge.isReversed;
+    const bendsSnap = this.layoutStore.getLinkPath(linkId);
+
+    const applyDirection = (src: EntityID, dst: EntityID) => {
+      this.runInBatch(() => {
+        this.structureStore.removeLink(linkId);
+        this.structureStore.addLink(linkSnap.id, src, dst, reversedSnap);
+        this.dataStore.putLink(linkSnap);
+        if (bendsSnap.length > 0) {
+          this.layoutStore.setLinkPath(linkSnap.id, bendsSnap);
+        }
+        this.pendingMods.recordLinkAdded(linkSnap, src, dst, reversedSnap);
+      });
+    };
+
+    const applyForward = () => applyDirection(targetSnap, sourceSnap);
+    const applyUndo = () => applyDirection(sourceSnap, targetSnap);
+
+    applyForward();
+    this.undoRedoManager.record({
+      description: `Reverse link ${linkId.toString()}`,
+      undo: applyUndo,
+      redo: applyForward,
+    });
+  }
+
   public setEntityPosition(entityId: EntityID, position: Point2D | Point3D): void {
     const prevPos = this.layoutStore.getPosition(entityId);
     const nextPos: Point3D = {
