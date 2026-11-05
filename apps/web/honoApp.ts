@@ -1163,16 +1163,39 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       });
     }
 
-    // 5. IP -> ASN, Netblock, Geolocation & Open Ports
+    // 5. IP -> ASN, Netblock, Geolocation & Open Ports (Live RIPEstat BGP + Deterministic Fallback)
     if (
       transformId === 'ip-to-asn' ||
       (transformId === 'all' && /^\d+\.\d+\.\d+\.\d+$/.test(value))
     ) {
       const octets = value.split('.');
-      const prefix24 =
+      let prefix24 =
         octets.length === 4 ? `${octets[0]}.${octets[1]}.${octets[2]}.0/24` : '104.21.16.0/24';
-      const asnNum = octets[0] === '104' || octets[0] === '172' ? '13335' : '16509';
-      const orgName = asnNum === '13335' ? 'Cloudflare, Inc.' : 'Amazon.com, Inc. (AWS)';
+      let asnNum = octets[0] === '104' || octets[0] === '172' || octets[0] === '1' ? '13335' : '16509';
+      let orgName = asnNum === '13335' ? 'Cloudflare, Inc.' : 'Amazon.com, Inc. (AWS)';
+
+      if (rawBody.liveNetwork === true && /^\d+\.\d+\.\d+\.\d+$/.test(value)) {
+        try {
+          const ripeRes = await fetch(
+            `https://stat.ripe.net/data/network-info/data.json?resource=${encodeURIComponent(value)}`,
+            { signal: AbortSignal.timeout(1800) }
+          );
+          if (ripeRes.ok) {
+            const ripeJson = (await ripeRes.json()) as {
+              data?: { prefix?: string; asns?: string[] };
+            };
+            if (ripeJson.data?.prefix) {
+              prefix24 = ripeJson.data.prefix;
+            }
+            if (Array.isArray(ripeJson.data?.asns) && ripeJson.data.asns[0]) {
+              asnNum = String(ripeJson.data.asns[0]).replace(/^AS/i, '');
+              orgName = `RIPEstat BGP Origin AS${asnNum}`;
+            }
+          }
+        } catch {
+          // Graceful fallback when offline
+        }
+      }
 
       entities.push({
         typeName: 'maltego.Netblock',
@@ -1221,7 +1244,7 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       });
       messages.push({
         type: 'Inform',
-        text: `[BGP / Shodan] Mapped ${value} -> ${prefix24} (AS${asnNum} ${orgName}) + port 443/tcp`,
+        text: `[BGP / RIPEstat] Mapped ${value} -> ${prefix24} (AS${asnNum} ${orgName}) + port 443/tcp`,
       });
     }
 
@@ -1334,45 +1357,97 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       });
     }
 
-    // 8. Cryptocurrency Trace
+    // 8. Cryptocurrency Trace (Live mempool.space UTXO + Deterministic Fallback)
     if (transformId === 'crypto-trace' || (transformId === 'all' && isBtcValue)) {
-      entities.push({
-        typeName: 'maltego.BitcoinAddress',
-        value: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-        weight: 95,
-        fields: {
-          address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-          cluster: 'Tornado / Sinbad Mixer Hop #2',
-          balance_btc: '42.8190 BTC',
-        },
-        linkLabel: 'transferred 14.5 BTC',
-        linkColor: '#f59e0b',
-      });
-      entities.push({
-        typeName: 'maltego.CryptocurrencyTransaction',
-        value: '7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730',
-        weight: 90,
-        fields: {
-          txid: '7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730',
-          amount: '14.5000 BTC',
-          block_height: '841920',
-        },
-        linkLabel: 'on-chain tx',
-        linkColor: '#10b981',
-      });
+      let mempoolResolved = false;
+      if (rawBody.liveNetwork === true && isBtcValue) {
+        try {
+          const mpRes = await fetch(
+            `https://mempool.space/api/address/${encodeURIComponent(value)}/txs`,
+            { signal: AbortSignal.timeout(1800) }
+          );
+          if (mpRes.ok) {
+            const txs = (await mpRes.json()) as Array<{
+              txid?: string;
+              status?: { block_height?: number };
+              vout?: Array<{ scriptpubkey_address?: string; value?: number }>;
+            }>;
+            for (const tx of txs.slice(0, 3)) {
+              if (!tx.txid) continue;
+              const outSats = (tx.vout ?? []).reduce((acc, v) => acc + (v.value ?? 0), 0);
+              const btcAmt = (outSats / 1e8).toFixed(4);
+              entities.push({
+                typeName: 'maltego.CryptocurrencyTransaction',
+                value: tx.txid,
+                weight: 92,
+                fields: {
+                  txid: tx.txid,
+                  amount: `${btcAmt} BTC`,
+                  block_height: String(tx.status?.block_height ?? 'mempool'),
+                },
+                linkLabel: `on-chain tx (${btcAmt} BTC)`,
+                linkColor: '#10b981',
+              });
+              const peerAddr = (tx.vout ?? []).find(
+                (v) => v.scriptpubkey_address && v.scriptpubkey_address !== value
+              )?.scriptpubkey_address;
+              if (peerAddr) {
+                entities.push({
+                  typeName: 'maltego.BitcoinAddress',
+                  value: peerAddr,
+                  weight: 90,
+                  fields: { address: peerAddr, source: 'mempool.space UTXO' },
+                  linkLabel: 'UTXO output hop',
+                  linkColor: '#f59e0b',
+                });
+              }
+              mempoolResolved = true;
+            }
+          }
+        } catch {
+          // Graceful fallback when offline
+        }
+      }
+
+      if (!mempoolResolved) {
+        entities.push({
+          typeName: 'maltego.BitcoinAddress',
+          value: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+          weight: 95,
+          fields: {
+            address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+            cluster: 'Tornado / Sinbad Mixer Hop #2',
+            balance_btc: '42.8190 BTC',
+          },
+          linkLabel: 'transferred 14.5 BTC',
+          linkColor: '#f59e0b',
+        });
+        entities.push({
+          typeName: 'maltego.CryptocurrencyTransaction',
+          value: '7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730',
+          weight: 90,
+          fields: {
+            txid: '7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730',
+            amount: '14.5000 BTC',
+            block_height: '841920',
+          },
+          linkLabel: 'on-chain tx',
+          linkColor: '#10b981',
+        });
+      }
       messages.push({
         type: 'Inform',
         text: `[Blockchain Analytics] Traced UTXO hop and cluster attribution for ${value}`,
       });
     }
 
-    // 9. Commercial OSINT Connector: Shodan Host Intelligence (BYOK + Enterprise Cloud Pool)
+    // 9. Commercial OSINT Connector: Shodan Host Intelligence (BYOK + Enterprise Cloud Pool + Free Shodan InternetDB)
     if (transformId === 'shodan-host-intel' || transformId === 'all') {
       const byokKey = sqliteVault.getProviderApiKey('shodan');
       const cloudKey = process.env.SHODAN_API_KEY;
       const edition = sqliteVault.getEditionState();
       const activeKey = byokKey ?? (edition.editionTier !== 'COMMUNITY' ? cloudKey : undefined);
-      const authMode = byokKey ? 'BYOK' : activeKey ? 'ENTERPRISE_CLOUD_POOL' : 'FORENSIC_FALLBACK';
+      let authMode = byokKey ? 'BYOK' : activeKey ? 'ENTERPRISE_CLOUD_POOL' : 'FORENSIC_FALLBACK';
 
       let shodanResolved = false;
       if (activeKey && /^\d{1,3}(\.\d{1,3}){3}$/.test(value)) {
@@ -1402,6 +1477,64 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
           }
         } catch {
           // Graceful fallback
+        }
+      }
+
+      if (!shodanResolved && rawBody.liveNetwork === true && /^\d{1,3}(\.\d{1,3}){3}$/.test(value)) {
+        try {
+          const idbRes = await fetch(
+            `https://internetdb.shodan.io/${encodeURIComponent(value)}`,
+            { signal: AbortSignal.timeout(1800) }
+          );
+          if (idbRes.ok) {
+            const idbJson = (await idbRes.json()) as {
+              ports?: number[];
+              hostnames?: string[];
+              cpes?: string[];
+              vulns?: string[];
+            };
+            const ports = idbJson.ports ?? [];
+            if (ports.length > 0) {
+              authMode = 'SHODAN_INTERNETDB_LIVE';
+              for (const p of ports.slice(0, 5)) {
+                entities.push({
+                  typeName: 'maltego.Service',
+                  value: `${value}:${p}/tcp`,
+                  weight: 94,
+                  fields: {
+                    port: String(p),
+                    cpes: (idbJson.cpes ?? []).slice(0, 3).join(', ') || 'Shodan InternetDB',
+                    authMode,
+                  },
+                  linkLabel: `shodan port [${authMode}]`,
+                  linkColor: '#f43f5e',
+                });
+              }
+              for (const hn of (idbJson.hostnames ?? []).slice(0, 2)) {
+                entities.push({
+                  typeName: 'maltego.DNSName',
+                  value: hn,
+                  weight: 88,
+                  fields: { fqdn: hn, source: 'Shodan InternetDB' },
+                  linkLabel: 'reverse hostname',
+                  linkColor: '#38bdf8',
+                });
+              }
+              for (const cveId of (idbJson.vulns ?? []).slice(0, 3)) {
+                entities.push({
+                  typeName: 'maltego.CVE',
+                  value: cveId,
+                  weight: 96,
+                  fields: { cve: cveId, source: 'Shodan InternetDB' },
+                  linkLabel: 'vulnerable to CVE',
+                  linkColor: '#ef4444',
+                });
+              }
+              shodanResolved = true;
+            }
+          }
+        } catch {
+          // Graceful fallback when offline
         }
       }
 

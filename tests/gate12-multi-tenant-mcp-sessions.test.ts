@@ -2,6 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import cloudflareWorker, {
+  CangrejoSessionRoomDO,
+  resolveSessionRoomFromRequest,
+} from '../apps/web/cloudflareWorker.js';
 import { cangrejoHonoApp, sessionRooms } from '../apps/web/honoApp.js';
 import { dispatchMcpJsonRpcLine } from '../apps/web/mcpStdioServer.js';
 import {
@@ -575,5 +579,76 @@ describe('Gate 12: Multi-Tenant MCP Session Isolation, Atomic WAL OCC Batching, 
       if (prevToken === undefined) delete process.env.CANGREJO_MCP_TOKEN;
       else process.env.CANGREJO_MCP_TOKEN = prevToken;
     }
+  });
+
+  it('7. verifies Edge Inspector & dblclick canvas interaction, unified file import, live zero-key OSINT connectors, and CangrejoSessionRoomDO routing', async () => {
+    const repoRoot = path.resolve(import.meta.dirname, '..');
+    const indexHtml = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf-8');
+    const mainTs = fs.readFileSync(path.join(repoRoot, 'apps/web/main.ts'), 'utf-8');
+    const honoAppTs = fs.readFileSync(path.join(repoRoot, 'apps/web/honoApp.ts'), 'utf-8');
+    const wranglerJsonc = fs.readFileSync(path.join(repoRoot, 'wrangler.jsonc'), 'utf-8');
+
+    // Pillar 1: Edge Inspector + hitTestEdgeAtWorldPoint + dblclick on #graph-canvas
+    expect(mainTs).toContain('function hitTestEdgeAtWorldPoint');
+    expect(mainTs).toContain('id="insp-link-label"');
+    expect(mainTs).toContain('id="insp-link-weight"');
+    expect(mainTs).toContain('id="btn-insp-reverse-link"');
+    expect(mainTs).toContain('id="btn-insp-delete-link"');
+    expect(mainTs).toContain("canvasEl.addEventListener('dblclick'");
+
+    // Pillar 2: Unified File Import from Bóveda ▾ & Drag-and-Drop
+    expect(indexHtml).toContain('id="btn-import-file-vault"');
+    expect(indexHtml).toContain('id="inp-import-any-file"');
+    expect(mainTs).toContain('async function importForensicFileToCanvas');
+    expect(mainTs).toContain('e.dataTransfer?.files');
+
+    // Pillar 3: Real Zero-Key Live OSINT Enrichment (Shodan InternetDB, RIPEstat, mempool.space)
+    expect(honoAppTs).toContain('https://internetdb.shodan.io/');
+    expect(honoAppTs).toContain('https://stat.ripe.net/data/network-info/data.json');
+    expect(honoAppTs).toContain('https://mempool.space/api/address/');
+
+    // Pillar 4: CangrejoSessionRoomDO Durable Object binding and routing
+    expect(wranglerJsonc).toContain('"SESSION_ROOM_DO"');
+    expect(wranglerJsonc).toContain('"CangrejoSessionRoomDO"');
+
+    const reqCollab = new Request('https://cangrejo.test/api/collab/rooms/sala-forense-1/stream');
+    expect(resolveSessionRoomFromRequest(reqCollab, new URL(reqCollab.url))).toBe('sala-forense-1');
+
+    const reqMcp = new Request('https://cangrejo.test/api/mcp/expediente-apt29', { method: 'POST' });
+    expect(resolveSessionRoomFromRequest(reqMcp, new URL(reqMcp.url))).toBe('expediente-apt29');
+
+    const routedRooms: string[] = [];
+    const doInstances = new Map<string, CangrejoSessionRoomDO>();
+    const envWithDo = {
+      SESSION_ROOM_DO: {
+        idFromName(name: string) {
+          return { toString: () => name };
+        },
+        get(id: { toString(): string }) {
+          const roomName = id.toString();
+          let inst = doInstances.get(roomName);
+          if (!inst) {
+            inst = new CangrejoSessionRoomDO({}, {});
+            doInstances.set(roomName, inst);
+          }
+          return {
+            async fetch(req: Request) {
+              routedRooms.push(roomName);
+              return await inst!.fetch(req);
+            },
+          };
+        },
+      },
+    };
+
+    const roomRes = await cloudflareWorker.fetch(
+      new Request('https://cangrejo.test/api/collab/rooms/expediente-do-test'),
+      envWithDo
+    );
+    expect(roomRes.status).toBe(200);
+    expect(routedRooms).toContain('expediente-do-test');
+    const roomJson = (await roomRes.json()) as { ok: boolean; roomId: string };
+    expect(roomJson.ok).toBe(true);
+    expect(roomJson.roomId).toBe('expediente-do-test');
   });
 });

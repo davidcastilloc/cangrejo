@@ -12,6 +12,7 @@ import {
   createPropertyBag,
   getPartPrimaryValue,
   type EntityID,
+  type LinkID,
   type MaltegoEntityData,
   type MaltegoLinkData,
   type Point2D,
@@ -122,6 +123,7 @@ let lassoPolygonWorld: Point2D[] = [];
 let linkSourceEntityId: EntityID | null = null;
 let linkPreviewWorld: Point2D | null = null;
 let contextTargetEntityId: EntityID | null = null;
+let selectedLinkId: LinkID | null = null;
 let draggedPaletteSpec: { id: string; displayName: string } | null = null;
 
 type McpClientType = 'antigravity' | 'codemode' | 'claude-desktop' | 'cursor' | 'claude-code';
@@ -564,21 +566,152 @@ document.getElementById('btn-smart-paste')!.addEventListener('click', () => {
 });
 
 // =============================================================================
-// 5. Right Sidebar: Entity Inspector & Bookmark Swatch Palette
+// 5. Right Sidebar: Entity & Edge Inspector + Bookmark Swatch Palette
 // =============================================================================
+function hitTestEdgeAtWorldPoint(worldPt: Point2D): LinkID | null {
+  const viewEntitiesMap = collectionView.getViewEntities();
+  const zoom = Math.max(0.35, graphCanvas.getCameraState().zoom);
+  const tolerance = 11 / zoom;
+  let closestLinkId: LinkID | null = null;
+  let closestDist = tolerance;
+
+  for (const vl of collectionView.getViewLinks().values()) {
+    if (vl.isProxy) continue;
+    const srcVe = viewEntitiesMap.get(vl.sourceViewEntityId);
+    const dstVe = viewEntitiesMap.get(vl.targetViewEntityId);
+    if (!srcVe || !dstVe) continue;
+    const firstUnderlying = vl.underlyingLinks.values().next().value;
+    if (!firstUnderlying || !store.dataStore.hasLink(firstUnderlying)) continue;
+
+    const ax = srcVe.position.x;
+    const ay = srcVe.position.y;
+    const bx = dstVe.position.x;
+    const by = dstVe.position.y;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1) continue;
+
+    // Point-to-segment distance
+    const t = Math.max(0, Math.min(1, ((worldPt.x - ax) * dx + (worldPt.y - ay) * dy) / lenSq));
+    const projX = ax + t * dx;
+    const projY = ay + t * dy;
+    const dist = Math.hypot(worldPt.x - projX, worldPt.y - projY);
+
+    // Midpoint label pill hit box (easier clicking on the label pill)
+    const midX = (ax + bx) * 0.5;
+    const midY = (ay + by) * 0.5;
+    const inPill = Math.abs(worldPt.x - midX) <= 44 / zoom && Math.abs(worldPt.y - midY) <= 12 / zoom;
+
+    if (inPill || dist < closestDist) {
+      closestDist = inPill ? 0 : dist;
+      closestLinkId = firstUnderlying;
+    }
+  }
+  return closestLinkId;
+}
+
 function renderInspector(): void {
   const container = document.getElementById('inspector-content')!;
   const viewSelected = Array.from(selection.getViewSelectedEntities());
 
   if (viewSelected.length === 0) {
+    if (
+      selectedLinkId &&
+      store.dataStore.hasLink(selectedLinkId) &&
+      store.structureStore.links.has(selectedLinkId)
+    ) {
+      const link = store.dataStore.getLink(selectedLinkId);
+      const edge = store.structureStore.links.get(selectedLinkId)!;
+      const srcEnt = store.dataStore.tryGetEntity(edge.source);
+      const dstEnt = store.dataStore.tryGetEntity(edge.target);
+      const srcName = srcEnt ? getPartPrimaryValue(srcEnt) : edge.source.toString();
+      const dstName = dstEnt ? getPartPrimaryValue(dstEnt) : edge.target.toString();
+      const currentLabel = getPartPrimaryValue(link);
+      const currentColor = String(link.properties.values.get('maltego.link.color') ?? '#3B82F6');
+
+      const linkSwatchesHtml = SWATCH_HEX.map(
+        (hex) =>
+          `<button type="button" data-link-color="${hex}" class="swatch-dot ${currentColor.toLowerCase() === hex.toLowerCase() ? 'active' : ''}" style="background:${hex}" title="Color de enlace ${hex}" aria-label="Color ${hex}"></button>`
+      ).join('');
+
+      container.innerHTML = `
+        <div class="insp-field">
+          <label>Inspector de enlace (Arista dirigida)</label>
+          <div class="insp-ancestry">
+            <span class="ancestry-chip">${escapeHtml(srcName)}</span> → <span class="ancestry-chip">${escapeHtml(dstName)}</span>
+          </div>
+        </div>
+        <div class="insp-field">
+          <label>Etiqueta de relación</label>
+          <input id="insp-link-label" type="text" value="${escapeHtml(currentLabel)}" />
+        </div>
+        <div class="insp-field">
+          <label class="tabular">Grosor / Peso (<span id="lbl-insp-link-weight">${link.weight}</span>)</label>
+          <input id="insp-link-weight" type="range" min="1" max="10" value="${Math.min(10, Math.max(1, link.weight))}" />
+        </div>
+        <div class="insp-field">
+          <label>Color táctico del vínculo</label>
+          <div class="swatch-row">${linkSwatchesHtml}</div>
+        </div>
+        <div style="display:flex; gap:6px; margin-top:8px;">
+          <button id="btn-insp-reverse-link" class="btn btn-xs" style="flex:1;">Invertir dirección ↔</button>
+          <button id="btn-insp-delete-link" class="btn btn-xs btn-danger" style="flex:1;">Eliminar enlace</button>
+        </div>
+      `;
+
+      document.getElementById('insp-link-label')?.addEventListener('change', (ev) => {
+        const nextLabel = (ev.target as HTMLInputElement).value.trim() || 'connected to';
+        link.properties.values.set('maltego.link.label', nextLabel);
+        store.updateLink(link);
+        syncSceneAndUi(false);
+        appendLog(`Etiqueta del enlace actualizada a "${nextLabel}".`);
+      });
+
+      document.getElementById('insp-link-weight')?.addEventListener('input', (ev) => {
+        const nextWeight = Number((ev.target as HTMLInputElement).value);
+        const wLbl = document.getElementById('lbl-insp-link-weight');
+        if (wLbl) wLbl.textContent = String(nextWeight);
+        store.updateLink({ ...link, weight: nextWeight });
+        syncSceneAndUi(false);
+      });
+
+      container.querySelectorAll('[data-link-color]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const hex = (btn as HTMLElement).getAttribute('data-link-color') || '#3B82F6';
+          link.properties.values.set('maltego.link.color', hex);
+          store.updateLink(link);
+          syncSceneAndUi(false);
+        });
+      });
+
+      document.getElementById('btn-insp-reverse-link')?.addEventListener('click', () => {
+        store.runInBatch(() => {
+          store.removeLink(link.id);
+          store.addLink(link, edge.target, edge.source);
+        });
+        syncSceneAndUi(false);
+        appendLog(`Dirección del enlace invertida (${dstName} → ${srcName}).`);
+      });
+
+      document.getElementById('btn-insp-delete-link')?.addEventListener('click', () => {
+        store.removeLink(link.id);
+        selectedLinkId = null;
+        syncSceneAndUi(false);
+        appendLog('Enlace eliminado del grafo.');
+      });
+      return;
+    }
+
     container.innerHTML = `
       <div class="inspector-empty">
-        Selecciona cualquier nodo del grafo para inspeccionar o editar sus propiedades dinámicas, peso, clasificación forense, notas y jerarquía ontológica.<br/><br/>
-        Haz clic derecho sobre un nodo o pulsa <strong>Ejecutar pesquisa</strong> en la barra superior.
+        Selecciona cualquier nodo o enlace (arista) del grafo para inspeccionar o editar sus propiedades dinámicas, etiqueta, peso, color y notas.<br/><br/>
+        Haz <strong>doble clic</strong> sobre el lienzo vacío para crear un IOC, o sobre un nodo/enlace para renombrarlo al vuelo.
       </div>
     `;
     return;
   }
+  selectedLinkId = null;
 
   const firstViewId = viewSelected[0]!;
   const viewEntity = collectionView.getViewEntities().get(firstViewId);
@@ -917,7 +1050,14 @@ canvasEl.addEventListener('drop', (e) => {
   const screenPt = getCanvasMousePos(e);
   const worldPt = graphCanvas.screenToWorld(screenPt.x, screenPt.y);
 
+  if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+    draggedPaletteSpec = null;
+    void importForensicFileToCanvas(e.dataTransfer.files[0]!, worldPt);
+    return;
+  }
+
   let specToSpawn = draggedPaletteSpec;
+  let droppedPlainText = '';
   if (!specToSpawn && e.dataTransfer) {
     const rawJson = e.dataTransfer.getData('application/x-cangrejo-entity');
     if (rawJson) {
@@ -928,24 +1068,92 @@ canvasEl.addEventListener('drop', (e) => {
       }
     }
     if (!specToSpawn) {
-      const plainId = e.dataTransfer.getData('text/plain').trim();
-      const found = STANDARD_ENTITIES_CATALOG.find((s) => s.id === plainId);
+      droppedPlainText = e.dataTransfer.getData('text/plain').trim();
+      const found = STANDARD_ENTITIES_CATALOG.find((s) => s.id === droppedPlainText);
       if (found) {
         specToSpawn = { id: found.id, displayName: found.displayName };
       }
     }
   }
   draggedPaletteSpec = null;
-  if (!specToSpawn) return;
+  if (!specToSpawn) {
+    if (droppedPlainText) {
+      const ent = convertTextToEntity(droppedPlainText, registry);
+      store.addEntity(ent, { x: worldPt.x, y: worldPt.y, z: 0 });
+      selectedLinkId = null;
+      selection.selectInModel([ent.id]);
+      syncSceneAndUi(false);
+      appendLog(
+        `Añadido IOC "${getPartPrimaryValue(ent)}" (${ent.typeName}) en (${Math.round(worldPt.x)}, ${Math.round(worldPt.y)}).`
+      );
+    }
+    return;
+  }
 
   const sampleVal = getDefaultSampleValue(specToSpawn.id, specToSpawn.displayName);
   const created = registry.createEntity(specToSpawn.id, sampleVal, { weight: 85 });
   store.addEntity(created, { x: worldPt.x, y: worldPt.y, z: 0 });
+  selectedLinkId = null;
   selection.selectInModel([created.id]);
   syncSceneAndUi(false);
   appendLog(
     `Añadida entidad ${specToSpawn.displayName} (${sampleVal}) en (${Math.round(worldPt.x)}, ${Math.round(worldPt.y)}).`
   );
+});
+
+canvasEl.addEventListener('dblclick', (e) => {
+  hideContextMenu();
+  const screenPt = getCanvasMousePos(e);
+  const worldPt = graphCanvas.screenToWorld(screenPt.x, screenPt.y);
+
+  const hitId = graphCanvas.selectAtScreenPoint(screenPt.x, screenPt.y, false);
+  if (hitId) {
+    const ent = store.dataStore.tryGetEntity(hitId);
+    if (ent) {
+      const currentVal = getPartPrimaryValue(ent);
+      const nextVal = window.prompt('Editar valor principal de la entidad:', currentVal);
+      if (nextVal !== null && nextVal.trim().length > 0 && nextVal.trim() !== currentVal) {
+        const mainProp = registry.getEffectiveMainProperty(ent.typeName);
+        ent.properties.values.set(mainProp, nextVal.trim());
+        store.updateEntity(ent);
+        syncSceneAndUi(false);
+        appendLog(`Entidad renombrada a "${nextVal.trim()}".`);
+      }
+    }
+    return;
+  }
+
+  const hitEdgeId = hitTestEdgeAtWorldPoint(worldPt);
+  if (hitEdgeId && store.dataStore.hasLink(hitEdgeId)) {
+    selectedLinkId = hitEdgeId;
+    selection.clearSelection();
+    const link = store.dataStore.getLink(hitEdgeId);
+    const currentLabel = getPartPrimaryValue(link);
+    syncSceneAndUi(false);
+    const nextLabel = window.prompt('Editar etiqueta de relación del enlace:', currentLabel);
+    if (nextLabel !== null && nextLabel.trim().length > 0 && nextLabel.trim() !== currentLabel) {
+      link.properties.values.set('maltego.link.label', nextLabel.trim());
+      store.updateLink(link);
+      syncSceneAndUi(false);
+      appendLog(`Etiqueta del enlace actualizada a "${nextLabel.trim()}".`);
+    }
+    return;
+  }
+
+  const rawIoc = window.prompt(
+    'Crear entidad o IOC en esta coordenada (ej. 1.1.1.1, dominio.com, CVE-2024-21412, AS13335):',
+    ''
+  );
+  if (rawIoc && rawIoc.trim().length > 0) {
+    const ent = convertTextToEntity(rawIoc.trim(), registry);
+    store.addEntity(ent, { x: worldPt.x, y: worldPt.y, z: 0 });
+    selectedLinkId = null;
+    selection.selectInModel([ent.id]);
+    syncSceneAndUi(false);
+    appendLog(
+      `Creada entidad ${ent.typeName} ("${getPartPrimaryValue(ent)}") en (${Math.round(worldPt.x)}, ${Math.round(worldPt.y)}).`
+    );
+  }
 });
 
 canvasEl.addEventListener('mousedown', (e) => {
@@ -1000,12 +1208,21 @@ canvasEl.addEventListener('mousedown', (e) => {
   }
 
   if (hitId) {
+    selectedLinkId = null;
     if (store.dataStore.hasEntity(hitId)) {
       draggingEntityId = hitId;
       dragStartWorldPos = store.layoutStore.getPosition(hitId);
     }
     syncSceneAndUi(false);
   } else {
+    const hitEdgeId = hitTestEdgeAtWorldPoint(worldPt);
+    if (hitEdgeId) {
+      selectedLinkId = hitEdgeId;
+      selection.clearSelection();
+      syncSceneAndUi(false);
+      return;
+    }
+    selectedLinkId = null;
     syncSceneAndUi(false);
     isPanning = true;
     panStartScreen = screenPt;
@@ -1534,54 +1751,182 @@ document.getElementById('btn-export-mtgx')!.addEventListener('click', async () =
   }
 });
 
+async function importForensicFileToCanvas(file: File, dropWorldPt?: Point2D): Promise<void> {
+  const lowerName = file.name.toLowerCase();
+  try {
+    if (lowerName.endsWith('.cgrx') || lowerName.endsWith('.mtgx') || lowerName.endsWith('.zip')) {
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+      const mtgxBase64 = btoa(binary);
+      const res = await fetch('/api/import/mtgx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mtgxBase64 }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        entities?: SerializedGraphEntityItem[];
+        links?: SerializedGraphLinkItem[];
+      };
+      if (!data.ok || !data.entities || !data.links) {
+        appendLog(`Error importando .cgrx/.mtgx: ${data.error ?? 'Archivo inválido'}`);
+        return;
+      }
+      hydrateStoreFromSerialized(data.entities, data.links);
+      appendLog(
+        `Importado expediente PKZIP "${file.name}" (${store.entityCount} entidades, ${store.linkCount} enlaces).`
+      );
+      return;
+    }
+
+    const rawText = await file.text();
+    let parsedJson: Record<string, unknown> | null = null;
+    try {
+      parsedJson = JSON.parse(rawText) as Record<string, unknown>;
+    } catch {
+      parsedJson = null;
+    }
+
+    if (parsedJson) {
+      // 1. OASIS STIX 2.1 Bundle
+      if (parsedJson.type === 'bundle' && Array.isArray(parsedJson.objects)) {
+        consoleBuffers.json = rawText;
+        renderConsole();
+        const res = await fetch('/api/import/stix21', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bundle: parsedJson }),
+        });
+        const data = (await res.json()) as {
+          ok: boolean;
+          error?: string;
+          custodyVerified?: boolean;
+          custodyReason?: string;
+          computedDigestHex?: string;
+          entityCount?: number;
+          linkCount?: number;
+          entities?: SerializedGraphEntityItem[];
+          links?: SerializedGraphLinkItem[];
+        };
+        if (data.ok && data.entities) {
+          hydrateStoreFromSerialized(data.entities, data.links ?? []);
+          appendLog(
+            `[Importador STIX 2.1 "${file.name}"]: ${data.entityCount} entidades y ${data.linkCount} relaciones hidratadas • Custodia SHA-256: ${
+              data.custodyVerified ? 'ÍNTEGRA ✓' : 'EXTERNA'
+            }`
+          );
+        } else {
+          appendLog(`Error importando bundle STIX 2.1: ${data.error ?? 'Formato inválido'}`);
+        }
+        return;
+      }
+
+      // 2. Encrypted Bóveda Cero .cgrj envelope
+      if (
+        typeof parsedJson.ciphertextBase64 === 'string' ||
+        typeof parsedJson.gmacTagBase64 === 'string' ||
+        typeof parsedJson.topologyGmacBase64 === 'string' ||
+        parsedJson.encryption !== undefined
+      ) {
+        consoleBuffers.json = rawText;
+        renderConsole();
+        const passphrase = window.prompt(
+          `Introduce la frase de paso para descifrar "${file.name}" y verificar su autenticidad topológica AES-GMAC:`,
+          'correct-horse-battery-staple-osint-2026'
+        );
+        if (!passphrase) return;
+        const res = await fetch('/api/import/mtgj-decrypted', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ envelope: parsedJson, passphrase }),
+        });
+        const data = (await res.json()) as {
+          ok: boolean;
+          error?: string;
+          entities?: SerializedGraphEntityItem[];
+          links?: SerializedGraphLinkItem[];
+        };
+        if (!data.ok || !data.entities) {
+          appendLog(`Fallo de descifrado / verificación AES-GMAC: ${data.error}`);
+          return;
+        }
+        hydrateStoreFromSerialized(data.entities, data.links ?? []);
+        appendLog(
+          `Bóveda Cero "${file.name}" verificada e hidratada (${store.entityCount} entidades, ${store.linkCount} enlaces).`
+        );
+        return;
+      }
+
+      // 3. Plain .cgrj / .mtgj JSON graph document
+      if (Array.isArray(parsedJson.entities)) {
+        hydrateStoreFromSerialized(
+          parsedJson.entities as SerializedGraphEntityItem[],
+          Array.isArray(parsedJson.links) ? (parsedJson.links as SerializedGraphLinkItem[]) : []
+        );
+        appendLog(
+          `Importado grafo JSON "${file.name}" (${store.entityCount} entidades, ${store.linkCount} enlaces).`
+        );
+        return;
+      }
+    }
+
+    // 4. Plain text / CSV list of IOCs
+    const lines = rawText
+      .split(/[\r\n,;]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 1 && !s.startsWith('#'));
+    if (lines.length === 0) {
+      appendLog(`No se detectaron entidades ni IOCs en "${file.name}".`);
+      return;
+    }
+    const anchor =
+      dropWorldPt ??
+      graphCanvas.screenToWorld(
+        graphCanvas.getCameraState().viewportWidth * 0.5,
+        graphCanvas.getCameraState().viewportHeight * 0.5
+      );
+    const createdIds: EntityID[] = [];
+    store.runInBatch(() => {
+      lines.slice(0, 200).forEach((line, idx) => {
+        const angle = (2 * Math.PI * idx) / Math.max(1, Math.min(200, lines.length));
+        const r = Math.min(280, 90 + lines.length * 6);
+        const ent = convertTextToEntity(line, registry);
+        store.addEntity(ent, {
+          x: anchor.x + Math.cos(angle) * r,
+          y: anchor.y + Math.sin(angle) * r,
+          z: 0,
+        });
+        createdIds.push(ent.id);
+      });
+    });
+    selectedLinkId = null;
+    selection.selectInModel(createdIds);
+    syncSceneAndUi(false);
+    appendLog(`Importados ${createdIds.length} IOCs desde "${file.name}".`);
+  } catch (err) {
+    appendLog(`Error importando "${file.name}": ${String(err)}`);
+  }
+}
+
 document.getElementById('inp-import-mtgx')!.addEventListener('change', async (e) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
-  const buf = await file.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
-  const mtgxBase64 = btoa(binary);
+  await importForensicFileToCanvas(file);
+});
 
-  const res = await fetch('/api/import/mtgx', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mtgxBase64 }),
-  });
-  const data = (await res.json()) as {
-    ok: boolean;
-    error?: string;
-    entities?: Array<{
-      id: string;
-      typeName: string;
-      value: string;
-      weight: number;
-      bookmark: number;
-      notes: { value: string; show: boolean };
-      properties: Record<string, string>;
-      position: { x: number; y: number; z: number };
-      pinned: boolean;
-    }>;
-    links?: Array<{
-      id: string;
-      sourceId: string;
-      targetId: string;
-      label: string;
-      color?: string;
-      isReversed?: boolean;
-      path: Array<{ x: number; y: number }>;
-    }>;
-  };
-
-  if (!data.ok || !data.entities || !data.links) {
-    appendLog(`Error importando .mtgx: ${data.error}`);
-    return;
-  }
-
-  hydrateStoreFromSerialized(data.entities, data.links);
-  appendLog(
-    `Importado archivo .mtgx "${file.name}" (${store.entityCount} entidades, ${store.linkCount} enlaces).`
-  );
+const inpImportAnyFile = document.getElementById('inp-import-any-file') as HTMLInputElement | null;
+document.getElementById('btn-import-file-vault')?.addEventListener('click', () => {
+  inpImportAnyFile?.click();
+});
+inpImportAnyFile?.addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  await importForensicFileToCanvas(file);
+  input.value = '';
 });
 
 document.getElementById('btn-encrypt-mtgj')!.addEventListener('click', async () => {
@@ -2130,17 +2475,23 @@ function renderFrame(): void {
     }
 
     const firstUnderlying = vl.underlyingLinks.values().next().value;
+    const isSelectedEdge =
+      firstUnderlying !== undefined &&
+      selectedLinkId !== null &&
+      firstUnderlying.equals(selectedLinkId);
     const isGoldenEdge =
       firstUnderlying !== undefined && goldenPathLinkIds.has(firstUnderlying.toString());
     const physLink = firstUnderlying ? store.dataStore.tryGetLink(firstUnderlying) : undefined;
     const colorVal = physLink?.properties.values.get('maltego.link.color');
-    const edgeColor = isGoldenEdge
-      ? '#F59E0B'
-      : vl.isProxy
-        ? activeTokens.edgeProxy
-        : typeof colorVal === 'string'
-          ? colorVal
-          : activeTokens.edgeDefault;
+    const edgeColor = isSelectedEdge
+      ? activeTokens.borderFocus
+      : isGoldenEdge
+        ? '#F59E0B'
+        : vl.isProxy
+          ? activeTokens.edgeProxy
+          : typeof colorVal === 'string'
+            ? colorVal
+            : activeTokens.edgeDefault;
     const edgeLabel = vl.isProxy
       ? `${vl.underlyingLinks.size} links`
       : physLink
@@ -2156,7 +2507,7 @@ function renderFrame(): void {
 
     ctx.save();
     ctx.strokeStyle = edgeColor;
-    ctx.lineWidth = isGoldenEdge ? 2.8 : vl.isProxy ? 2.0 : 1.5;
+    ctx.lineWidth = isSelectedEdge ? 3.2 : isGoldenEdge ? 2.8 : vl.isProxy ? 2.0 : 1.5;
     if (vl.isProxy) {
       ctx.setLineDash([6, 4]);
     }
@@ -2200,8 +2551,8 @@ function renderFrame(): void {
       drawRoundedRect(ctx, midX - pillW * 0.5, midY - pillH * 0.5, pillW, pillH, 3);
       ctx.fillStyle = activeTokens.edgeLabelBg;
       ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = activeTokens.edgeLabelBorder;
+      ctx.lineWidth = isSelectedEdge ? 1.8 : 1;
+      ctx.strokeStyle = isSelectedEdge ? activeTokens.borderFocus : activeTokens.edgeLabelBorder;
       ctx.stroke();
 
       ctx.fillStyle = activeTokens.edgeLabelText;
@@ -2510,9 +2861,10 @@ minimapEl.addEventListener('click', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hideContextMenu();
-    if (linkSourceEntityId) {
+    if (linkSourceEntityId || selectedLinkId) {
       linkSourceEntityId = null;
       linkPreviewWorld = null;
+      selectedLinkId = null;
       syncSceneAndUi(false);
     }
     document.getElementById('lore-modal-backdrop')?.classList.add('hidden');
@@ -2575,6 +2927,11 @@ window.addEventListener('keydown', (e) => {
         });
         selection.clearSelection();
         syncSceneAndUi(false);
+      } else if (selectedLinkId && store.dataStore.hasLink(selectedLinkId)) {
+        store.removeLink(selectedLinkId);
+        selectedLinkId = null;
+        syncSceneAndUi(false);
+        appendLog('Enlace eliminado.');
       }
     }
   }

@@ -32,6 +32,20 @@
       "index_name": "cangrejo-forensic-bge-1024"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSION_ROOM_DO",
+        "class_name": "CangrejoSessionRoomDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CangrejoSessionRoomDO"]
+    }
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS"
