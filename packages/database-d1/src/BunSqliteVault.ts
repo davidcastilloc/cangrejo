@@ -1232,20 +1232,70 @@ export class BunSqliteVault {
   }
 
   /**
-   * Consumes OSINT Cloud credits when operating in `ORO_PRO` or `PLATINO_ENTERPRISE` mode.
-   * Never throws or blocks transform execution if SQLite is busy.
+   * Adds non-expiring rollover AI / Agent credits (`topUpAiCredits`) to any account tier
+   * (including `COMMUNITY` pay-as-you-go users or `ORO_PRO` / `PLATINO_ENTERPRISE` teams).
    */
-  public consumeOsintCreditsSafe(cost = 1): CangrejoEditionState {
+  public topUpAiCredits(creditsToAdd: number): CangrejoEditionState {
+    const safeAdd = Math.max(0, Math.floor(creditsToAdd));
+    if (safeAdd <= 0) return this.getEditionState();
     try {
       const current = this.getEditionState();
-      if (current.editionTier !== 'COMMUNITY' && current.creditsRemaining > 0) {
-        const nextCredits = Math.max(0, current.creditsRemaining - Math.max(1, cost));
+      const nextRemaining = current.creditsRemaining + safeAdd;
+      const nextTotal = current.creditsTotal + safeAdd;
+      const now = Date.now();
+      const stmt = this.db.prepare(`
+        INSERT INTO cangrejo_edition_state (
+          singleton_id, edition_tier, license_key_masked, credits_remaining, credits_total,
+          organization_name, badge_title, watermark_enabled, updated_at
+        )
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(singleton_id) DO UPDATE SET
+          credits_remaining = excluded.credits_remaining,
+          credits_total = excluded.credits_total,
+          updated_at = excluded.updated_at
+      `);
+      stmt.run(
+        current.editionTier,
+        current.licenseKeyMasked,
+        nextRemaining,
+        nextTotal,
+        current.whiteLabel.organizationName,
+        current.whiteLabel.badgeTitle,
+        current.whiteLabel.watermarkEnabled ? 1 : 0,
+        now
+      );
+    } catch (err) {
+      console.error('[BunSqliteVault] AI credit top-up failed gracefully:', err);
+    }
+    return this.getEditionState();
+  }
+
+  /**
+   * Consumes AI / Cloud credits when executing AI / Agent operations (or legacy metered endpoints).
+   * Supports any tier with a positive credit balance (including `COMMUNITY` with Top-Up packs)
+   * and optional auto-recharge so autonomous MCP agents never stall mid-investigation.
+   */
+  public consumeOsintCreditsSafe(
+    cost = 1,
+    options?: { autoRechargeEnabled?: boolean; autoRechargeThreshold?: number; autoRechargeAmount?: number }
+  ): CangrejoEditionState {
+    try {
+      const current = this.getEditionState();
+      if (cost > 0 && (current.editionTier !== 'COMMUNITY' || current.creditsRemaining > 0)) {
+        let nextCredits = Math.max(0, current.creditsRemaining - Math.max(1, cost));
+        let nextTotal = current.creditsTotal;
+        const threshold = options?.autoRechargeThreshold ?? 25;
+        const rechargeAmt = options?.autoRechargeAmount ?? 250;
+        if (options?.autoRechargeEnabled && nextCredits < threshold) {
+          nextCredits += rechargeAmt;
+          nextTotal += rechargeAmt;
+        }
         const stmt = this.db.prepare(`
           UPDATE cangrejo_edition_state
-          SET credits_remaining = ?, updated_at = ?
+          SET credits_remaining = ?, credits_total = ?, updated_at = ?
           WHERE singleton_id = 1
         `);
-        stmt.run(nextCredits, Date.now());
+        stmt.run(nextCredits, nextTotal, Date.now());
       }
     } catch (err) {
       console.error('[BunSqliteVault] Secondary credit deduction failed gracefully:', err);

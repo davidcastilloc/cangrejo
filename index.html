@@ -1584,26 +1584,35 @@
             <!-- PESTAÑA 3: CONECTORES, MARCA BLANCA Y PLAN (Vista 2) -->
             <div id="ws-panel-plan" data-ws-panel="plan" class="ws-tab-panel" hidden>
               <div class="ws-plan-layout">
-                <!-- 1. Nivel de Capacidad (3 Tarjetas Horizontales) -->
+                <!-- Banner de Modelo Justo: Todo OSINT Gratis, solo IA consume créditos -->
+                <div class="ws-fair-pricing-banner">
+                  <span class="ws-fair-badge">MODELO CANGREJO</span>
+                  <span>
+                    <strong>Todo OSINT, Grafo WebGPU y BYOK es 100% Gratis (0 cr).</strong>
+                    Solo el cómputo del Comisario IA y el Agente Autónomo consume Créditos IA.
+                  </span>
+                </div>
+
+                <!-- 1. Suscripción Base Híbrida (Equipos / Salas + Bolsa mensual IA) -->
                 <div class="ws-plan-section">
-                  <div class="ws-section-heading">Nivel de capacidad del equipo</div>
+                  <div class="ws-section-heading">1. Suscripción base de equipo + Bolsa mensual IA</div>
                   <div class="ws-tier-cards-grid">
                     <div id="card-tier-community" class="ws-tier-card">
                       <div class="ws-tier-card-top">
-                        <strong class="ws-tier-name">Community</strong>
+                        <strong class="ws-tier-name">Community · $0</strong>
                       </div>
-                      <span class="ws-tier-meta">Local · 60 FPS · Gratis</span>
+                      <span class="ws-tier-meta">OSINT + BYOK Gratis · Recargable</span>
                       <button id="btn-reset-community" type="button" class="btn btn-quiet btn-xs">
-                        Modo local
+                        Modo gratuito
                       </button>
                     </div>
 
                     <div id="card-tier-oro" class="ws-tier-card ws-tier-card-featured">
                       <div class="ws-tier-card-top">
-                        <strong class="ws-tier-name">Oro Pro</strong>
-                        <span class="ws-live-indicator">Recomendado</span>
+                        <strong class="ws-tier-name">Oro Pro · $19/mes</strong>
+                        <span class="ws-live-indicator">Híbrido</span>
                       </div>
-                      <span class="ws-tier-meta">500 créditos · 25k nodos</span>
+                      <span class="ws-tier-meta">Salas + Marca Blanca + 500 cr IA</span>
                       <button id="btn-activate-oro" type="button" class="btn btn-primary btn-xs">
                         Activar Oro Pro
                       </button>
@@ -1611,13 +1620,86 @@
 
                     <div id="card-tier-platino" class="ws-tier-card">
                       <div class="ws-tier-card-top">
-                        <strong class="ws-tier-name">Platino</strong>
+                        <strong class="ws-tier-name">Platino SOC · $79/mes</strong>
                       </div>
-                      <span class="ws-tier-meta">5,000 créditos · Radar 24/7</span>
+                      <span class="ws-tier-meta">Radar 24/7 + 5,000 cr IA/mes</span>
                       <button id="btn-activate-platino" type="button" class="btn btn-quiet btn-xs">
                         Activar Platino
                       </button>
                     </div>
+                  </div>
+                </div>
+
+                <!-- 2. Recargas de Créditos IA bajo demanda (Rollover sin caducidad) + Presupuesto de Agente -->
+                <div class="ws-plan-section">
+                  <div class="ws-topup-header-row">
+                    <div class="ws-section-heading" style="margin: 0">
+                      2. Recargas de Créditos IA (Rollover sin vencimiento) y Gobernanza del Agente
+                    </div>
+                    <span id="lbl-ai-credits-balance" class="ws-credits-pill tabular">Saldo IA: 0 cr</span>
+                  </div>
+
+                  <div class="ws-tier-cards-grid ws-topup-grid">
+                    <div class="ws-tier-card ws-topup-card">
+                      <div class="ws-tier-card-top">
+                        <strong class="ws-tier-name">+250 Créditos IA</strong>
+                        <span class="ws-topup-price tabular">$9</span>
+                      </div>
+                      <span class="ws-tier-meta">Pack Táctico · Nunca caduca</span>
+                      <button
+                        type="button"
+                        data-topup-pack="pack-tactico-250"
+                        class="btn btn-quiet btn-xs"
+                      >
+                        ⚡ Recargar +250 cr IA
+                      </button>
+                    </div>
+
+                    <div class="ws-tier-card ws-tier-card-featured ws-topup-card">
+                      <div class="ws-tier-card-top">
+                        <strong class="ws-tier-name">+1,200 Créditos IA</strong>
+                        <span class="ws-topup-price tabular">$29</span>
+                      </div>
+                      <span class="ws-tier-meta">Pack Cacería Agente MCP + F6</span>
+                      <button
+                        type="button"
+                        data-topup-pack="pack-agente-1200"
+                        class="btn btn-primary btn-xs"
+                      >
+                        ⚡ Recargar +1,200 cr IA
+                      </button>
+                    </div>
+
+                    <div class="ws-tier-card ws-topup-card">
+                      <div class="ws-tier-card-top">
+                        <strong class="ws-tier-name">+5,000 Créditos IA</strong>
+                        <span class="ws-topup-price tabular">$99</span>
+                      </div>
+                      <span class="ws-tier-meta">Pack Unidad Forense · Rollover</span>
+                      <button
+                        type="button"
+                        data-topup-pack="pack-unidad-5000"
+                        class="btn btn-quiet btn-xs"
+                      >
+                        ⚡ Recargar +5,000 cr IA
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="ws-agent-governance-bar">
+                    <label class="ws-agent-gov-item" for="sel-agent-budget-limit">
+                      <span>Tope de gasto por sesión del Agente MCP:</span>
+                      <select id="sel-agent-budget-limit" class="ws-input ws-input-sm">
+                        <option value="50">50 cr IA / sesión</option>
+                        <option value="200" selected>200 cr IA / sesión (Recomendado)</option>
+                        <option value="1000">1,000 cr IA / sesión</option>
+                        <option value="0">Sin límite de sesión</option>
+                      </select>
+                    </label>
+                    <label class="ws-agent-gov-toggle" for="chk-agent-auto-recharge">
+                      <input id="chk-agent-auto-recharge" type="checkbox" />
+                      <span>Auto-recargar +250 cr IA si el Agente baja de 25 cr</span>
+                    </label>
                   </div>
                 </div>
 
@@ -1731,6 +1813,15 @@
               <div class="ws-title-group" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
                 <h2 id="ai-modal-title" class="ws-modal-title">Comisario IA</h2>
                 <span class="agy-partner-badge">Llama 3.3 70B · Vectorize RRF</span>
+                <span id="lbl-ai-modal-credits" class="ws-credits-pill tabular">0 cr IA</span>
+                <button
+                  id="btn-ai-open-topup"
+                  type="button"
+                  class="btn btn-quiet btn-xs"
+                  title="Recargar Créditos IA sin vencimiento o configurar presupuesto del Agente"
+                >
+                  ⚡ Recargar IA
+                </button>
               </div>
               <button id="btn-close-ai" type="button" class="btn btn-icon ws-close-btn" aria-label="Cerrar ventana">
                 ✕

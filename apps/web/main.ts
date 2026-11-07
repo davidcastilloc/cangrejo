@@ -1168,6 +1168,7 @@ async function executeTransformOnEntity(
         sliderLimit,
         filterCdnNoise,
         byokKeys,
+        freeOsintMode: true,
         liveNetwork: true,
       }),
     });
@@ -3889,15 +3890,36 @@ async function syncEditionBadge(): Promise<void> {
       creditsRemaining: number;
       licenseKeyMasked?: string | null;
       whiteLabel?: { organizationName: string };
+      agentPolicy?: {
+        budgetLimitPerSession: number;
+        spentInCurrentSession: number;
+        autoRechargeEnabled: boolean;
+      };
     };
     if (!data.ok) return;
     if (lblEditionTier) {
       lblEditionTier.textContent =
         data.editionTier === 'PLATINO_ENTERPRISE'
-          ? `Platino · ${data.creditsRemaining} cr`
+          ? `Platino · ${data.creditsRemaining} cr IA`
           : data.editionTier === 'ORO_PRO'
-            ? `Oro Pro · ${data.creditsRemaining} cr`
-            : 'Community';
+            ? `Oro Pro · ${data.creditsRemaining} cr IA`
+            : data.creditsRemaining > 0
+              ? `Community · ${data.creditsRemaining} cr IA`
+              : 'Community · OSINT Gratis';
+    }
+    const lblPlanCredits = document.getElementById('lbl-ai-credits-balance');
+    if (lblPlanCredits) {
+      lblPlanCredits.textContent = `Saldo IA: ${data.creditsRemaining} cr`;
+    }
+    const lblModalCredits = document.getElementById('lbl-ai-modal-credits');
+    if (lblModalCredits) {
+      lblModalCredits.textContent = `${data.creditsRemaining} cr IA`;
+    }
+    if (data.agentPolicy) {
+      const selBudget = document.getElementById('sel-agent-budget-limit') as HTMLSelectElement | null;
+      if (selBudget) selBudget.value = String(data.agentPolicy.budgetLimitPerSession);
+      const chkAuto = document.getElementById('chk-agent-auto-recharge') as HTMLInputElement | null;
+      if (chkAuto) chkAuto.checked = Boolean(data.agentPolicy.autoRechargeEnabled);
     }
     if (inpEditionOrg && data.whiteLabel?.organizationName) {
       inpEditionOrg.value = data.whiteLabel.organizationName;
@@ -3983,6 +4005,71 @@ document.getElementById('btn-activate-oro')?.addEventListener('click', () => {
 });
 document.getElementById('btn-reset-community')?.addEventListener('click', () => {
   void activateEditionTier('COMMUNITY', 'COMMUNITY');
+});
+
+// Wire On-Demand AI Credit Top-Up Packs (Rollover sin caducidad) & Agent Spend Governance
+document.querySelectorAll('[data-topup-pack]').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const packId = btn.getAttribute('data-topup-pack');
+    if (!packId) return;
+    try {
+      const res = await fetch('/api/billing/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ packId }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        packLabel?: string;
+        creditsAdded?: number;
+        editionState?: { creditsRemaining: number };
+      };
+      if (data.ok) {
+        await syncEditionBadge();
+        appendLog(
+          `[Recarga IA sin vencimiento]: ${data.packLabel} (+${data.creditsAdded} cr IA) acreditados • Nuevo saldo IA: ${data.editionState?.creditsRemaining ?? 0} cr (Todo OSINT y BYOK sigue siendo 100% gratis).`
+        );
+      }
+    } catch (err) {
+      appendLog(`Error procesando recarga de Créditos IA: ${String(err)}`);
+    }
+  });
+});
+
+async function syncAgentGovernancePolicy(): Promise<void> {
+  const selBudget = document.getElementById('sel-agent-budget-limit') as HTMLSelectElement | null;
+  const chkAuto = document.getElementById('chk-agent-auto-recharge') as HTMLInputElement | null;
+  const agentBudgetLimit = Number.parseInt(selBudget?.value ?? '200', 10) || 0;
+  const autoRechargeEnabled = Boolean(chkAuto?.checked);
+  try {
+    const res = await fetch('/api/billing/topup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentBudgetLimit, autoRechargeEnabled }),
+    });
+    const data = (await res.json()) as { ok: boolean };
+    if (data.ok) {
+      appendLog(
+        `[Gobernanza Agente IA]: Tope=${agentBudgetLimit > 0 ? `${agentBudgetLimit} cr/sesión` : 'Ilimitado'} • Auto-recarga=${autoRechargeEnabled ? 'ACTIVA (+250 cr IA < 25 cr)' : 'DESACTIVADA'}.`
+      );
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+document.getElementById('sel-agent-budget-limit')?.addEventListener('change', () => {
+  void syncAgentGovernancePolicy();
+});
+document.getElementById('chk-agent-auto-recharge')?.addEventListener('change', () => {
+  void syncAgentGovernancePolicy();
+});
+
+document.getElementById('btn-ai-open-topup')?.addEventListener('click', () => {
+  document.getElementById('ai-modal-backdrop')?.classList.add('hidden');
+  void syncEditionBadge();
+  editionModalBackdrop?.classList.remove('hidden');
+  document.querySelector<HTMLButtonElement>('[data-ws-tab="plan"]')?.click();
 });
 
 // Restore persisted BYOK badges on boot so analysts don't re-enter keys

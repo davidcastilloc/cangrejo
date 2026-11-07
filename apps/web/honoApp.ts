@@ -2007,9 +2007,11 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       inFlightPesquisas.delete(cacheKey);
     }
 
-    const updatedEdition = sqliteVault.consumeOsintCreditsSafe(1);
+    const osintCost = rawBody.freeOsintMode === true ? 0 : 1;
+    const updatedEdition = sqliteVault.consumeOsintCreditsSafe(osintCost);
     const enrichedPayload = {
       ...finalPayload,
+      osintTransformsFree: true,
       editionTier: updatedEdition.editionTier,
       creditsRemaining: updatedEdition.creditsRemaining,
     };
@@ -2505,6 +2507,49 @@ cangrejoHonoApp.post('/api/export/dossier-html', async (c) => {
   }
 });
 
+export const AI_TOPUP_PACKS: Record<
+  string,
+  { packId: string; label: string; credits: number; priceUsd: number; rollover: true }
+> = {
+  'pack-tactico-250': {
+    packId: 'pack-tactico-250',
+    label: 'Pack Táctico IA',
+    credits: 250,
+    priceUsd: 9,
+    rollover: true,
+  },
+  'pack-agente-1200': {
+    packId: 'pack-agente-1200',
+    label: 'Pack Cacería Agente',
+    credits: 1200,
+    priceUsd: 29,
+    rollover: true,
+  },
+  'pack-unidad-5000': {
+    packId: 'pack-unidad-5000',
+    label: 'Pack Unidad Forense',
+    credits: 5000,
+    priceUsd: 99,
+    rollover: true,
+  },
+};
+
+const agentCreditPolicy = {
+  budgetLimitPerSession: 200,
+  spentInCurrentSession: 0,
+  autoRechargeEnabled: false,
+  autoRechargePackId: 'pack-tactico-250',
+};
+
+function consumeAiCreditsWithPolicy(cost: number) {
+  agentCreditPolicy.spentInCurrentSession += Math.max(0, cost);
+  return sqliteVault.consumeOsintCreditsSafe(cost, {
+    autoRechargeEnabled: agentCreditPolicy.autoRechargeEnabled,
+    autoRechargeThreshold: 25,
+    autoRechargeAmount: 250,
+  });
+}
+
 /**
  * Odoo-Style Open-Core Edition & Cloud License Endpoints (`GET /api/edition/status` & `POST /api/edition/activate`).
  */
@@ -2513,6 +2558,9 @@ cangrejoHonoApp.get('/api/edition/status', (c) => {
   const validated = CangrejoEditionStatusResponseSchema.parse({
     ok: true,
     ...state,
+    osintTransformsFree: true,
+    agentPolicy: { ...agentCreditPolicy },
+    topUpCatalog: Object.values(AI_TOPUP_PACKS),
   });
   return c.json(validated, 200);
 });
@@ -2639,6 +2687,21 @@ cangrejoHonoApp.post('/api/billing/webhook', async (c) => {
           ? dataObj.customer_name.trim()
           : 'Organización Suscriptora Cangrejo Enterprise';
 
+    const packId = typeof metaObj.packId === 'string' ? metaObj.packId.trim() : '';
+    const rawTopUp = Number(metaObj.topUpCredits ?? dataObj.topUpCredits ?? 0);
+    const matchedPack = packId ? AI_TOPUP_PACKS[packId] : undefined;
+    if (matchedPack || (Number.isFinite(rawTopUp) && rawTopUp > 0)) {
+      const creditsAdded = matchedPack ? matchedPack.credits : Math.floor(rawTopUp);
+      const editionState = sqliteVault.topUpAiCredits(creditsAdded);
+      return c.json({
+        ok: true,
+        webhookProcessed: true,
+        mode: 'AI_CREDITS_TOPUP_ROLLOVER',
+        creditsAdded,
+        editionState,
+      });
+    }
+
     const signedToken = BunSqliteVault.issueSignedLicenseToken({
       tier,
       organizationName,
@@ -2656,6 +2719,75 @@ cangrejoHonoApp.post('/api/billing/webhook', async (c) => {
     });
   } catch (err) {
     console.error('[Hono /api/billing/webhook] Webhook processing failed:', err);
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      400
+    );
+  }
+});
+
+/**
+ * On-Demand AI / Agent Credit Top-Up & Spend Governance (`POST /api/billing/topup`).
+ * OSINT transforms & BYOK are 100% free (0 credits); credits are exclusively used for AI & Autonomous Agent runs,
+ * with perpetual rollover (never expire) across Community, Oro Pro, and Platino tiers.
+ */
+cangrejoHonoApp.post('/api/billing/topup', async (c) => {
+  try {
+    const rawBody = (await c.req.json()) as {
+      packId?: string;
+      credits?: number;
+      agentBudgetLimit?: number;
+      autoRechargeEnabled?: boolean;
+      resetSessionSpend?: boolean;
+    };
+
+    if (typeof rawBody.agentBudgetLimit === 'number' && rawBody.agentBudgetLimit >= 0) {
+      agentCreditPolicy.budgetLimitPerSession = Math.floor(rawBody.agentBudgetLimit);
+    }
+    if (typeof rawBody.autoRechargeEnabled === 'boolean') {
+      agentCreditPolicy.autoRechargeEnabled = rawBody.autoRechargeEnabled;
+    }
+    if (rawBody.resetSessionSpend === true) {
+      agentCreditPolicy.spentInCurrentSession = 0;
+    }
+
+    const pack = rawBody.packId ? AI_TOPUP_PACKS[rawBody.packId] : undefined;
+    const creditsToAdd = pack
+      ? pack.credits
+      : typeof rawBody.credits === 'number' && rawBody.credits > 0
+        ? Math.floor(rawBody.credits)
+        : 0;
+
+    const editionState =
+      creditsToAdd > 0 ? sqliteVault.topUpAiCredits(creditsToAdd) : sqliteVault.getEditionState();
+
+    // Also credit D1 authenticated tenant if Bearer token is provided
+    const authHeader = c.req.header('Authorization');
+    const rawToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (creditsToAdd > 0 && rawToken.startsWith('cgrj_usr_')) {
+      const activeD1 = extractD1Binding(c.env) ?? sqliteVault.asD1Database();
+      const verified = await BunSqliteVault.verifyUserSessionToken(activeD1, rawToken);
+      if (verified) {
+        await activeD1
+          .prepare(
+            `UPDATE cangrejo_mcp_tenants SET credits_remaining = credits_remaining + ? WHERE tenant_id = ?`
+          )
+          .bind(creditsToAdd, verified.client.tenantId)
+          .run();
+      }
+    }
+
+    return c.json({
+      ok: true,
+      osintTransformsFree: true,
+      packId: pack?.packId ?? (creditsToAdd > 0 ? 'custom' : null),
+      packLabel: pack?.label ?? (creditsToAdd > 0 ? `+${creditsToAdd} Créditos IA` : null),
+      creditsAdded: creditsToAdd,
+      rolloverNeverExpires: true,
+      agentPolicy: { ...agentCreditPolicy },
+      editionState,
+    });
+  } catch (err) {
     return c.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
       400
@@ -3392,7 +3524,7 @@ cangrejoHonoApp.post('/api/ai/unpack-iocs', async (c) => {
       parsed.text,
       resolveAiRuntimeConfig(c)
     );
-    const edition = sqliteVault.consumeOsintCreditsSafe(1);
+    const edition = consumeAiCreditsWithPolicy(1);
     const validated = AiUnpackIocsResponseSchema.parse({
       ...result,
       editionTier: edition.editionTier,
@@ -3416,7 +3548,7 @@ cangrejoHonoApp.post('/api/ai/latent-links', async (c) => {
       parsed,
       resolveAiRuntimeConfig(c)
     );
-    const edition = sqliteVault.consumeOsintCreditsSafe(1);
+    const edition = consumeAiCreditsWithPolicy(1);
     const validated = AiLatentLinksResponseSchema.parse({
       ...result,
       editionTier: edition.editionTier,
@@ -3441,7 +3573,7 @@ cangrejoHonoApp.post('/api/ai/anomalies', async (c) => {
       store,
       resolveAiRuntimeConfig(c)
     );
-    const edition = sqliteVault.consumeOsintCreditsSafe(1);
+    const edition = consumeAiCreditsWithPolicy(1);
     const validated = AiAnomalyClusterResponseSchema.parse({
       ...result,
       editionTier: edition.editionTier,
@@ -3471,7 +3603,7 @@ cangrejoHonoApp.post('/api/ai/daubert-synthesis', async (c) => {
       },
       resolveAiRuntimeConfig(c)
     );
-    const edition = sqliteVault.consumeOsintCreditsSafe(2);
+    const edition = consumeAiCreditsWithPolicy(2);
     const validated = AiDaubertSynthesisResponseSchema.parse({
       ...result,
       editionTier: edition.editionTier,
@@ -3518,7 +3650,7 @@ cangrejoHonoApp.post('/api/ai/copilot', async (c) => {
       },
       resolveAiRuntimeConfig(c)
     );
-    const edition = sqliteVault.consumeOsintCreditsSafe(1);
+    const edition = consumeAiCreditsWithPolicy(1);
     const validated = AiForensicCopilotResponseSchema.parse({
       ...result,
       editionTier: edition.editionTier,
@@ -3565,7 +3697,7 @@ cangrejoHonoApp.post('/api/ai/auto-investigate', async (c) => {
       },
       resolveAiRuntimeConfig(c)
     );
-    const edition = sqliteVault.consumeOsintCreditsSafe(2);
+    const edition = consumeAiCreditsWithPolicy(2);
     const validated = AiAutoInvestigateResponseSchema.parse({
       ...result,
       editionTier: edition.editionTier,
@@ -3607,7 +3739,7 @@ cangrejoHonoApp.post('/api/ai/vision-ingest', async (c) => {
       parsed,
       resolveAiRuntimeConfig(c)
     );
-    const edition = sqliteVault.consumeOsintCreditsSafe(2);
+    const edition = consumeAiCreditsWithPolicy(2);
     const validated = AiVisionIngestResponseSchema.parse({
       ...result,
       editionTier: edition.editionTier,

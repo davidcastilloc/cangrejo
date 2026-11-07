@@ -212,4 +212,65 @@ describe('Gate 8: HMAC-SHA256 Commercial Licensing, Billing Webhooks, Radar 24/7
     expect(extractedTypes.has('maltego.ASNumber')).toBe(true);
     expect(extractedTypes.has('maltego.BTCAddress')).toBe(true);
   });
+
+  it('5. keeps OSINT transforms 100% free (0 credits) while supporting on-demand AI Top-Up Packs (Rollover) and Agent Auto-Recharge', async () => {
+    // Reset to COMMUNITY (0 credits)
+    await cangrejoHonoApp.request('/api/edition/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tier: 'COMMUNITY' }),
+    });
+
+    // Top-up +250 AI Credits on COMMUNITY without subscription
+    const topupRes = await cangrejoHonoApp.request('/api/billing/topup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        packId: 'pack-tactico-250',
+        agentBudgetLimit: 200,
+        autoRechargeEnabled: false,
+      }),
+    });
+    expect(topupRes.status).toBe(200);
+    const topupJson = (await topupRes.json()) as {
+      ok: boolean;
+      osintTransformsFree: boolean;
+      creditsAdded: number;
+      rolloverNeverExpires: boolean;
+      editionState: { editionTier: string; creditsRemaining: number };
+    };
+    expect(topupJson.ok).toBe(true);
+    expect(topupJson.osintTransformsFree).toBe(true);
+    expect(topupJson.rolloverNeverExpires).toBe(true);
+    expect(topupJson.creditsAdded).toBe(250);
+    expect(topupJson.editionState.editionTier).toBe('COMMUNITY');
+    expect(topupJson.editionState.creditsRemaining).toBe(250);
+
+    // Run OSINT transform with freeOsintMode=true -> must deduct 0 credits (stays 250)
+    const osintRes = await cangrejoHonoApp.request('/api/transforms/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transformId: 'dns-to-ip',
+        entityType: 'maltego.Domain',
+        value: `free-osint-${Date.now()}.cangrejo.org`,
+        freeOsintMode: true,
+      }),
+    });
+    expect(osintRes.status).toBe(200);
+    const osintJson = (await osintRes.json()) as { creditsRemaining: number };
+    expect(osintJson.creditsRemaining).toBe(250);
+
+    // Run AI endpoint (/api/ai/unpack-iocs) -> must deduct 1 AI credit (250 -> 249)
+    const aiRes = await cangrejoHonoApp.request('/api/ai/unpack-iocs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: 'C2 beacon observed at hxxps://apt-c2[.]org/gate',
+      }),
+    });
+    expect(aiRes.status).toBe(200);
+    const aiJson = (await aiRes.json()) as { creditsRemaining: number };
+    expect(aiJson.creditsRemaining).toBe(249);
+  });
 });
