@@ -19,7 +19,30 @@ import {
   type PropertyValueType,
   type SpecialPropertyRole,
 } from '@cangrejo/core';
+import { MtgjJsonHandler } from './MtgjJsonHandler.js';
 import { ZipContainerCodec } from './ZipContainerCodec.js';
+
+function parseSafeGraphMlGuid(rawId: string | null | undefined, namespace = 'node'): Guid {
+  const clean = (rawId ?? '').trim();
+  if (clean) {
+    try {
+      const parsed = Guid.parse(clean);
+      if (!parsed.equals(0n)) {
+        return parsed;
+      }
+    } catch {
+      // Fallback for yFiles/Maltego IDs such as "n0", "n1", "e0", or UUID strings
+    }
+  }
+  const seed = `${namespace}:${clean || 'default'}`;
+  let hash = 0xcbf29ce484222325n;
+  for (let i = 0; i < seed.length; i++) {
+    hash ^= BigInt(seed.charCodeAt(i));
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  const signed = BigInt.asIntN(64, hash);
+  return new Guid(signed === 0n ? 1n : signed);
+}
 
 function escapeXml(str: string): string {
   return str
@@ -79,7 +102,9 @@ function parsePropertyBagGraphMl(xmlSection: string): PropertyBag {
 
   while ((m = propRe.exec(xmlSection)) !== null) {
     const attrs = m[1]!;
-    const rawText = unescapeXml(m[2]!);
+    const innerXml = m[2]!;
+    const nestedValueMatch = /<(?:mtgx:)?Value\b[^>]*>([\s\S]*?)<\/(?:mtgx:)?Value>/i.exec(innerXml);
+    const rawText = unescapeXml(nestedValueMatch ? nestedValueMatch[1]! : innerXml);
     const name = extractAttr(attrs, 'name') ?? 'value';
     const type = (extractAttr(attrs, 'type') ?? 'string') as PropertyValueType;
     const displayName = extractAttr(attrs, 'displayName') ?? name;
@@ -114,6 +139,10 @@ function parsePropertyBagGraphMl(xmlSection: string): PropertyBag {
       },
       value: typedVal,
     });
+  }
+
+  if (items.length > 0 && !items.some((it) => it.descriptor.specialRoles.includes('VALUE'))) {
+    items[0]!.descriptor.specialRoles.push('VALUE', 'DISPLAY_VALUE');
   }
 
   return createPropertyBag(items);
@@ -202,12 +231,15 @@ export class MtgxArchiveHandler {
     }
 
     let graphmlText: string | null = null;
+    let hasJsonGraph = false;
     const customEntities: EntitySpec[] = [];
     const attachmentPayloads = new Map<string, Uint8Array>();
 
     for (const [filePath, bytes] of entries.entries()) {
-      if (filePath.startsWith('Graphs/') && filePath.endsWith('.graphml')) {
+      if (filePath.endsWith('.graphml')) {
         graphmlText = new TextDecoder().decode(bytes);
+      } else if (filePath.startsWith('Graphs/') && filePath.endsWith('.json')) {
+        hasJsonGraph = true;
       } else if (filePath.startsWith('Entities/') && filePath.endsWith('.entity')) {
         customEntities.push(parseEntityXml(new TextDecoder().decode(bytes)));
       } else if (filePath.startsWith('Files/')) {
@@ -216,8 +248,18 @@ export class MtgxArchiveHandler {
       }
     }
 
+    if (!graphmlText && hasJsonGraph) {
+      const mtgjImported = new MtgjJsonHandler().importFromMtgjArchiveBytes(mtgxBytes);
+      return {
+        store: mtgjImported.store,
+        versionProperties,
+        customEntities,
+        attachmentPayloads: mtgjImported.attachmentPayloads,
+      };
+    }
+
     if (!graphmlText) {
-      throw new Error('Invalid .mtgx archive: missing Graphs/*.graphml entry.');
+      throw new Error('Invalid .mtgx/.mtgl archive: missing Graphs/*.graphml entry.');
     }
 
     const store = this.deserializeGraphMlToGraphStore(graphmlText);
@@ -331,8 +373,9 @@ export class MtgxArchiveHandler {
   public deserializeGraphMlToGraphStore(graphmlText: string): GraphStore {
     const graphTagMatch = /<graph\b([^>]*)>/i.exec(graphmlText);
     const graphIdStr = graphTagMatch ? extractAttr(graphTagMatch[1]!, 'id') : null;
-    const graphId = graphIdStr ? Guid.parse(graphIdStr) : Guid.generate();
+    const graphId = graphIdStr ? parseSafeGraphMlGuid(graphIdStr, 'graph') : Guid.generate();
     const store = new GraphStore(graphId);
+    const nodeIdMap = new Map<string, Guid>();
 
     store.runInBatch(() => {
       const nodeRe = /<node\b([^>]*)>([\s\S]*?)<\/node>/gi;
@@ -340,7 +383,7 @@ export class MtgxArchiveHandler {
       while ((nm = nodeRe.exec(graphmlText)) !== null) {
         const nodeAttrs = nm[1]!;
         const nodeBody = nm[2]!;
-        const nodeId = Guid.parse(extractAttr(nodeAttrs, 'id') ?? '1');
+        const rawNodeId = extractAttr(nodeAttrs, 'id') ?? '1';
 
         const geomMatch = /<y:Geometry\b([^>]*)\/?>/i.exec(nodeBody);
         const gx = geomMatch ? Number.parseFloat(extractAttr(geomMatch[1]!, 'x') ?? '0') : 0;
@@ -355,6 +398,10 @@ export class MtgxArchiveHandler {
         );
         const entAttrs = entMatch ? entMatch[1]! : '';
         const entBody = entMatch ? entMatch[2]! : '';
+        const rawEntId = extractAttr(entAttrs, 'id');
+        const nodeId = parseSafeGraphMlGuid(rawEntId ?? rawNodeId, 'node');
+        nodeIdMap.set(rawNodeId, nodeId);
+        if (rawEntId) nodeIdMap.set(rawEntId, nodeId);
 
         const typeName = extractAttr(entAttrs, 'type') ?? 'maltego.Phrase';
         const weight = Number.parseInt(extractAttr(entAttrs, 'weight') ?? '100', 10) || 100;
@@ -367,6 +414,21 @@ export class MtgxArchiveHandler {
         const notesVal = notesMatch ? unescapeXml(notesMatch[2]!) : '';
 
         const properties = parsePropertyBagGraphMl(entBody);
+        if (properties.values.size === 0) {
+          const yLabelMatch = /<y:NodeLabel\b[^>]*>([\s\S]*?)<\/y:NodeLabel>/i.exec(nodeBody);
+          const fallbackLabel = yLabelMatch ? unescapeXml(yLabelMatch[1]!).trim() : rawNodeId;
+          properties.descriptors.set('text', {
+            name: 'text',
+            type: 'string',
+            displayName: 'Text',
+            nullable: false,
+            hidden: false,
+            readonly: false,
+            specialRoles: ['VALUE', 'DISPLAY_VALUE'],
+            matchingRule: 'STRICT',
+          });
+          properties.values.set('text', fallbackLabel);
+        }
 
         const displayInfo: DisplayInformation[] = [];
         const dispRe = /<mtgx:Label\b([^>]*)>([\s\S]*?)<\/mtgx:Label>/gi;
@@ -427,9 +489,14 @@ export class MtgxArchiveHandler {
       while ((em = edgeRe.exec(graphmlText)) !== null) {
         const edgeAttrs = em[1]!;
         const edgeBody = em[2]!;
-        const linkId = Guid.parse(extractAttr(edgeAttrs, 'id') ?? '1');
-        const sourceId = Guid.parse(extractAttr(edgeAttrs, 'source') ?? '1');
-        const targetId = Guid.parse(extractAttr(edgeAttrs, 'target') ?? '1');
+        const rawEdgeId = extractAttr(edgeAttrs, 'id') ?? '1';
+        const rawSource = extractAttr(edgeAttrs, 'source') ?? '1';
+        const rawTarget = extractAttr(edgeAttrs, 'target') ?? '1';
+        const sourceId = nodeIdMap.get(rawSource) ?? parseSafeGraphMlGuid(rawSource, 'node');
+        const targetId = nodeIdMap.get(rawTarget) ?? parseSafeGraphMlGuid(rawTarget, 'node');
+        if (!store.structureStore.hasEntity(sourceId) || !store.structureStore.hasEntity(targetId)) {
+          continue;
+        }
 
         const bends: Point2D[] = [];
         const ptRe = /<y:Point\b([^>]*)\/?>/gi;
@@ -446,6 +513,8 @@ export class MtgxArchiveHandler {
         );
         const lAttrs = linkMatch ? linkMatch[1]! : '';
         const lBody = linkMatch ? linkMatch[2]! : '';
+        const rawLinkEntId = extractAttr(lAttrs, 'id');
+        const linkId = parseSafeGraphMlGuid(rawLinkEntId ?? rawEdgeId, 'edge');
 
         const typeName = extractAttr(lAttrs, 'type') ?? 'maltego.link.transform-link';
         const weight = Number.parseInt(extractAttr(lAttrs, 'weight') ?? '1', 10) || 1;
@@ -458,6 +527,23 @@ export class MtgxArchiveHandler {
           : false;
         const notesVal = notesMatch ? unescapeXml(notesMatch[2]!) : '';
 
+        const linkProps = parsePropertyBagGraphMl(lBody);
+        if (linkProps.values.size === 0) {
+          const yEdgeLabel = /<y:EdgeLabel\b[^>]*>([\s\S]*?)<\/y:EdgeLabel>/i.exec(edgeBody);
+          const fallbackEdgeLabel = yEdgeLabel ? unescapeXml(yEdgeLabel[1]!).trim() : 'related-to';
+          linkProps.descriptors.set('maltego.link.label', {
+            name: 'maltego.link.label',
+            type: 'string',
+            displayName: 'Label',
+            nullable: true,
+            hidden: false,
+            readonly: false,
+            specialRoles: ['VALUE', 'DISPLAY_VALUE'],
+            matchingRule: 'STRICT',
+          });
+          linkProps.values.set('maltego.link.label', fallbackEdgeLabel);
+        }
+
         const linkData: MaltegoLinkData = {
           id: linkId,
           typeName,
@@ -465,7 +551,7 @@ export class MtgxArchiveHandler {
           bookmark,
           notes: { value: notesVal, show: notesShow },
           displayInfo: [],
-          properties: parsePropertyBagGraphMl(lBody),
+          properties: linkProps,
         };
 
         store.addLink(linkData, sourceId, targetId, isReversed, bends);

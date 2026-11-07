@@ -25,6 +25,7 @@ import {
   type ProtocolV3Transport,
   type TransformV3RunResponseJson,
 } from '@cangrejo/transforms';
+import { cangrejoHonoApp } from '../apps/web/honoApp';
 
 function makeStyledLink(id: Guid, label: string, weight = 1): MaltegoLinkData {
   return {
@@ -513,6 +514,73 @@ describe('Gate 3 (Milestone Beta): Transform Hub, Local CLI Subprocesses, Protoc
         scopes: ['transforms:run', 'offline_access'],
       });
       expect(authUrl).toContain('code_challenge_method=S256');
+    });
+
+    it('imports real-world Maltego 4.x GraphML with yFiles IDs (n0, n1, e0) and ingests CLI Recon JSONL with semantic links', async () => {
+      const mtgxHandler = new MtgxArchiveHandler();
+      const rawMaltegoGraphMl = `<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:mtgx="http://maltego.paterva.com/xml/mtgx" xmlns:y="http://www.yworks.com/xml/graphml">
+  <graph id="G" edgedefault="directed">
+    <node id="n0">
+      <data key="d0">
+        <mtgx:MaltegoEntity type="maltego.Domain" weight="100">
+          <mtgx:Properties>
+            <mtgx:Property name="fqdn" type="string" displayName="Domain Name">
+              <mtgx:Value>shadow-apt.org</mtgx:Value>
+            </mtgx:Property>
+          </mtgx:Properties>
+        </mtgx:MaltegoEntity>
+      </data>
+      <data key="d1"><y:ShapeNode><y:Geometry x="120.0" y="240.0"/></y:ShapeNode></data>
+    </node>
+    <node id="n1">
+      <data key="d1">
+        <y:ShapeNode>
+          <y:Geometry x="320.0" y="240.0"/>
+          <y:NodeLabel>185.220.101.34</y:NodeLabel>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <edge id="e0" source="n0" target="n1">
+      <data key="d3"><y:PolyLineEdge><y:EdgeLabel>A record</y:EdgeLabel></y:PolyLineEdge></data>
+    </edge>
+  </graph>
+</graphml>`;
+
+      const store = mtgxHandler.deserializeGraphMlToGraphStore(rawMaltegoGraphMl);
+      expect(store.entityCount).toBe(2);
+      expect(store.linkCount).toBe(1);
+      const values = Array.from(store.dataStore.getEntities().values()).map((e) =>
+        getPartPrimaryValue(e)
+      );
+      expect(values).toContain('shadow-apt.org');
+      expect(values).toContain('185.220.101.34');
+
+      // Test Hono CLI Recon JSONL semantic link extraction
+      const cliJsonl = [
+        '{"host":"vpn.shadow-apt.org","input":"shadow-apt.org","source":"subfinder"}',
+        '{"input":"vpn.shadow-apt.org","a":["185.220.101.34"],"asn":{"as_number":"AS205100"},"url":"https://vpn.shadow-apt.org:8443/login"}',
+        '{"host":"vpn.shadow-apt.org","ip":"185.220.101.34","template-id":"CVE-2024-3400","info":{"name":"PAN-OS RCE","severity":"critical"}}',
+      ].join('\n');
+
+      const res = await cangrejoHonoApp.request('http://localhost/api/ingest/raw-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cliJsonl, incidentTitle: 'CLI Recon Test' }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        ok: boolean;
+        cliReconRecords: number;
+        entities: Array<{ typeName: string; value: string }>;
+        links: Array<{ label: string }>;
+      };
+      expect(body.ok).toBe(true);
+      expect(body.cliReconRecords).toBe(3);
+      expect(body.entities.some((e) => e.value === 'CVE-2024-3400')).toBe(true);
+      expect(body.links.some((l) => l.label === 'subdomain (CLI JSONL)')).toBe(true);
+      expect(body.links.some((l) => l.label === 'resolves to (DNS A)')).toBe(true);
+      expect(body.links.some((l) => l.label === 'vulnerable to (Nuclei)')).toBe(true);
     });
   });
 });

@@ -124,15 +124,15 @@
               id="btn-paste-iocs"
               type="button"
               class="popover-item"
-              title="Ingesta masiva: pegar reporte o logs crudos y extraer IOCs al grafo"
+              title="Ingesta inteligente (Ctrl+V en el lienzo): pegar JSONL de CLI (subfinder, httpx, nuclei), reportes CTI o importar .mtgl / .mtgx"
             >
               <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="3.5" y="2.5" width="9" height="11" rx="1.5" />
                 <path d="M6 6h4M6 8.5h4M6 11h2.5" />
               </svg>
               <div class="popover-item-text">
-                <span class="popover-item-title">Pegar IOCs al grafo</span>
-                <span class="popover-item-desc">Extraer indicadores desde boletines o registros</span>
+                <span class="popover-item-title">Pegar IOCs o CLI JSONL (⌘V)</span>
+                <span class="popover-item-desc">Subfinder, httpx, nuclei, .mtgl o boletines CTI</span>
               </div>
             </button>
 
@@ -259,21 +259,21 @@
               id="btn-import-file-vault"
               type="button"
               class="popover-item"
-              title="Abrir o importar archivo local (.cgrj, STIX 2.1, .cgrx, CSV o lista de IOCs)"
+              title="Abrir o arrastrar archivo local (.mtgl, .mtgx, .graphml, .cgrj, STIX 2.1, JSONL de CLI o CSV)"
             >
               <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M8 10V2m0 0L5 5m3-3 3 3" />
                 <path d="M3 11v2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2" />
               </svg>
               <div class="popover-item-text">
-                <span class="popover-item-title">Importar archivo al lienzo</span>
-                <span class="popover-item-desc">Abrir .cgrj, STIX 2.1, .cgrx, CSV o IOCs</span>
+                <span class="popover-item-title">Importar archivo o Maltego (.mtgl/.mtgx)</span>
+                <span class="popover-item-desc">Abrir .mtgl, .mtgx, .graphml, STIX 2.1, JSONL o .cgrj</span>
               </div>
             </button>
             <input
               id="inp-import-any-file"
               type="file"
-              accept=".cgrj,.mtgj,.cgrx,.mtgx,.zip,.json,.stix21.json,.csv,.txt"
+              accept=".cgrj,.mtgj,.cgrx,.mtgx,.mtgl,.graphml,.jsonl,.ndjson,.zip,.json,.stix21.json,.csv,.txt"
               style="display: none"
             />
 
@@ -337,9 +337,9 @@
               >
                 Exportar .cgrx
               </button>
-              <label class="btn popover-grid-btn" title="Importar expediente .cgrx / .mtgx" tabindex="0">
-                Importar .cgrx
-                <input id="inp-import-mtgx" type="file" accept=".cgrx,.mtgx,.zip" style="display: none" />
+              <label class="btn popover-grid-btn" title="Importar expediente Maltego (.mtgl / .mtgx / .graphml) o .cgrx" tabindex="0">
+                Importar .mtgl/.mtgx
+                <input id="inp-import-mtgx" type="file" accept=".cgrx,.mtgx,.mtgl,.graphml,.zip" style="display: none" />
               </label>
             </div>
 
@@ -466,20 +466,20 @@
 
           <div id="palette-list" class="palette-list" role="list"></div>
 
-          <!-- Extracción rápida de IOCs (17 reglas determinísticas) -->
+          <!-- Extracción rápida de IOCs y JSONL CLI (17 reglas determinísticas) -->
           <div class="smart-paste-box">
             <div class="panel-header">
-              <span>Extracción rápida de IOCs</span>
-              <span class="meta-tag">17 reglas</span>
+              <span>Ingesta rápida (IOCs y CLI)</span>
+              <span class="meta-tag">17 reglas + JSONL</span>
             </div>
             <textarea
               id="txt-smart-paste"
               rows="4"
-              aria-label="Pegar indicadores OSINT para detección automática"
-              placeholder="Pega IPs, dominios, URLs, correos, CVEs, hashes SHA-256, billeteras BTC o ASNs…"
+              aria-label="Pegar indicadores OSINT o salida JSONL de CLI para detección automática"
+              placeholder="Pega IPs, dominios, hashes, CVEs o salida JSONL de subfinder/httpx/nuclei (o pulsa ⌘V en el lienzo)…"
             ></textarea>
             <button id="btn-smart-paste" class="btn btn-primary btn-block">
-              Detectar y crear entidades
+              Detectar y enlazar en el grafo
             </button>
           </div>
         </aside>
@@ -724,6 +724,26 @@
             <button data-transform="abuseipdb-reputation" class="ctx-item" role="menuitem">
               <span class="ctx-code">ABUSE</span> Reputación y confianza AbuseIPDB
             </button>
+            <div class="ctx-divider"></div>
+            <div class="ctx-tactical-controls" role="group" aria-label="Opciones de pesquisa sin límites">
+              <div class="ctx-tactical-row">
+                <label for="sel-ctx-limit" class="ctx-tactical-label" title="Sin el límite artificial de 12 nodos de Maltego CE">
+                  Límite:
+                </label>
+                <select id="sel-ctx-limit" class="ws-input ws-input-sm ctx-limit-select" aria-label="Límite de nodos por pesquisa">
+                  <option value="50" selected>50 (Sin tope CE)</option>
+                  <option value="12">12 (Modo compacto)</option>
+                  <option value="150">150 (Masivo)</option>
+                </select>
+                <label class="ctx-cdn-toggle" for="chk-ctx-filter-cdn" title="Atenuar IPs y ASNs compartidos de Cloudflare, Akamai y Fastly para evitar falsos pivotes (Anti-Hairball)">
+                  <input id="chk-ctx-filter-cdn" type="checkbox" checked />
+                  <span>Anti-CDN</span>
+                </label>
+              </div>
+              <button id="ctx-open-byok" type="button" class="ctx-item ctx-byok-btn" role="menuitem" title="Usar tus propias llaves gratuitas de Shodan, VirusTotal o AbuseIPDB sin pagar Hub">
+                <span class="ctx-code">BYOK</span> Configurar mis llaves API (Gratis)
+              </button>
+            </div>
             <div class="ctx-divider"></div>
             <button data-transform="all" class="ctx-item ctx-item-highlight" role="menuitem">
               Ejecutar todas las pesquisas
@@ -1839,6 +1859,72 @@
           </div>
         </div>
       </div>
+
+      <!-- Modal Nativo de Ingesta Universal (CLI JSONL, Reportes CTI y Expedientes .mtgl / .mtgx) -->
+      <dialog
+        id="ingest-modal-dialog"
+        class="ingest-native-dialog"
+        closedby="any"
+        aria-labelledby="ingest-modal-title"
+      >
+        <div class="modal-card modal-card-workspace ingest-modal-card">
+          <div class="ws-modal-header" style="padding-bottom: 12px">
+            <div class="ws-modal-title-row" style="margin-bottom: 0; align-items: center">
+              <div class="ws-brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="2" width="10" height="12" rx="1.5" />
+                  <path d="M5.5 6h5M5.5 8.5h5M5.5 11h3" />
+                </svg>
+              </div>
+              <div class="ws-title-group" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+                <h2 id="ingest-modal-title" class="ws-modal-title">Ingesta Universal (IOCs, CLI JSONL y Maltego)</h2>
+                <span class="agy-partner-badge">Ctrl+V directo en lienzo</span>
+              </div>
+              <form method="dialog" style="margin: 0">
+                <button id="btn-close-ingest" type="submit" class="btn btn-icon ws-close-btn" aria-label="Cerrar ventana">
+                  ✕
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="ws-modal-body ingest-modal-body">
+            <div class="ingest-quick-pills">
+              <button id="btn-ingest-sample-cli" type="button" class="btn btn-quiet btn-xs">
+                ⚡ Cargar ejemplo CLI (subfinder + httpx + nuclei JSONL)
+              </button>
+              <button id="btn-ingest-pick-file" type="button" class="btn btn-quiet btn-xs">
+                📂 Abrir archivo (.mtgl, .mtgx, .graphml, .jsonl, STIX 2.1)
+              </button>
+            </div>
+
+            <label class="ws-field-label" for="txt-ingest-modal">
+              <span>Pega salida de terminal (subfinder -oJ, httpx -json, nuclei -jsonl) o boletín CTI con IOCs ofuscados (hxxps, [.]):</span>
+              <textarea
+                id="txt-ingest-modal"
+                class="ws-input ingest-modal-textarea"
+                rows="7"
+                autofocus
+                placeholder='{"host":"api.shadow-apt.org","input":"shadow-apt.org","source":"subfinder"}&#10;{"input":"api.shadow-apt.org","a":["185.220.101.34"],"asn":{"as_number":"AS205100"},"url":"https://api.shadow-apt.org:8443"}&#10;{"host":"api.shadow-apt.org","template-id":"CVE-2024-3400","info":{"name":"PAN-OS RCE","severity":"critical"}}'
+              ></textarea>
+            </label>
+
+            <div class="ingest-modal-footer">
+              <span class="ingest-modal-hint">
+                Tip: Puedes pulsar <kbd class="kbd-hint">Ctrl+V</kbd> / <kbd class="kbd-hint">⌘V</kbd> o arrastrar archivos <code>.mtgl</code> / <code>.mtgx</code> directamente sobre el lienzo sin abrir esta ventana.
+              </span>
+              <div class="ingest-modal-actions">
+                <form method="dialog" style="margin: 0">
+                  <button type="submit" class="btn btn-quiet">Cancelar</button>
+                </form>
+                <button id="btn-ingest-submit" type="button" class="btn btn-primary">
+                  Extraer y enlazar en el grafo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </dialog>
     </div>
 
     <script type="module" src="/apps/web/main.ts"></script>

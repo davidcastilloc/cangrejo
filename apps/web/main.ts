@@ -620,16 +620,27 @@ inpPaletteSearchEl.addEventListener('keydown', (ev) => {
 categorySelect.addEventListener('change', renderPalette);
 renderPalette();
 
-// IOC Regex Extraction Tray Handler
+// IOC Regex & CLI JSONL Extraction Tray Handler
 document.getElementById('btn-smart-paste')!.addEventListener('click', () => {
-  const raw = (document.getElementById('txt-smart-paste') as HTMLTextAreaElement).value;
+  const raw = (document.getElementById('txt-smart-paste') as HTMLTextAreaElement).value.trim();
+  if (!raw) {
+    appendLog('No se encontraron indicadores en el cuadro de ingesta rápida.');
+    return;
+  }
+
+  // Delegate structured CLI JSONL (subfinder/httpx/nuclei) or defanged CTI blobs to semantic ingest
+  if (/^\s*\{/m.test(raw) || /hxxps?|\[\.\]|\[@\]/i.test(raw)) {
+    void ingestRawTextOrJsonlToCanvas(raw, 'Ingesta Rápida CLI / CTI');
+    return;
+  }
+
   const lines = raw
     .split(/[\r\n,;]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 
   if (lines.length === 0) {
-    appendLog('No se encontraron indicadores en el cuadro IOC Regex Extraction.');
+    appendLog('No se encontraron indicadores en el cuadro de ingesta rápida.');
     return;
   }
 
@@ -1092,13 +1103,53 @@ function escapeHtml(str: string): string {
 // =============================================================================
 // 6. Live OSINT Transform Execution (XML v2 + JSON v3 + StrategicGraphMerger)
 // =============================================================================
+const BYOK_STORAGE_KEY = 'cangrejo_byok_keys_v1';
+
+function readByokKeysFromStorage(): Partial<Record<'shodan' | 'virustotal' | 'abuseipdb', string>> {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return {};
+    const raw = window.localStorage.getItem(BYOK_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Partial<Record<'shodan' | 'virustotal' | 'abuseipdb', string>> = {};
+    for (const k of ['shodan', 'virustotal', 'abuseipdb'] as const) {
+      if (typeof parsed[k] === 'string' && parsed[k].trim().length >= 4) {
+        out[k] = parsed[k].trim();
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveByokKeyToStorage(provider: 'shodan' | 'virustotal' | 'abuseipdb', apiKey: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    const current = readByokKeysFromStorage();
+    current[provider] = apiKey.trim();
+    window.localStorage.setItem(BYOK_STORAGE_KEY, JSON.stringify(current));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
 async function executeTransformOnEntity(
   entity: MaltegoEntityData,
   transformId: string
 ): Promise<void> {
   const primaryValue = getPartPrimaryValue(entity);
   const t0 = performance.now();
-  appendLog(`Ejecutando Transform [${transformId}] sobre ${entity.typeName}="${primaryValue}"...`);
+  const limitSelect = document.getElementById('sel-ctx-limit') as HTMLSelectElement | null;
+  const parsedLimit = Number.parseInt(limitSelect?.value ?? '50', 10);
+  const sliderLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50;
+  const filterCdnCheckbox = document.getElementById('chk-ctx-filter-cdn') as HTMLInputElement | null;
+  const filterCdnNoise = filterCdnCheckbox ? filterCdnCheckbox.checked : true;
+  const byokKeys = readByokKeysFromStorage();
+
+  appendLog(
+    `Ejecutando Transform [${transformId}] sobre ${entity.typeName}="${primaryValue}" (límite=${sliderLimit}, anti-CDN=${filterCdnNoise ? 'ON' : 'OFF'})...`
+  );
 
   try {
     const fieldsObj: Record<string, string> = {};
@@ -1114,7 +1165,9 @@ async function executeTransformOnEntity(
         entityType: entity.typeName,
         entityValue: primaryValue,
         entityFields: fieldsObj,
-        sliderLimit: 12,
+        sliderLimit,
+        filterCdnNoise,
+        byokKeys,
         liveNetwork: true,
       }),
     });
@@ -1692,6 +1745,16 @@ document.querySelectorAll('#context-menu [data-transform]').forEach((btn) => {
   });
 });
 
+document.getElementById('ctx-open-byok')?.addEventListener('click', () => {
+  hideContextMenu();
+  void syncEditionBadge();
+  editionModalBackdrop?.classList.remove('hidden');
+  document.querySelector<HTMLButtonElement>('[data-ws-tab="plan"]')?.click();
+  setTimeout(() => {
+    document.getElementById('inp-byok-shodan')?.focus();
+  }, 50);
+});
+
 document.getElementById('ctx-start-link')?.addEventListener('click', () => {
   hideContextMenu();
   if (!contextTargetEntityId || !store.dataStore.hasEntity(contextTargetEntityId)) return;
@@ -1979,7 +2042,13 @@ document.getElementById('btn-export-mtgx')!.addEventListener('click', async () =
 async function importForensicFileToCanvas(file: File, dropWorldPt?: Point2D): Promise<void> {
   const lowerName = file.name.toLowerCase();
   try {
-    if (lowerName.endsWith('.cgrx') || lowerName.endsWith('.mtgx') || lowerName.endsWith('.zip')) {
+    if (
+      lowerName.endsWith('.cgrx') ||
+      lowerName.endsWith('.mtgx') ||
+      lowerName.endsWith('.mtgl') ||
+      lowerName.endsWith('.graphml') ||
+      lowerName.endsWith('.zip')
+    ) {
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
       let binary = '';
@@ -1997,17 +2066,51 @@ async function importForensicFileToCanvas(file: File, dropWorldPt?: Point2D): Pr
         links?: SerializedGraphLinkItem[];
       };
       if (!data.ok || !data.entities || !data.links) {
-        appendLog(`Error importando .cgrx/.mtgx: ${data.error ?? 'Archivo inválido'}`);
+        appendLog(`Error importando .mtgl/.mtgx/.graphml: ${data.error ?? 'Archivo inválido'}`);
         return;
       }
       hydrateStoreFromSerialized(data.entities, data.links);
       appendLog(
-        `Importado expediente PKZIP "${file.name}" (${store.entityCount} entidades, ${store.linkCount} enlaces).`
+        `Importado expediente Maltego / PKZIP "${file.name}" (${store.entityCount} entidades, ${store.linkCount} enlaces).`
       );
       return;
     }
 
     const rawText = await file.text();
+
+    // Check if a .xml or .txt file is actually raw Maltego GraphML
+    if (rawText.includes('<graphml') && rawText.includes('<node')) {
+      const bytes = new TextEncoder().encode(rawText);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+      const res = await fetch('/api/import/mtgx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mtgxBase64: btoa(binary) }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        entities?: SerializedGraphEntityItem[];
+        links?: SerializedGraphLinkItem[];
+      };
+      if (data.ok && data.entities && data.links) {
+        hydrateStoreFromSerialized(data.entities, data.links);
+        appendLog(
+          `Importado grafo GraphML "${file.name}" (${store.entityCount} entidades, ${store.linkCount} enlaces).`
+        );
+        return;
+      }
+    }
+
+    // Check if file is CLI Recon JSONL (.jsonl, .ndjson, or multi-line JSON objects from subfinder/httpx/nuclei)
+    if (
+      lowerName.endsWith('.jsonl') ||
+      lowerName.endsWith('.ndjson') ||
+      (rawText.includes('\n') && /^\s*\{/m.test(rawText) && !rawText.trim().startsWith('{"type":"bundle"'))
+    ) {
+      const ok = await ingestRawTextOrJsonlToCanvas(rawText, `CLI Recon: ${file.name}`);
+      if (ok) return;
+    }
     let parsedJson: Record<string, unknown> | null = null;
     try {
       parsedJson = JSON.parse(rawText) as Record<string, unknown>;
@@ -3882,6 +3985,15 @@ document.getElementById('btn-reset-community')?.addEventListener('click', () => 
   void activateEditionTier('COMMUNITY', 'COMMUNITY');
 });
 
+// Restore persisted BYOK badges on boot so analysts don't re-enter keys
+const initialByokKeys = readByokKeysFromStorage();
+for (const provider of ['shodan', 'virustotal', 'abuseipdb'] as const) {
+  if (initialByokKeys[provider]) {
+    const badge = document.getElementById(`lbl-byok-status-${provider}`);
+    if (badge) badge.textContent = 'BYOK local activo ✓';
+  }
+}
+
 document.querySelectorAll('[data-byok-save]').forEach((btn) => {
   btn.addEventListener('click', async () => {
     const provider = btn.getAttribute('data-byok-save') as 'shodan' | 'virustotal' | 'abuseipdb' | null;
@@ -3889,6 +4001,9 @@ document.querySelectorAll('[data-byok-save]').forEach((btn) => {
     const inp = document.getElementById(`inp-byok-${provider}`) as HTMLInputElement | null;
     const apiKey = inp?.value.trim() || '';
     if (!apiKey) return;
+    saveByokKeyToStorage(provider, apiKey);
+    const badge = document.getElementById(`lbl-byok-status-${provider}`);
+    if (badge) badge.textContent = 'BYOK local activo ✓';
     try {
       const res = await fetch('/api/edition/provider-keys', {
         method: 'POST',
@@ -3897,38 +4012,39 @@ document.querySelectorAll('[data-byok-save]').forEach((btn) => {
       });
       const data = (await res.json()) as { ok: boolean };
       if (data.ok) {
-        const badge = document.getElementById(`lbl-byok-status-${provider}`);
-        if (badge) badge.textContent = 'BYOK activo ✓';
         if (inp) inp.value = '';
-        appendLog(`[Conector BYOK]: Llave propia registrada para ${provider.toUpperCase()}.`);
+        appendLog(
+          `[Conector BYOK]: Llave propia guardada localmente y en bóveda para ${provider.toUpperCase()}.`
+        );
       }
-    } catch (err) {
-      appendLog(`Error guardando llave BYOK (${provider}): ${String(err)}`);
+    } catch {
+      if (inp) inp.value = '';
+      appendLog(
+        `[Conector BYOK]: Llave propia guardada en navegador para ${provider.toUpperCase()}.`
+      );
     }
   });
 });
 
-// Wire Smart IOC Paste-to-Graph (`#btn-paste-iocs`)
-document.getElementById('btn-paste-iocs')?.addEventListener('click', async () => {
-  const rawText = window.prompt(
-    'Pega cualquier boletín CTI, correo sospechoso o log de firewall para extraer automáticamente todos los IOCs al grafo:',
-    ''
-  );
-  if (!rawText || !rawText.trim()) return;
-
+async function ingestRawTextOrJsonlToCanvas(
+  rawText: string,
+  incidentTitle = 'Boletín / CLI Ingestado (Paste-to-Graph)'
+): Promise<boolean> {
+  if (!rawText || !rawText.trim()) return false;
   try {
     const res = await fetch('/api/ingest/raw-text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text: rawText,
-        incidentTitle: 'Boletín Ingestado (Paste-to-Graph)',
+        incidentTitle,
       }),
     });
     const data = (await res.json()) as {
       ok: boolean;
       error?: string;
       extractedCount?: number;
+      cliReconRecords?: number;
       incidentRoot?: {
         id: string;
         typeName: string;
@@ -3952,21 +4068,24 @@ document.getElementById('btn-paste-iocs')?.addEventListener('click', async () =>
       }>;
     };
     if (!data.ok || !data.incidentRoot || !data.entities || !data.links) {
-      appendLog(`Error en ingesta de IOCs: ${data.error ?? 'Respuesta inválida'}`);
-      return;
+      appendLog(`Aviso en ingesta: ${data.error ?? 'No se detectaron IOCs válidos'}`);
+      return false;
     }
 
+    const createdIds: EntityID[] = [];
     store.runInBatch(() => {
+      const rootId = Guid.parse(data.incidentRoot!.id);
       const rootEnt = registry.createEntity(
         data.incidentRoot!.typeName,
         data.incidentRoot!.value,
         {
-          id: Guid.parse(data.incidentRoot!.id),
+          id: rootId,
           weight: data.incidentRoot!.weight,
           bookmark: 0,
         }
       );
       store.addEntity(rootEnt, data.incidentRoot!.position, false);
+      createdIds.push(rootId);
 
       for (const item of data.entities!) {
         const canonicalType =
@@ -3975,12 +4094,14 @@ document.getElementById('btn-paste-iocs')?.addEventListener('click', async () =>
             : item.typeName === 'maltego.ASNumber'
               ? 'maltego.AS'
               : item.typeName;
+        const entId = Guid.parse(item.id);
         const ent = registry.createEntity(canonicalType, item.value, {
-          id: Guid.parse(item.id),
+          id: entId,
           weight: item.weight,
           bookmark: 1,
         });
         store.addEntity(ent, item.position, false);
+        createdIds.push(entId);
       }
 
       for (const lnk of data.links!) {
@@ -3992,13 +4113,105 @@ document.getElementById('btn-paste-iocs')?.addEventListener('click', async () =>
       }
     });
 
+    selection.selectInModel(createdIds);
     syncSceneAndUi(false);
     appendLog(
-      `Ingesta Paste-to-Graph completada: ${data.extractedCount} IOCs únicos extraídos y enlazados al nodo raíz.`
+      `Ingesta inteligente completada: ${data.extractedCount} entidades y ${data.links.length} enlaces semánticos creados${
+        data.cliReconRecords ? ` (${data.cliReconRecords} líneas JSONL de CLI)` : ''
+      }.`
     );
+    return true;
   } catch (err) {
     appendLog(`Error en ingesta Paste-to-Graph: ${String(err)}`);
+    return false;
   }
+}
+
+// Wire Native <dialog id="ingest-modal-dialog"> (`#btn-paste-iocs`) + closedby="any" fallback
+const ingestModalDialog = document.getElementById('ingest-modal-dialog') as HTMLDialogElement | null;
+const txtIngestModal = document.getElementById('txt-ingest-modal') as HTMLTextAreaElement | null;
+
+if (ingestModalDialog && !('closedBy' in ingestModalDialog)) {
+  ingestModalDialog.addEventListener('pointerdown', (e) => {
+    if (e.target === ingestModalDialog) ingestModalDialog.close();
+  });
+}
+
+document.getElementById('btn-paste-iocs')?.addEventListener('click', () => {
+  const forensicPopover = document.getElementById('menu-forensic-tools') as HTMLElement & {
+    hidePopover?: () => void;
+  } | null;
+  forensicPopover?.hidePopover?.();
+  if (ingestModalDialog && typeof ingestModalDialog.showModal === 'function') {
+    ingestModalDialog.showModal();
+    txtIngestModal?.focus();
+  }
+});
+
+document.getElementById('btn-ingest-sample-cli')?.addEventListener('click', () => {
+  if (!txtIngestModal) return;
+  txtIngestModal.value = [
+    '{"host":"vpn.shadow-apt.org","input":"shadow-apt.org","source":"subfinder"}',
+    '{"input":"vpn.shadow-apt.org","a":["185.220.101.34"],"asn":{"as_number":"AS205100"},"url":"https://vpn.shadow-apt.org:8443/login"}',
+    '{"host":"vpn.shadow-apt.org","ip":"185.220.101.34","template-id":"CVE-2024-3400","info":{"name":"PAN-OS GlobalProtect RCE","severity":"critical"}}',
+  ].join('\n');
+  txtIngestModal.focus();
+});
+
+document.getElementById('btn-ingest-pick-file')?.addEventListener('click', () => {
+  ingestModalDialog?.close();
+  inpImportAnyFile?.click();
+});
+
+document.getElementById('btn-ingest-submit')?.addEventListener('click', async () => {
+  const raw = txtIngestModal?.value.trim() || '';
+  if (!raw) return;
+  const ok = await ingestRawTextOrJsonlToCanvas(raw, 'Ingesta Universal (CLI / CTI)');
+  if (ok) {
+    ingestModalDialog?.close();
+  }
+});
+
+// Global Canvas Paste (Ctrl+V / ⌘V anywhere on canvas without opening a modal)
+window.addEventListener('paste', (e: ClipboardEvent) => {
+  const active = document.activeElement as HTMLElement | null;
+  if (
+    active &&
+    (active.tagName === 'INPUT' ||
+      active.tagName === 'TEXTAREA' ||
+      active.tagName === 'SELECT' ||
+      active.isContentEditable)
+  ) {
+    return;
+  }
+  if (ingestModalDialog?.open) return;
+
+  const files = e.clipboardData?.files;
+  if (files && files.length > 0) {
+    e.preventDefault();
+    void importForensicFileToCanvas(files[0]!);
+    return;
+  }
+
+  const pastedText = e.clipboardData?.getData('text/plain')?.trim() || '';
+  if (!pastedText) return;
+  e.preventDefault();
+
+  // Single simple token without newlines or JSON braces -> spawn directly at canvas center
+  if (!/[\r\n\s{}]/.test(pastedText) && !/hxxps?|\[\.\]|\[@\]/i.test(pastedText)) {
+    const centerWorld = graphCanvas.screenToWorld(
+      graphCanvas.getCameraState().viewportWidth * 0.5,
+      graphCanvas.getCameraState().viewportHeight * 0.5
+    );
+    const ent = convertTextToEntity(pastedText, registry);
+    store.addEntity(ent, { x: centerWorld.x, y: centerWorld.y, z: 0 });
+    selection.selectInModel([ent.id]);
+    syncSceneAndUi(false);
+    appendLog(`Pegado directo (⌘V): creada entidad ${ent.typeName} ("${getPartPrimaryValue(ent)}").`);
+    return;
+  }
+
+  void ingestRawTextOrJsonlToCanvas(pastedText, 'Portapapeles en Vivo (⌘V)');
 });
 
 // Wire Radar Cangrejo 24/7 Continuous Drift Monitor (`#btn-radar-watch`)

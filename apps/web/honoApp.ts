@@ -909,8 +909,16 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
       );
     }
     const normalizedFields = normalizeEntityFields(rawBody.entityFields);
-    const sliderLimit = typeof rawBody.sliderLimit === 'number' ? rawBody.sliderLimit : 12;
-    const bypassCache = rawBody.bypassCache === true;
+    const sliderLimit = typeof rawBody.sliderLimit === 'number' ? rawBody.sliderLimit : 50;
+    const filterCdnNoise = rawBody.filterCdnNoise === true;
+    const clientByokKeys =
+      typeof rawBody.byokKeys === 'object' && rawBody.byokKeys !== null
+        ? (rawBody.byokKeys as Record<string, string>)
+        : {};
+    const bypassCache =
+      rawBody.bypassCache === true ||
+      filterCdnNoise ||
+      Object.values(clientByokKeys).some((v) => typeof v === 'string' && v.trim().length > 0);
     const cacheKey = BunSqliteVault.buildPesquisaCacheKey(transformId, value);
     const activeD1 = extractD1Binding(c.env);
 
@@ -1557,6 +1565,9 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     if (transformId === 'shodan-host-intel' || transformId === 'all') {
       const activeD1 = extractD1Binding(c.env);
       const byokKey =
+        (typeof clientByokKeys.shodan === 'string' && clientByokKeys.shodan.trim()
+          ? clientByokKeys.shodan.trim()
+          : null) ??
         sqliteVault.getProviderApiKey('shodan') ??
         (await sqliteVault.getProviderApiKeyFromD1Safe(activeD1, 'shodan'));
       const cloudKey = process.env.SHODAN_API_KEY;
@@ -1683,6 +1694,9 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     if (transformId === 'virustotal-domain-ip' || transformId === 'all') {
       const activeD1 = extractD1Binding(c.env);
       const byokKey =
+        (typeof clientByokKeys.virustotal === 'string' && clientByokKeys.virustotal.trim()
+          ? clientByokKeys.virustotal.trim()
+          : null) ??
         sqliteVault.getProviderApiKey('virustotal') ??
         (await sqliteVault.getProviderApiKeyFromD1Safe(activeD1, 'virustotal'));
       const cloudKey = process.env.VIRUSTOTAL_API_KEY;
@@ -1774,6 +1788,9 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
     if (transformId === 'abuseipdb-reputation' || transformId === 'all') {
       const activeD1 = extractD1Binding(c.env);
       const byokKey =
+        (typeof clientByokKeys.abuseipdb === 'string' && clientByokKeys.abuseipdb.trim()
+          ? clientByokKeys.abuseipdb.trim()
+          : null) ??
         sqliteVault.getProviderApiKey('abuseipdb') ??
         (await sqliteVault.getProviderApiKeyFromD1Safe(activeD1, 'abuseipdb'));
       const cloudKey = process.env.ABUSEIPDB_API_KEY;
@@ -1844,6 +1861,39 @@ cangrejoHonoApp.post('/api/transforms/run', async (c) => {
         messages.push({
           type: 'Inform',
           text: `[AbuseIPDB (${authMode})] Retrieved live abuse confidence score for ${value}`,
+        });
+      }
+    }
+
+    if (filterCdnNoise) {
+      let taggedCdnCount = 0;
+      for (const ent of entities) {
+        const valLower = ent.value.toLowerCase();
+        const descLower = JSON.stringify(ent.fields).toLowerCase();
+        const isKnownCdn =
+          valLower === 'as13335' ||
+          valLower === 'as20940' ||
+          valLower === 'as54113' ||
+          valLower.startsWith('104.21.') ||
+          valLower.startsWith('172.67.') ||
+          valLower.startsWith('1.1.1.') ||
+          descLower.includes('cloudflare') ||
+          descLower.includes('akamai') ||
+          descLower.includes('fastly');
+        if (isKnownCdn) {
+          ent.weight = Math.min(ent.weight, 52);
+          ent.fields.cdnSharedNoise = 'true';
+          if (!ent.linkLabel.includes('[CDN Shared]')) {
+            ent.linkLabel = `${ent.linkLabel} [CDN Shared]`;
+          }
+          ent.linkColor = '#64748b';
+          taggedCdnCount++;
+        }
+      }
+      if (taggedCdnCount > 0) {
+        messages.push({
+          type: 'Inform',
+          text: `[Anti-Hairball CDN] Tagged ${taggedCdnCount} shared CDN/anycast indicator(s) with reduced weight to prevent false pivots`,
         });
       }
     }
@@ -2046,10 +2096,21 @@ cangrejoHonoApp.post('/api/export/mtgx', async (c) => {
 
 cangrejoHonoApp.post('/api/import/mtgx', async (c) => {
   try {
-    const { mtgxBase64 } = (await c.req.json()) as { mtgxBase64: string };
-    const bytes = new Uint8Array(Buffer.from(mtgxBase64, 'base64'));
-    const imported = mtgxHandler.importFromMtgxBytes(bytes);
-    const store = imported.store;
+    const body = (await c.req.json()) as { mtgxBase64?: string; graphmlXml?: string };
+    let store: GraphStore;
+    if (typeof body.graphmlXml === 'string' && body.graphmlXml.trim().length > 0) {
+      store = mtgxHandler.deserializeGraphMlToGraphStore(body.graphmlXml);
+    } else {
+      const bytes = new Uint8Array(Buffer.from(body.mtgxBase64 ?? '', 'base64'));
+      const isZip = bytes.byteLength >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+      if (isZip) {
+        const imported = mtgxHandler.importFromMtgxBytes(bytes);
+        store = imported.store;
+      } else {
+        const xmlText = new TextDecoder().decode(bytes);
+        store = mtgxHandler.deserializeGraphMlToGraphStore(xmlText);
+      }
+    }
 
     const entities = Array.from(store.dataStore.getEntities().values()).map((ent) => {
       const propsObj: Record<string, string> = {};
@@ -3060,7 +3121,7 @@ cangrejoHonoApp.post('/api/ingest/raw-text', async (c) => {
       },
     ];
 
-    const seen = new Set<string>();
+    const seen = new Map<string, string>();
     const discovered: Array<{
       id: string;
       typeName: string;
@@ -3070,23 +3131,173 @@ cangrejoHonoApp.post('/api/ingest/raw-text', async (c) => {
       linkColor: string;
       position: { x: number; y: number; z: number };
     }> = [];
+    const semanticLinks: Array<{
+      id: string;
+      sourceId: string;
+      targetId: string;
+      label: string;
+      color: string;
+    }> = [];
+    const linkedAsTarget = new Set<string>();
 
+    const upsertDiscovered = (
+      typeName: string,
+      rawValue: string,
+      linkLabel: string,
+      linkColor: string,
+      weight = 95
+    ): string => {
+      const cleanVal = rawValue.trim().replace(/[.,;)]+$/, '');
+      const dedupKey = `${typeName}::${cleanVal.toLowerCase()}`;
+      const existing = seen.get(dedupKey);
+      if (existing) return existing;
+      const newId = Guid.generate().toString();
+      seen.set(dedupKey, newId);
+      discovered.push({
+        id: newId,
+        typeName,
+        value: cleanVal,
+        weight,
+        linkLabel,
+        linkColor,
+        position: { x: centerX, y: centerY, z: 0 },
+      });
+      return newId;
+    };
+
+    const addSemanticLink = (srcId: string, dstId: string, label: string, color: string) => {
+      if (!srcId || !dstId || srcId === dstId) return;
+      if (
+        semanticLinks.some(
+          (l) => l.sourceId === srcId && l.targetId === dstId && l.label === label
+        )
+      ) {
+        return;
+      }
+      linkedAsTarget.add(dstId);
+      semanticLinks.push({
+        id: Guid.generate().toString(),
+        sourceId: srcId,
+        targetId: dstId,
+        label,
+        color,
+      });
+    };
+
+    // 1. Parse structured CLI Recon JSONL lines (subfinder, httpx, nuclei, dnsx, shodan)
+    let cliReconRecords = 0;
+    for (const rawLine of text.split(/\r?\n/)) {
+      const trimmed = rawLine.trim();
+      if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) continue;
+      try {
+        const obj = JSON.parse(trimmed) as Record<string, unknown>;
+        cliReconRecords++;
+        const rawHost =
+          typeof obj.host === 'string'
+            ? obj.host
+            : typeof obj.domain === 'string'
+              ? obj.domain
+              : typeof obj.fqdn === 'string'
+                ? obj.fqdn
+                : '';
+        const rawInput =
+          typeof obj.input === 'string' && obj.input !== rawHost ? obj.input : '';
+        let hostId = '';
+        if (rawHost) {
+          const isIpHost = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(rawHost);
+          hostId = upsertDiscovered(
+            isIpHost ? 'maltego.IPv4Address' : 'maltego.DNSName',
+            rawHost,
+            isIpHost ? 'network IPv4' : 'observed subdomain',
+            '#38bdf8'
+          );
+        }
+        if (rawInput) {
+          const inputId = upsertDiscovered(
+            'maltego.Domain',
+            rawInput,
+            'root target domain',
+            '#eab308',
+            98
+          );
+          if (hostId) {
+            addSemanticLink(inputId, hostId, 'subdomain (CLI JSONL)', '#f59e0b');
+          } else {
+            hostId = inputId;
+          }
+        }
+
+        const ips: string[] = [];
+        if (typeof obj.ip === 'string' && obj.ip.trim()) ips.push(obj.ip.trim());
+        if (Array.isArray(obj.a)) {
+          for (const aVal of obj.a) {
+            if (typeof aVal === 'string' && aVal.trim()) ips.push(aVal.trim());
+          }
+        }
+        let firstIpId = '';
+        for (const ipStr of ips.slice(0, 6)) {
+          const ipId = upsertDiscovered(
+            'maltego.IPv4Address',
+            ipStr,
+            'resolves to (DNS A)',
+            '#22d3ee'
+          );
+          if (!firstIpId) firstIpId = ipId;
+          if (hostId) addSemanticLink(hostId, ipId, 'resolves to (DNS A)', '#22d3ee');
+        }
+
+        const rawAsn =
+          typeof obj.asn === 'string'
+            ? obj.asn
+            : typeof obj.as_number === 'string'
+              ? obj.as_number
+              : typeof (obj.asn as { as_number?: unknown })?.as_number === 'string'
+                ? String((obj.asn as { as_number: string }).as_number)
+                : '';
+        if (rawAsn) {
+          const asnFormatted = /^AS/i.test(rawAsn.trim())
+            ? rawAsn.trim().toUpperCase()
+            : `AS${rawAsn.trim()}`;
+          const asnId = upsertDiscovered('maltego.ASNumber', asnFormatted, 'routed ASN', '#a78bfa');
+          if (firstIpId || hostId) {
+            addSemanticLink(firstIpId || hostId, asnId, 'originates from ASN', '#a78bfa');
+          }
+        }
+
+        const rawUrl =
+          typeof obj.url === 'string'
+            ? obj.url
+            : typeof obj['matched-at'] === 'string'
+              ? (obj['matched-at'] as string)
+              : '';
+        if (rawUrl && /^https?:\/\//i.test(rawUrl)) {
+          const urlId = upsertDiscovered('maltego.URL', rawUrl, 'HTTP endpoint', '#38bdf8');
+          if (hostId) addSemanticLink(hostId, urlId, 'exposes HTTP URL', '#38bdf8');
+        }
+
+        const templateId =
+          typeof obj['template-id'] === 'string' ? (obj['template-id'] as string) : '';
+        if (templateId) {
+          const isCve = /^CVE-\d{4}-\d+/i.test(templateId);
+          const findingId = upsertDiscovered(
+            isCve ? 'maltego.CVE' : 'maltego.Phrase',
+            isCve ? templateId.toUpperCase() : `nuclei:${templateId}`,
+            'Nuclei finding',
+            '#ef4444',
+            98
+          );
+          if (hostId) addSemanticLink(hostId, findingId, 'vulnerable to (Nuclei)', '#ef4444');
+        }
+      } catch {
+        // Non-JSON line; handled by regex extractors below
+      }
+    }
+
+    // 2. Regex IOC extraction over full text
     for (const ext of extractors) {
       const matches = text.match(ext.regex) ?? [];
       for (const rawMatch of matches) {
-        const cleanVal = rawMatch.trim().replace(/[.,;)]+$/, '');
-        const dedupKey = `${ext.typeName}::${cleanVal.toLowerCase()}`;
-        if (seen.has(dedupKey)) continue;
-        seen.add(dedupKey);
-        discovered.push({
-          id: Guid.generate().toString(),
-          typeName: ext.typeName,
-          value: cleanVal,
-          weight: 95,
-          linkLabel: ext.linkLabel,
-          linkColor: ext.linkColor,
-          position: { x: centerX, y: centerY, z: 0 },
-        });
+        upsertDiscovered(ext.typeName, rawMatch, ext.linkLabel, ext.linkColor);
       }
     }
 
@@ -3104,8 +3315,19 @@ cangrejoHonoApp.post('/api/ingest/raw-text', async (c) => {
     const incidentTitle =
       parsed.incidentTitle?.trim() || `Reporte Ingestado (${discovered.length} IOCs)`;
 
+    const rootLinks = discovered
+      .filter((d) => !linkedAsTarget.has(d.id))
+      .map((d) => ({
+        id: Guid.generate().toString(),
+        sourceId: rootNodeId,
+        targetId: d.id,
+        label: d.linkLabel,
+        color: d.linkColor,
+      }));
+
     return c.json({
       ok: true,
+      cliReconRecords,
       incidentRoot: {
         id: rootNodeId,
         typeName: 'maltego.Phrase',
@@ -3115,13 +3337,7 @@ cangrejoHonoApp.post('/api/ingest/raw-text', async (c) => {
       },
       extractedCount: discovered.length,
       entities: discovered,
-      links: discovered.map((d) => ({
-        id: Guid.generate().toString(),
-        sourceId: rootNodeId,
-        targetId: d.id,
-        label: d.linkLabel,
-        color: d.linkColor,
-      })),
+      links: [...rootLinks, ...semanticLinks],
     });
   } catch (err) {
     console.error('[Hono /api/ingest/raw-text] Raw text IOC ingestion failed:', err);
